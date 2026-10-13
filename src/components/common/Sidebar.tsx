@@ -1,6 +1,7 @@
 import React from 'react';
 import { useAuth } from '../../context/AuthContext';
 import {
+  Sprout,
   LayoutDashboard,
   Users,
   CalendarCheck,
@@ -12,13 +13,13 @@ import {
   FileSpreadsheet,
   Lock,
   Share2,
-  UserCog,
   History,
   CheckCircle2,
   Sliders
 } from 'lucide-react';
 
 export type ActiveTab =
+  | 'simple-view'
   | 'dashboard'
   | 'labourers'
   | 'attendance'
@@ -30,7 +31,6 @@ export type ActiveTab =
   | 'reports'
   | 'fy-close'
   | 'sheets'
-  | 'users'
   | 'audit'
   | 'qa-test'
   | 'settings';
@@ -41,9 +41,10 @@ interface SidebarProps {
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onSelectTab }) => {
-  const { currentRole, canManageUsers } = useAuth();
+  const { currentRole } = useAuth();
 
   const navItems = [
+    { id: 'simple-view', label: 'Simple Farm Routine', icon: Sprout, roles: ['owner', 'admin'] },
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['owner', 'admin', 'payroll', 'supervisor', 'partner_viewer', 'tractor_operator'] },
     { id: 'labourers', label: 'Labour Directory', icon: Users, roles: ['owner', 'admin', 'payroll', 'supervisor', 'partner_viewer'] },
     { id: 'attendance', label: 'Daily Attendance', icon: CalendarCheck, roles: ['owner', 'admin', 'payroll', 'supervisor', 'partner_viewer'] },
@@ -55,7 +56,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onSelectTab }) => {
     { id: 'reports', label: 'Reports & PDF', icon: FileSpreadsheet, roles: ['owner', 'admin', 'payroll', 'supervisor', 'partner_viewer'] },
     { id: 'fy-close', label: 'Financial Year Close', icon: Lock, roles: ['owner', 'admin', 'partner_viewer'] },
     { id: 'sheets', label: 'Google Sheets Sync', icon: Share2, roles: ['owner', 'admin'] },
-    { id: 'users', label: 'Users & Roles', icon: UserCog, roles: ['owner', 'admin'] },
     { id: 'audit', label: 'Audit Trail', icon: History, roles: ['owner', 'admin'] },
     { id: 'qa-test', label: 'QA Verification', icon: CheckCircle2, roles: ['owner', 'admin', 'payroll', 'supervisor', 'partner_viewer'] },
     { id: 'settings', label: 'Farm Settings', icon: Sliders, roles: ['owner', 'admin'] },

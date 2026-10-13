@@ -22,17 +22,17 @@ import {
   MonthlyAttendanceSummary
 } from '../types';
 
-const STORAGE_KEY = 'kisanops_farm_data_v1';
+const STORAGE_KEY = 'kisanops_farm_data_v2';
 
 export const round2 = (num: number): number => {
   return Math.round((num + Number.EPSILON) * 100) / 100;
 };
 
-// Initial Seed Data
+// Initial Clean Farm Setup (Real Production Data — Zero Demo/Test Records)
 const initialFarm: Farm = {
-  id: '11111111-1111-1111-1111-111111111111',
-  name: 'Greenfield Agro Farms',
-  address: 'Survey No. 42, Dindori Road, Nashik, Maharashtra 422004',
+  id: 'farm-main-001',
+  name: 'My Farm Operations',
+  address: '',
   currency_code: 'INR',
   timezone: 'Asia/Kolkata',
   financial_year_start_month: 4,
@@ -42,211 +42,20 @@ const initialFarm: Farm = {
     require_correction_reason: true,
     default_payroll_cadence: 'monthly'
   },
-  created_at: '2026-04-01T08:00:00Z',
-  updated_at: '2026-04-01T08:00:00Z'
+  created_at: new Date().toISOString(),
+  updated_at: new Date().toISOString()
 };
 
-const initialMemberships: FarmMembership[] = [
-  { id: 'u1', farm_id: initialFarm.id, user_id: 'usr-1', user_name: 'Anand Deshmukh (Owner)', user_email: 'owner@greenfield.farm', role: 'owner', is_active: true, created_at: '2026-04-01T08:00:00Z' },
-  { id: 'u2', farm_id: initialFarm.id, user_id: 'usr-2', user_name: 'Vikas Rao (Admin/Manager)', user_email: 'manager@greenfield.farm', role: 'admin', is_active: true, created_at: '2026-04-01T08:00:00Z' },
-  { id: 'u3', farm_id: initialFarm.id, user_id: 'usr-3', user_name: 'Pooja Kulkarni (Accountant)', user_email: 'payroll@greenfield.farm', role: 'payroll', is_active: true, created_at: '2026-04-01T08:00:00Z' },
-  { id: 'u4', farm_id: initialFarm.id, user_id: 'usr-4', user_name: 'Balaji Shinde (Supervisor)', user_email: 'supervisor@greenfield.farm', role: 'supervisor', is_active: true, created_at: '2026-04-01T08:00:00Z' },
-  { id: 'u5', farm_id: initialFarm.id, user_id: 'usr-5', user_name: 'Suresh Mehta (Partner/Investor)', user_email: 'partner@mehtacapital.in', role: 'partner_viewer', is_active: true, created_at: '2026-04-01T08:00:00Z' },
-  { id: 'u6', farm_id: initialFarm.id, user_id: 'usr-6', user_name: 'Ganesh More (Tractor Operator)', user_email: 'operator@greenfield.farm', role: 'tractor_operator', is_active: true, created_at: '2026-04-01T08:00:00Z' },
-];
-
-const initialLabourers: Labourer[] = [
-  { id: 'lab-1', farm_id: initialFarm.id, labour_code: 'LAB-001', full_name: 'Ramesh Jadhav', phone: '9822012345', work_category: 'Harvesting & Field Hand', start_date: '2026-04-01', wage_basis: 'daily', base_rate: 550, is_active: true, notes: 'Senior crew lead', created_at: '2026-04-01T08:00:00Z', updated_at: '2026-04-01T08:00:00Z' },
-  { id: 'lab-2', farm_id: initialFarm.id, labour_code: 'LAB-002', full_name: 'Sunita Patil', phone: '9822054321', work_category: 'Weeding & Pruning', start_date: '2026-04-01', wage_basis: 'daily', base_rate: 450, is_active: true, notes: 'Vineyard care specialist', created_at: '2026-04-01T08:00:00Z', updated_at: '2026-04-01T08:00:00Z' },
-  { id: 'lab-3', farm_id: initialFarm.id, labour_code: 'LAB-003', full_name: 'Kailash Shinde', phone: '9822098765', work_category: 'Irrigation & Spraying', start_date: '2026-04-01', wage_basis: 'daily', base_rate: 600, is_active: true, notes: 'Handles drip irrigation & chemical sprays', created_at: '2026-04-01T08:00:00Z', updated_at: '2026-04-01T08:00:00Z' },
-  { id: 'lab-4', farm_id: initialFarm.id, labour_code: 'LAB-004', full_name: 'Mangala Pawar', phone: '9822011223', work_category: 'Sorting & Packaging', start_date: '2026-04-01', wage_basis: 'daily', base_rate: 450, is_active: true, notes: 'Post-harvest grading unit', created_at: '2026-04-01T08:00:00Z', updated_at: '2026-04-01T08:00:00Z' },
-  { id: 'lab-5', farm_id: initialFarm.id, labour_code: 'LAB-005', full_name: 'Ganesh More', phone: '9822033445', work_category: 'Machinery Operator & Mechanic', start_date: '2026-04-01', wage_basis: 'daily', base_rate: 700, is_active: true, notes: 'Tractor driver license MH-15', created_at: '2026-04-01T08:00:00Z', updated_at: '2026-04-01T08:00:00Z' },
-  { id: 'lab-6', farm_id: initialFarm.id, labour_code: 'LAB-006', full_name: 'Anita Bhalerao', phone: '9822077889', work_category: 'Nursery & Sapling Care', start_date: '2026-04-01', wage_basis: 'daily', base_rate: 480, is_active: true, notes: 'Greenhouse manager', created_at: '2026-04-01T08:00:00Z', updated_at: '2026-04-01T08:00:00Z' },
-];
-
-const initialMachinery: Machinery[] = [
-  { id: 'mac-1', farm_id: initialFarm.id, asset_code: 'HRD-01', name: 'Mahindra 575 DI (Hired)', asset_type: 'tractor', ownership_type: 'hired', registration_reference: 'MH-15-AB-4021', make: 'Mahindra', model: '575 DI Sarpanch 45HP', meter_type: 'none', initial_meter: 0, current_meter: 0, is_active: true, notes: 'Hired from Patil Agri Rentals @ ₹900/hr', created_at: '2026-04-01T08:00:00Z', updated_at: '2026-04-01T08:00:00Z' },
-  { id: 'mac-2', farm_id: initialFarm.id, asset_code: 'HRD-02', name: 'John Deere 5050D (Hired)', asset_type: 'tractor', ownership_type: 'hired', registration_reference: 'MH-15-CD-8910', make: 'John Deere', model: '5050D PowerPro 50HP', meter_type: 'none', initial_meter: 0, current_meter: 0, is_active: true, notes: 'Hired from Kisan Custom Hire Centre @ ₹1,000/hr', created_at: '2026-04-01T08:00:00Z', updated_at: '2026-04-01T08:00:00Z' },
-  { id: 'mac-3', farm_id: initialFarm.id, asset_code: 'HRD-03', name: 'Kubota Combine Harvester (Hired)', asset_type: 'harvester', ownership_type: 'hired', registration_reference: 'KA-04-E-1234', make: 'Kubota', model: 'DC-68G', meter_type: 'none', initial_meter: 0, current_meter: 0, is_active: true, notes: 'Hired for wheat harvest @ ₹1,800/hr', created_at: '2026-04-01T08:00:00Z', updated_at: '2026-04-01T08:00:00Z' },
-];
-
-const initialAdvances: Advance[] = [
-  { id: 'adv-1', farm_id: initialFarm.id, labourer_id: 'lab-1', labourer_name: 'Ramesh Jadhav', labour_code: 'LAB-001', issued_at: '2026-10-02T10:00:00Z', amount: 2500, purpose: 'Family medical expense', payment_method: 'cash', payment_reference: 'CASH-REC-102', status: 'posted', issued_by: 'Anand Deshmukh', created_at: '2026-10-02T10:00:00Z', updated_at: '2026-10-02T10:00:00Z' },
-  { id: 'adv-2', farm_id: initialFarm.id, labourer_id: 'lab-3', labourer_name: 'Kailash Shinde', labour_code: 'LAB-003', issued_at: '2026-10-04T11:30:00Z', amount: 3000, purpose: 'Child school fee advance', payment_method: 'upi', payment_reference: 'UPI-98421034', status: 'posted', issued_by: 'Anand Deshmukh', created_at: '2026-10-04T11:30:00Z', updated_at: '2026-10-04T11:30:00Z' },
-  { id: 'adv-3', farm_id: initialFarm.id, labourer_id: 'lab-5', labourer_name: 'Ganesh More', labour_code: 'LAB-005', issued_at: '2026-10-05T09:00:00Z', amount: 1500, purpose: 'Festival advance (Diwali preparation)', payment_method: 'cash', payment_reference: 'CASH-REC-105', status: 'posted', issued_by: 'Anand Deshmukh', created_at: '2026-10-05T09:00:00Z', updated_at: '2026-10-05T09:00:00Z' },
-];
-
-const initialAllocations: AdvanceAllocation[] = [
-  { id: 'alloc-1', farm_id: initialFarm.id, advance_id: 'adv-1', allocation_date: '2026-10-08', amount: 500, allocation_type: 'cash_repayment', recorded_by: 'Pooja Kulkarni', notes: 'Voluntary cash repayment by Ramesh', created_at: '2026-10-08T14:00:00Z' }
-];
-
-// Seed rich, authentic attendance for October 2026 (Oct 1 to Oct 13, including Sundays and leaves)
-const seedDates = [
-  '2026-10-01', '2026-10-02', '2026-10-03', '2026-10-04',
-  '2026-10-05', '2026-10-06', '2026-10-07', '2026-10-08',
-  '2026-10-09', '2026-10-10', '2026-10-11', '2026-10-12', '2026-10-13'
-];
+const initialMemberships: FarmMembership[] = [];
+const initialLabourers: Labourer[] = [];
+const initialMachinery: Machinery[] = [];
+const initialAdvances: Advance[] = [];
+const initialAllocations: AdvanceAllocation[] = [];
 const initialAttendance: AttendanceRecord[] = [];
-
-seedDates.forEach((dateStr) => {
-  const isSunday = dateStr === '2026-10-04' || dateStr === '2026-10-11';
-
-  initialLabourers.forEach((lab, idx) => {
-    let status: AttendanceStatus = 'present';
-    let units = 1.0;
-    let hours = 8;
-    let task = lab.work_category;
-
-    if (isSunday) {
-      status = 'leave';
-      units = 0.0;
-      hours = 0;
-      task = 'Weekly Off (Sunday)';
-    } else {
-      // Realistic labor patterns:
-      if (idx === 0 && dateStr === '2026-10-06') {
-        // Ramesh: half-day
-        status = 'half_day';
-        units = 0.5;
-        hours = 4;
-      } else if (idx === 1 && dateStr === '2026-10-07') {
-        // Sunita: leave (absent)
-        status = 'leave';
-        units = 0.0;
-        hours = 0;
-        task = 'Personal Leave';
-      } else if (idx === 1 && dateStr === '2026-10-12') {
-        // Sunita: half-day
-        status = 'half_day';
-        units = 0.5;
-        hours = 4;
-      } else if (idx === 2 && dateStr === '2026-10-03') {
-        // Kailash: half-day
-        status = 'half_day';
-        units = 0.5;
-        hours = 4;
-      } else if (idx === 2 && dateStr === '2026-10-08') {
-        // Kailash: absent
-        status = 'leave';
-        units = 0.0;
-        hours = 0;
-        task = 'Health recovery';
-      } else if (idx === 3 && dateStr === '2026-10-05') {
-        // Mangala: half-day
-        status = 'half_day';
-        units = 0.5;
-        hours = 4;
-      } else if (idx === 3 && dateStr === '2026-10-09') {
-        // Mangala: absent
-        status = 'leave';
-        units = 0.0;
-        hours = 0;
-        task = 'Family function';
-      } else if (idx === 4 && dateStr === '2026-10-02') {
-        // Ganesh: half-day
-        status = 'half_day';
-        units = 0.5;
-        hours = 4;
-      } else if (idx === 5 && dateStr === '2026-10-06') {
-        // Anita: half-day
-        status = 'half_day';
-        units = 0.5;
-        hours = 4;
-      } else if (idx === 5 && dateStr === '2026-10-10') {
-        // Anita: leave
-        status = 'leave';
-        units = 0.0;
-        hours = 0;
-        task = 'Sick leave';
-      }
-    }
-
-    initialAttendance.push({
-      id: `att-${dateStr}-${lab.id}`,
-      farm_id: initialFarm.id,
-      labourer_id: lab.id,
-      work_date: dateStr,
-      shift_code: 'regular',
-      status,
-      payable_units: units,
-      hours_worked: hours,
-      task_name: task,
-      field_name: idx % 2 === 0 ? 'Plot A (Grapes)' : 'Plot B (Sugarcane)',
-      approval_status: 'approved',
-      created_by: 'usr-4',
-      created_at: `${dateStr}T18:00:00Z`,
-      updated_at: `${dateStr}T18:00:00Z`
-    });
-  });
-});
-
-const initialUsage: MachineryUsage[] = [
-  { id: 'usg-1', farm_id: initialFarm.id, machinery_id: 'mac-1', machinery_name: 'Mahindra 575 DI (Red)', asset_code: 'TRC-01', work_date: '2026-10-12', operator_name: 'Ganesh More', task_name: 'Deep Plowing & Bed Preparation', field_name: 'Plot C (Wheat block)', start_time: '2026-10-12T07:30:00Z', end_time: '2026-10-12T12:30:00Z', start_meter: 1280.2, end_meter: 1285.2, duration_minutes: 300, work_quantity: 4.5, fuel_quantity: 18, notes: 'Diesel topped up before plowing', created_at: '2026-10-12T13:00:00Z', updated_at: '2026-10-12T13:00:00Z' },
-  { id: 'usg-2', farm_id: initialFarm.id, machinery_id: 'mac-2', machinery_name: 'John Deere 5050D', asset_code: 'TRC-02', work_date: '2026-10-13', operator_name: 'Ganesh More', task_name: 'Rotavator & Organic Compost Mixing', field_name: 'Plot A (Vineyard)', start_time: '2026-10-13T08:00:00Z', end_time: '2026-10-13T11:30:00Z', start_meter: 849.0, end_meter: 852.5, duration_minutes: 210, work_quantity: 3.0, fuel_quantity: 12, notes: 'Vineyard row cultivation', created_at: '2026-10-13T12:00:00Z', updated_at: '2026-10-13T12:00:00Z' }
-];
-
-const initialExpenses: MachineryExpense[] = [
-  { id: 'exp-1', farm_id: initialFarm.id, machinery_id: 'mac-1', machinery_name: 'Mahindra 575 DI (Red)', expense_date: '2026-10-10', category: 'fuel', amount: 3600, quantity: 40, unit: 'Litres', vendor: 'Indian Oil Kisan Seva Kendra', payment_method: 'upi', payment_reference: 'IOCL-98124', notes: 'Diesel 40L @ ₹90/L for plowing season', created_at: '2026-10-10T16:00:00Z', updated_at: '2026-10-10T16:00:00Z' },
-  { id: 'exp-2', farm_id: initialFarm.id, machinery_id: 'mac-1', machinery_name: 'Mahindra 575 DI (Red)', expense_date: '2026-10-08', category: 'servicing', amount: 2200, vendor: 'Nashik Tractor Spares & Service', payment_method: 'cash', payment_reference: 'REC-3410', notes: 'Engine oil filter replacement and greasing', created_at: '2026-10-08T11:00:00Z', updated_at: '2026-10-08T11:00:00Z' },
-  { id: 'exp-3', farm_id: initialFarm.id, machinery_id: 'mac-3', machinery_name: 'Kubota Combine Harvester', expense_date: '2026-10-11', category: 'hired_service', amount: 5400, vendor: 'Patil Agri Rentals', payment_method: 'bank_transfer', payment_reference: 'NEFT-8841293', notes: 'Harvester rent 3 hours @ ₹1,800/hr', created_at: '2026-10-11T17:00:00Z', updated_at: '2026-10-11T17:00:00Z' }
-];
-
-const initialAudit: AuditLog[] = [
-  { id: 'aud-1', farm_id: initialFarm.id, actor_name: 'Anand Deshmukh', actor_role: 'owner', action: 'CREATE_LABOURER', entity_type: 'labourers', entity_id: 'lab-1', occurred_at: '2026-10-01T08:00:00Z', reason: 'Initial crew onboarding' },
-  { id: 'aud-2', farm_id: initialFarm.id, actor_name: 'Anand Deshmukh', actor_role: 'owner', action: 'ISSUE_ADVANCE', entity_type: 'advances', entity_id: 'adv-1', occurred_at: '2026-10-02T10:00:00Z', reason: 'Medical advance to Ramesh Jadhav' },
-  { id: 'aud-3', farm_id: initialFarm.id, actor_name: 'Balaji Shinde', actor_role: 'supervisor', action: 'RECORD_ATTENDANCE', entity_type: 'attendance', entity_id: 'att-2026-10-13', occurred_at: '2026-10-13T17:00:00Z', reason: 'Daily crew attendance for 2026-10-13' }
-];
-
-const initialTractorRentals: TractorRentalLog[] = [
-  {
-    id: 'trc-rent-1',
-    farm_id: initialFarm.id,
-    tractor_name: 'Mahindra 575 DI (Hired)',
-    vendor_name: 'Patil Agri Rentals',
-    work_date: '2026-10-11',
-    hours_worked: 4.0,
-    hourly_rate: 900,
-    gross_amount: 3600,
-    advance_amount: 1000,
-    rest_amount: 2600,
-    status: 'pending',
-    task_name: 'Deep Plowing & Harrowing',
-    notes: 'Advance ₹1,000 paid in cash at start',
-    created_at: '2026-10-11T12:00:00Z'
-  },
-  {
-    id: 'trc-rent-2',
-    farm_id: initialFarm.id,
-    tractor_name: 'John Deere 5050D',
-    vendor_name: 'Kisan Custom Hire Centre',
-    work_date: '2026-10-12',
-    hours_worked: 5.5,
-    hourly_rate: 1000,
-    gross_amount: 5500,
-    advance_amount: 2000,
-    rest_amount: 3500,
-    status: 'pending',
-    task_name: 'Rotavator Soil Pulverization',
-    notes: 'Advance ₹2,000 via UPI',
-    created_at: '2026-10-12T14:30:00Z'
-  },
-  {
-    id: 'trc-rent-3',
-    farm_id: initialFarm.id,
-    tractor_name: 'Swaraj 744 FE',
-    vendor_name: 'Ganesh Shinde (Neighbor Hire)',
-    work_date: '2026-10-13',
-    hours_worked: 3.5,
-    hourly_rate: 850,
-    gross_amount: 2975,
-    advance_amount: 1500,
-    rest_amount: 1475,
-    status: 'pending',
-    task_name: 'Vineyard Bed Furrowing',
-    notes: 'Advance ₹1,500 cash to driver',
-    created_at: '2026-10-13T11:00:00Z'
-  }
-];
+const initialUsage: MachineryUsage[] = [];
+const initialExpenses: MachineryExpense[] = [];
+const initialAudit: AuditLog[] = [];
+const initialTractorRentals: TractorRentalLog[] = [];
 
 interface FarmDataStore {
   farm: Farm;
@@ -268,16 +77,31 @@ interface FarmDataStore {
 }
 
 const getStore = (): FarmDataStore => {
+  if (typeof window !== 'undefined') {
+    // Purge old demo storage keys so no fake demo records persist
+    try {
+      localStorage.removeItem('kisanops_farm_data_v1');
+    } catch {}
+  }
+
   const existing = localStorage.getItem(STORAGE_KEY);
   if (existing) {
     try {
       const parsed = JSON.parse(existing);
-      if (!parsed.tractorRentals) {
-        parsed.tractorRentals = [...initialTractorRentals];
-      }
-      if (!parsed.attendance || parsed.attendance.length < 50) {
-        parsed.attendance = [...initialAttendance];
-      }
+      if (!parsed.tractorRentals) parsed.tractorRentals = [];
+      if (!parsed.attendance) parsed.attendance = [];
+      if (!parsed.labourers) parsed.labourers = [];
+      if (!parsed.advances) parsed.advances = [];
+      if (!parsed.allocations) parsed.allocations = [];
+      if (!parsed.machinery) parsed.machinery = [];
+      if (!parsed.usage) parsed.usage = [];
+      if (!parsed.expenses) parsed.expenses = [];
+      if (!parsed.auditLogs) parsed.auditLogs = [];
+      if (!parsed.syncJobs) parsed.syncJobs = [];
+      if (!parsed.payrollPeriods) parsed.payrollPeriods = [];
+      if (!parsed.payrollLines) parsed.payrollLines = [];
+      if (!parsed.payrollPayments) parsed.payrollPayments = [];
+      if (!parsed.closeManifests) parsed.closeManifests = [];
       return parsed;
     } catch {
       // fallback
@@ -299,10 +123,7 @@ const getStore = (): FarmDataStore => {
     expenses: initialExpenses,
     tractorRentals: initialTractorRentals,
     auditLogs: initialAudit,
-    syncJobs: [
-      { id: 'sync-1', farm_id: initialFarm.id, entity_type: 'labourers', entity_id: 'lab-1', operation: 'insert', status: 'succeeded', attempt_count: 1, last_attempt_at: '2026-10-13T10:00:00Z', completed_at: '2026-10-13T10:00:05Z', created_at: '2026-10-13T10:00:00Z' },
-      { id: 'sync-2', farm_id: initialFarm.id, entity_type: 'attendance', entity_id: 'att-batch', operation: 'insert', status: 'succeeded', attempt_count: 1, last_attempt_at: '2026-10-13T12:00:00Z', completed_at: '2026-10-13T12:00:04Z', created_at: '2026-10-13T12:00:00Z' },
-    ],
+    syncJobs: [],
     closeManifests: []
   };
 

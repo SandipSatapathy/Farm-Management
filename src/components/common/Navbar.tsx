@@ -85,28 +85,32 @@ export const Navbar: React.FC = () => {
             style={{
               display: 'flex',
               alignItems: 'center',
-              gap: 6,
-              background: '#f0fdf4',
-              border: '1px solid #bbf7d0',
-              padding: '5px 10px',
-              borderRadius: 12,
+              gap: 8,
+              background: currentUser.viewAccess === 'advanced' ? '#f0fdf4' : '#eff6ff',
+              border: `1.5px solid ${currentUser.viewAccess === 'advanced' ? '#86efac' : '#93c5fd'}`,
+              padding: '5px 12px',
+              borderRadius: 14,
               fontSize: '0.8rem',
               fontWeight: 700,
-              color: '#14532d',
+              color: currentUser.viewAccess === 'advanced' ? '#14532d' : '#1e40af',
+              boxShadow: '2px 2px 6px rgba(166, 184, 170, 0.2), inset 1px 1px 2px #ffffff',
             }}
-            title={`Authorized as ${currentUser.name}`}
+            title={currentUser.roleTitle}
           >
-            <ShieldCheck size={14} color="#16a34a" />
-            <span style={{ display: 'none', minWidth: 0, textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} className="user-label">
-              {currentUser.name}
-            </span>
+            <ShieldCheck size={15} color={currentUser.viewAccess === 'advanced' ? '#16a34a' : '#2563eb'} />
+            <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.15 }}>
+              <span style={{ fontWeight: 800 }}>{currentUser.name}</span>
+              <span style={{ fontSize: '0.68rem', color: currentUser.viewAccess === 'advanced' ? '#166534' : '#1d4ed8', fontWeight: 600 }}>
+                {currentUser.viewAccess === 'simple' ? 'Simpler View' : 'Advanced View'}
+              </span>
+            </div>
             <span
               style={{
                 width: 7,
                 height: 7,
                 borderRadius: '50%',
-                background: '#22c55e',
-                boxShadow: '0 0 6px #22c55e',
+                background: currentUser.viewAccess === 'advanced' ? '#22c55e' : '#3b82f6',
+                boxShadow: `0 0 6px ${currentUser.viewAccess === 'advanced' ? '#22c55e' : '#3b82f6'}`,
               }}
             />
           </div>
@@ -135,6 +139,7 @@ export const Navbar: React.FC = () => {
             title="Sign out from farm session"
           >
             <LogOut size={15} />
+            <span>Sign Out</span>
           </button>
         </div>
       </div>

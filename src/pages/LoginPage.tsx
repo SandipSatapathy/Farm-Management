@@ -15,8 +15,8 @@ import {
 
 export const LoginPage: React.FC = () => {
   const { login, farm } = useAuth();
-  const [username, setUsername] = useState('admin@greenfield.farm');
-  const [password, setPassword] = useState('farmpassword');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -33,12 +33,6 @@ export const LoginPage: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  };
-
-  const handleFillDemo = () => {
-    setUsername('admin@greenfield.farm');
-    setPassword('farmpassword');
-    setErrorMsg('');
   };
 
   return (
@@ -181,48 +175,11 @@ export const LoginPage: React.FC = () => {
               <span>{isLoading ? 'Authorizing...' : 'Authorize & Sign In'}</span>
             </ClayButton>
           </form>
-
-          {/* Helper Credentials Box */}
-          <div
-            style={{
-              marginTop: 24,
-              padding: '12px 14px',
-              background: '#f8faf8',
-              borderRadius: 14,
-              border: '1px solid rgba(220, 235, 224, 0.8)',
-              fontSize: '0.82rem',
-              color: 'var(--color-text-muted)',
-              textAlign: 'center',
-            }}
-          >
-            <div style={{ fontWeight: 700, color: '#143823', marginBottom: 4 }}>
-              Authorized Farm Credentials
-            </div>
-            <div>
-              Username: <code style={{ fontWeight: 700, color: '#15803d' }}>admin</code> • Password: <code style={{ fontWeight: 700, color: '#15803d' }}>farmpassword</code>
-            </div>
-            <button
-              type="button"
-              onClick={handleFillDemo}
-              style={{
-                background: 'none',
-                border: 'none',
-                color: '#15803d',
-                fontWeight: 700,
-                textDecoration: 'underline',
-                cursor: 'pointer',
-                marginTop: 6,
-                fontSize: '0.8rem',
-              }}
-            >
-              Fill Credentials Automatically
-            </button>
-          </div>
         </ClayCard>
 
         {/* Security Notice */}
-        <div style={{ textAlign: 'center', marginTop: 18, fontSize: '0.75rem', color: '#64748b' }}>
-          🔒 Protected Farm Portal • Shared Team Access with Complete Operation Rights
+        <div style={{ textAlign: 'center', marginTop: 18, fontSize: '0.78rem', color: '#64748b' }}>
+          🔒 Protected Farm Portal • Internal Role-Based Access
         </div>
       </div>
     </div>

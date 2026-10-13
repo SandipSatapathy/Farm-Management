@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { ActiveTab } from './Sidebar';
 import {
+  Sprout,
   LayoutDashboard,
   CalendarCheck,
   Users,
@@ -33,6 +34,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, onSelectTab }) 
   };
 
   const moreItems = [
+    { id: 'simple-view', label: 'Simple Farm Routine', icon: Sprout, roles: ['owner', 'admin'] },
     { id: 'payroll', label: 'Payroll & Wages', icon: CreditCard, roles: ['owner', 'admin', 'payroll', 'partner_viewer'] },
     { id: 'advances', label: 'Advances Ledger', icon: Wallet, roles: ['owner', 'admin', 'payroll', 'partner_viewer'] },
     { id: 'usage', label: 'Usage Logs', icon: Tractor, roles: ['owner', 'admin', 'supervisor', 'partner_viewer', 'tractor_operator'] },

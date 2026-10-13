@@ -1,21 +1,17 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState } from 'react';
 import { Farm, UserRole } from '../types';
 import { dataService } from '../lib/dataService';
+import { INTERNAL_USERS, InternalUserAccount, ViewAccess } from '../lib/authConfig';
 
 export interface AuthContextType {
   isAuthenticated: boolean;
   login: (usernameOrEmail: string, password: string) => Promise<boolean>;
   logout: () => void;
-  currentUser: {
-    id: string;
-    name: string;
-    email: string;
-  };
+  currentUser: InternalUserAccount;
   currentRole: UserRole;
-  setCurrentRole: (role: UserRole) => void;
+  viewAccess: ViewAccess;
   farm: Farm;
   refreshData: () => void;
-  // Unified access permissions: everyone has full operational access
   isReadOnlyPartner: boolean;
   canMutateOperations: boolean;
   canFinalizePayroll: boolean;
@@ -23,23 +19,37 @@ export interface AuthContextType {
   canCloseFinancialYear: boolean;
 }
 
-const AUTH_STORAGE_KEY = 'kisanops_auth_session';
+const AUTH_STORAGE_KEY = 'kisanops_auth_session_v2';
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  // Session initialization
+  const [currentUser, setCurrentUser] = useState<InternalUserAccount>(() => {
+    try {
+      const stored = localStorage.getItem(AUTH_STORAGE_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        const matched = INTERNAL_USERS.find(u => u.id === parsed.userId);
+        if (matched) return matched;
+      }
+    } catch {}
+    // Default to supervisor account for fallback type safety when unauthenticated
+    return INTERNAL_USERS[0];
+  });
+
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
-    return localStorage.getItem(AUTH_STORAGE_KEY) === 'true';
+    try {
+      const stored = localStorage.getItem(AUTH_STORAGE_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        return INTERNAL_USERS.some(u => u.id === parsed.userId);
+      }
+    } catch {}
+    return false;
   });
 
   const [farm, setFarm] = useState<Farm>(dataService.getFarm());
-  const [currentRole, setCurrentRole] = useState<UserRole>('owner');
-
-  const currentUser = {
-    id: 'usr-admin',
-    name: 'Farm Team',
-    email: 'admin@greenfield.farm',
-  };
 
   const refreshData = () => {
     setFarm(dataService.getFarm());
@@ -49,24 +59,41 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const cleanUser = usernameOrEmail.trim().toLowerCase();
     const cleanPass = password.trim();
 
-    // Default authorized farm credentials (supports email or simple username 'admin'/'farm')
-    const validUsers = ['admin@greenfield.farm', 'admin', 'farm', 'owner', 'kisan'];
-    const validPasswords = ['farmpassword', 'kisan2026', 'admin123', 'farm123'];
+    if (!cleanUser || !cleanPass) {
+      throw new Error('Please enter both username and password.');
+    }
 
-    if (validUsers.includes(cleanUser) && validPasswords.includes(cleanPass)) {
+    // Match against internal users by username or alias
+    const matched = INTERNAL_USERS.find(
+      (u) =>
+        (u.username.toLowerCase() === cleanUser ||
+          u.aliases.some((a) => a.toLowerCase() === cleanUser)) &&
+        u.password === cleanPass
+    );
+
+    if (matched) {
+      setCurrentUser(matched);
       setIsAuthenticated(true);
-      localStorage.setItem(AUTH_STORAGE_KEY, 'true');
-      dataService.logAudit('USER_LOGIN', 'auth', 'user-session', `Signed in as ${usernameOrEmail}`);
+      localStorage.setItem(
+        AUTH_STORAGE_KEY,
+        JSON.stringify({ userId: matched.id, loggedInAt: new Date().toISOString() })
+      );
+      dataService.logAudit(
+        'USER_LOGIN',
+        'auth',
+        matched.id,
+        `Signed in as ${matched.name} (${matched.viewAccess} view)`
+      );
       return true;
     }
 
-    throw new Error('Invalid credentials. Please enter a valid username/email and password.');
+    throw new Error('Invalid credentials. Please enter a valid username and password.');
   };
 
   const logout = () => {
     setIsAuthenticated(false);
     localStorage.removeItem(AUTH_STORAGE_KEY);
-    dataService.logAudit('USER_LOGOUT', 'auth', 'user-session', 'Signed out from farm portal');
+    dataService.logAudit('USER_LOGOUT', 'auth', currentUser.id, `Signed out from farm session`);
   };
 
   return (
@@ -76,16 +103,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         login,
         logout,
         currentUser,
-        currentRole,
-        setCurrentRole,
+        currentRole: currentUser.role,
+        viewAccess: currentUser.viewAccess,
         farm,
         refreshData,
-        // With unified access, all team members have full authorization
         isReadOnlyPartner: false,
         canMutateOperations: true,
-        canFinalizePayroll: true,
-        canManageUsers: true,
-        canCloseFinancialYear: true,
+        canFinalizePayroll: currentUser.viewAccess === 'advanced',
+        canManageUsers: currentUser.viewAccess === 'advanced',
+        canCloseFinancialYear: currentUser.viewAccess === 'advanced',
       }}
     >
       {children}
