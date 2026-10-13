@@ -64,7 +64,7 @@ export const AppContent: React.FC = () => {
           {activeTab === 'settings' && <SettingsPage />}
         </main>
       </div>
-      <BottomNav activeTab={activeTab} onSelectTab={setActiveTab} />
+      {activeTab !== 'simple-view' && <BottomNav activeTab={activeTab} onSelectTab={setActiveTab} />}
     </div>
   );
 };

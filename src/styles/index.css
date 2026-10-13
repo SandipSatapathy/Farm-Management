@@ -1,8 +1,16 @@
 @import './clay.css';
 
 /* Global resets & layout utilities */
-* {
+*, *::before, *::after {
   box-sizing: border-box;
+}
+
+html, body {
+  overflow-x: hidden;
+  max-width: 100vw;
+  width: 100%;
+  margin: 0;
+  padding: 0;
 }
 
 /* App Layout Grid */
@@ -10,6 +18,9 @@
   display: flex;
   min-height: 100vh;
   background-color: var(--color-bg);
+  overflow-x: hidden;
+  max-width: 100vw;
+  width: 100%;
 }
 
 .main-content {
@@ -17,7 +28,8 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
-  padding-bottom: 80px; /* space for mobile bottom nav */
+  padding-bottom: calc(95px + env(safe-area-inset-bottom)); /* space for fixed mobile bottom nav */
+  overflow-x: hidden;
 }
 
 @media (min-width: 1024px) {
@@ -35,9 +47,6 @@
 @media (max-width: 1023px) {
   .desktop-sidebar {
     display: none !important;
-  }
-  .mobile-bottom-nav {
-    display: flex !important;
   }
 }
 

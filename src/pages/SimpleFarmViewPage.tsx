@@ -1163,16 +1163,19 @@ export const SimpleFarmViewPage: React.FC = () => {
                           onClick={() => setCalSelectedDate(dateStr)}
                           className={`cal-day-cell ${statusClass} ${isSelected ? 'selected' : ''} ${isTodayDate ? 'today' : ''}`}
                         >
-                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', minWidth: 0 }}>
                             <span className="cal-day-num">{dayNum}</span>
                             {isTodayDate && (
-                              <span style={{ fontSize: '0.6rem', background: '#16a34a', color: '#ffffff', padding: '1px 4px', borderRadius: 4, fontWeight: 900 }}>
-                                TODAY
-                              </span>
+                              <>
+                                <span className="cal-badge-desktop" style={{ fontSize: '0.6rem', background: '#16a34a', color: '#ffffff', padding: '1px 4px', borderRadius: 4, fontWeight: 900 }}>
+                                  TODAY
+                                </span>
+                                <span className="cal-badge-mobile" style={{ width: 6, height: 6, borderRadius: '50%', background: '#16a34a', display: 'inline-block' }} />
+                              </>
                             )}
                           </div>
 
-                          <div style={{ width: '100%', textAlign: 'center', marginTop: 2 }}>
+                          <div style={{ width: '100%', textAlign: 'center', marginTop: 2, minWidth: 0, overflow: 'hidden' }}>
                             {dayRecs.length > 0 ? (
                               <div>
                                 <span className={`cal-day-status-badge ${aCount === dayRecs.length ? 'cal-status-a' : (hCount > 0 || aCount > 0 ? 'cal-status-hd' : 'cal-status-p')}`}>
@@ -1192,7 +1195,10 @@ export const SimpleFarmViewPage: React.FC = () => {
                             ) : isFuture ? (
                               <span style={{ fontSize: '0.7rem', color: '#cbd5e1' }}>—</span>
                             ) : (
-                              <span style={{ fontSize: '0.64rem', color: '#94a3b8' }}>Unmarked</span>
+                              <>
+                                <span className="cal-badge-desktop" style={{ fontSize: '0.64rem', color: '#94a3b8' }}>Unmarked</span>
+                                <span className="cal-badge-mobile" style={{ fontSize: '0.72rem', color: '#cbd5e1' }}>—</span>
+                              </>
                             )}
                           </div>
                         </div>
@@ -1237,20 +1243,24 @@ export const SimpleFarmViewPage: React.FC = () => {
                           onClick={() => setCalSelectedDate(dateStr)}
                           className={`cal-day-cell ${statusClass} ${isSelected ? 'selected' : ''} ${isTodayDate ? 'today' : ''}`}
                         >
-                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', minWidth: 0 }}>
                             <span className="cal-day-num">{dayNum}</span>
                             {isTodayDate && (
-                              <span style={{ fontSize: '0.6rem', background: '#16a34a', color: '#ffffff', padding: '1px 4px', borderRadius: 4, fontWeight: 900 }}>
-                                TODAY
-                              </span>
+                              <>
+                                <span className="cal-badge-desktop" style={{ fontSize: '0.6rem', background: '#16a34a', color: '#ffffff', padding: '1px 4px', borderRadius: 4, fontWeight: 900 }}>
+                                  TODAY
+                                </span>
+                                <span className="cal-badge-mobile" style={{ width: 6, height: 6, borderRadius: '50%', background: '#16a34a', display: 'inline-block' }} />
+                              </>
                             )}
                           </div>
 
-                          <div style={{ width: '100%', textAlign: 'center', marginTop: 2 }}>
+                          <div style={{ width: '100%', textAlign: 'center', marginTop: 2, minWidth: 0, overflow: 'hidden' }}>
                             {wRec ? (
                               <div>
                                 <span className={`cal-day-status-badge ${wRec.status === 'present' ? 'cal-status-p' : wRec.status === 'half_day' ? 'cal-status-hd' : 'cal-status-a'}`}>
-                                  {label}
+                                  <span className="cal-badge-desktop">{label}</span>
+                                  <span className="cal-badge-mobile">{wRec.status === 'present' ? 'P' : wRec.status === 'half_day' ? '0.5' : 'A'}</span>
                                 </span>
                                 <div style={{ fontSize: '0.68rem', fontWeight: 800, color: '#166534', marginTop: 2 }}>
                                   ₹{wage}
@@ -1261,7 +1271,10 @@ export const SimpleFarmViewPage: React.FC = () => {
                             ) : isFuture ? (
                               <span style={{ fontSize: '0.7rem', color: '#cbd5e1' }}>—</span>
                             ) : (
-                              <span style={{ fontSize: '0.64rem', color: '#94a3b8' }}>Unmarked</span>
+                              <>
+                                <span className="cal-badge-desktop" style={{ fontSize: '0.64rem', color: '#94a3b8' }}>Unmarked</span>
+                                <span className="cal-badge-mobile" style={{ fontSize: '0.72rem', color: '#cbd5e1' }}>—</span>
+                              </>
                             )}
                           </div>
                         </div>
@@ -2610,7 +2623,10 @@ export const SimpleFarmViewPage: React.FC = () => {
         <button
           type="button"
           className={`mobile-bottom-nav-item ${activeSection === 'attendance' ? 'active' : ''}`}
-          onClick={() => setActiveSection('attendance')}
+          onClick={() => {
+            setActiveSection('attendance');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          }}
         >
           <CalendarCheck size={18} />
           <span>Attendance</span>
@@ -2619,7 +2635,10 @@ export const SimpleFarmViewPage: React.FC = () => {
         <button
           type="button"
           className={`mobile-bottom-nav-item ${activeSection === 'advance' ? 'active' : ''}`}
-          onClick={() => setActiveSection('advance')}
+          onClick={() => {
+            setActiveSection('advance');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          }}
         >
           <Wallet size={18} />
           <span>Advance</span>
@@ -2628,7 +2647,10 @@ export const SimpleFarmViewPage: React.FC = () => {
         <button
           type="button"
           className={`mobile-bottom-nav-item ${activeSection === 'payday' ? 'active' : ''}`}
-          onClick={() => setActiveSection('payday')}
+          onClick={() => {
+            setActiveSection('payday');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          }}
         >
           <CreditCard size={18} />
           <span>Salary</span>
@@ -2637,7 +2659,10 @@ export const SimpleFarmViewPage: React.FC = () => {
         <button
           type="button"
           className={`mobile-bottom-nav-item ${activeSection === 'tractor' ? 'active' : ''}`}
-          onClick={() => setActiveSection('tractor')}
+          onClick={() => {
+            setActiveSection('tractor');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          }}
         >
           <Tractor size={18} />
           <span>Tractors</span>
@@ -2646,7 +2671,10 @@ export const SimpleFarmViewPage: React.FC = () => {
         <button
           type="button"
           className={`mobile-bottom-nav-item ${activeSection === 'labours' ? 'active' : ''}`}
-          onClick={() => setActiveSection('labours')}
+          onClick={() => {
+            setActiveSection('labours');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          }}
         >
           <Users size={18} />
           <span>Workers</span>

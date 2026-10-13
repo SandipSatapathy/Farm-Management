@@ -121,118 +121,51 @@ export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, onSelectTab }) 
         </div>
       )}
 
-      {/* Floating Bottom Nav */}
-      <nav
-        style={{
-          position: 'fixed',
-          bottom: 12,
-          left: 12,
-          right: 12,
-          background: '#ffffff',
-          borderRadius: 28,
-          boxShadow: '0 8px 24px rgba(166, 184, 170, 0.4), inset 1px 1px 2px #ffffff',
-          border: '2px solid rgba(220, 235, 224, 0.9)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-around',
-          padding: '8px 12px',
-          zIndex: 100,
-        }}
-        className="mobile-bottom-nav"
-      >
+      {/* Fixed Mobile Bottom Nav Matching Farm Operations */}
+      <nav className="mobile-bottom-nav">
         <button
-          onClick={() => handleSelect('dashboard')}
-          style={{
-            background: 'none',
-            border: 'none',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            gap: 4,
-            cursor: 'pointer',
-            color: activeTab === 'dashboard' ? '#15803d' : '#64748b',
-            fontWeight: activeTab === 'dashboard' ? 700 : 500,
-            fontSize: '0.72rem',
-          }}
-        >
-          <LayoutDashboard size={20} />
-          <span>Home</span>
-        </button>
-
-        <button
+          type="button"
           onClick={() => handleSelect('attendance')}
-          style={{
-            background: 'none',
-            border: 'none',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            gap: 4,
-            cursor: 'pointer',
-            color: activeTab === 'attendance' ? '#15803d' : '#64748b',
-            fontWeight: activeTab === 'attendance' ? 700 : 500,
-            fontSize: '0.72rem',
-          }}
+          className={`mobile-bottom-nav-item ${activeTab === 'attendance' || activeTab === 'simple-view' ? 'active' : ''}`}
         >
-          <CalendarCheck size={20} />
+          <CalendarCheck size={18} />
           <span>Attendance</span>
         </button>
 
         <button
-          onClick={() => handleSelect('labourers')}
-          style={{
-            background: 'none',
-            border: 'none',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            gap: 4,
-            cursor: 'pointer',
-            color: activeTab === 'labourers' ? '#15803d' : '#64748b',
-            fontWeight: activeTab === 'labourers' ? 700 : 500,
-            fontSize: '0.72rem',
-          }}
+          type="button"
+          onClick={() => handleSelect('advances')}
+          className={`mobile-bottom-nav-item ${activeTab === 'advances' ? 'active' : ''}`}
         >
-          <Users size={20} />
-          <span>Labourers</span>
+          <Wallet size={18} />
+          <span>Advance</span>
         </button>
 
         <button
+          type="button"
+          onClick={() => handleSelect('payroll')}
+          className={`mobile-bottom-nav-item ${activeTab === 'payroll' ? 'active' : ''}`}
+        >
+          <CreditCard size={18} />
+          <span>Salary</span>
+        </button>
+
+        <button
+          type="button"
           onClick={() => handleSelect('machinery')}
-          style={{
-            background: 'none',
-            border: 'none',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            gap: 4,
-            cursor: 'pointer',
-            color: activeTab === 'machinery' ? '#15803d' : '#64748b',
-            fontWeight: activeTab === 'machinery' ? 700 : 500,
-            fontSize: '0.72rem',
-          }}
+          className={`mobile-bottom-nav-item ${activeTab === 'machinery' || activeTab === 'usage' ? 'active' : ''}`}
         >
-          <Tractor size={20} />
-          <span>Machinery</span>
+          <Tractor size={18} />
+          <span>Tractors</span>
         </button>
 
         <button
-          onClick={() => setIsMoreOpen(true)}
-          style={{
-            background: 'none',
-            border: 'none',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            gap: 4,
-            cursor: 'pointer',
-            color: '#64748b',
-            fontWeight: 500,
-            fontSize: '0.72rem',
-          }}
+          type="button"
+          onClick={() => handleSelect('labourers')}
+          className={`mobile-bottom-nav-item ${activeTab === 'labourers' ? 'active' : ''}`}
         >
-          <Menu size={20} />
-          <span>More</span>
+          <Users size={18} />
+          <span>Workers</span>
         </button>
       </nav>
     </>
