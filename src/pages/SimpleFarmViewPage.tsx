@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useAuth } from '../context/AuthContext';
 import { dataService, round2 } from '../lib/dataService';
 import { Labourer, AttendanceStatus, TractorRentalLog, Advance } from '../types';
@@ -2748,81 +2749,84 @@ export const SimpleFarmViewPage: React.FC = () => {
     </div>
 
     {/* =========================================================================
-        NATIVE MOBILE FIXED / STICKY BOTTOM NAVIGATION BAR
+        NATIVE MOBILE FIXED / STICKY BOTTOM NAVIGATION BAR (PORTAL TO BODY)
         ========================================================================= */}
-    <nav
-      className="mobile-bottom-nav"
-      style={{
-        position: 'fixed',
-        bottom: 0,
-        left: 0,
-        right: 0,
-        width: '100%',
-        maxWidth: '100%',
-        zIndex: 999999,
-        margin: 0,
-      }}
-    >
-      <button
-        type="button"
-        className={`mobile-bottom-nav-item ${activeSection === 'attendance' ? 'active' : ''}`}
-        onClick={() => {
-          setActiveSection('attendance');
-          window.scrollTo({ top: 0, behavior: 'smooth' });
+    {typeof document !== 'undefined' && createPortal(
+      <nav
+        className="mobile-bottom-nav"
+        style={{
+          position: 'fixed',
+          bottom: 0,
+          left: 0,
+          right: 0,
+          width: '100%',
+          maxWidth: '100%',
+          zIndex: 999999,
+          margin: 0,
         }}
       >
-        <CalendarCheck size={18} />
-        <span>Attendance</span>
-      </button>
+        <button
+          type="button"
+          className={`mobile-bottom-nav-item ${activeSection === 'attendance' ? 'active' : ''}`}
+          onClick={() => {
+            setActiveSection('attendance');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          }}
+        >
+          <CalendarCheck size={18} />
+          <span>Attendance</span>
+        </button>
 
-      <button
-        type="button"
-        className={`mobile-bottom-nav-item ${activeSection === 'advance' ? 'active' : ''}`}
-        onClick={() => {
-          setActiveSection('advance');
-          window.scrollTo({ top: 0, behavior: 'smooth' });
-        }}
-      >
-        <Wallet size={18} />
-        <span>Advance</span>
-      </button>
+        <button
+          type="button"
+          className={`mobile-bottom-nav-item ${activeSection === 'advance' ? 'active' : ''}`}
+          onClick={() => {
+            setActiveSection('advance');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          }}
+        >
+          <Wallet size={18} />
+          <span>Advance</span>
+        </button>
 
-      <button
-        type="button"
-        className={`mobile-bottom-nav-item ${activeSection === 'payday' ? 'active' : ''}`}
-        onClick={() => {
-          setActiveSection('payday');
-          window.scrollTo({ top: 0, behavior: 'smooth' });
-        }}
-      >
-        <CreditCard size={18} />
-        <span>Salary</span>
-      </button>
+        <button
+          type="button"
+          className={`mobile-bottom-nav-item ${activeSection === 'payday' ? 'active' : ''}`}
+          onClick={() => {
+            setActiveSection('payday');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          }}
+        >
+          <CreditCard size={18} />
+          <span>Salary</span>
+        </button>
 
-      <button
-        type="button"
-        className={`mobile-bottom-nav-item ${activeSection === 'tractor' ? 'active' : ''}`}
-        onClick={() => {
-          setActiveSection('tractor');
-          window.scrollTo({ top: 0, behavior: 'smooth' });
-        }}
-      >
-        <Tractor size={18} />
-        <span>Tractors</span>
-      </button>
+        <button
+          type="button"
+          className={`mobile-bottom-nav-item ${activeSection === 'tractor' ? 'active' : ''}`}
+          onClick={() => {
+            setActiveSection('tractor');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          }}
+        >
+          <Tractor size={18} />
+          <span>Tractors</span>
+        </button>
 
-      <button
-        type="button"
-        className={`mobile-bottom-nav-item ${activeSection === 'labours' ? 'active' : ''}`}
-        onClick={() => {
-          setActiveSection('labours');
-          window.scrollTo({ top: 0, behavior: 'smooth' });
-        }}
-      >
-        <Users size={18} />
-        <span>Workers</span>
-      </button>
-    </nav>
+        <button
+          type="button"
+          className={`mobile-bottom-nav-item ${activeSection === 'labours' ? 'active' : ''}`}
+          onClick={() => {
+            setActiveSection('labours');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          }}
+        >
+          <Users size={18} />
+          <span>Workers</span>
+        </button>
+      </nav>,
+      document.body
+    )}
 
       {/* =========================================================================
           ADD LABOUR MODAL

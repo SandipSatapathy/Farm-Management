@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { ActiveTab } from './Sidebar';
 import {
   Sprout,
@@ -121,65 +122,68 @@ export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, onSelectTab }) 
         </div>
       )}
 
-      {/* Fixed Mobile Bottom Nav Matching Farm Operations */}
-      <nav
-        className="mobile-bottom-nav"
-        style={{
-          position: 'fixed',
-          bottom: 0,
-          left: 0,
-          right: 0,
-          width: '100%',
-          maxWidth: '100%',
-          zIndex: 999999,
-          margin: 0,
-        }}
-      >
-        <button
-          type="button"
-          onClick={() => handleSelect('attendance')}
-          className={`mobile-bottom-nav-item ${activeTab === 'attendance' || activeTab === 'simple-view' ? 'active' : ''}`}
+      {/* Fixed Mobile Bottom Nav Matching Farm Operations (PORTAL TO BODY) */}
+      {typeof document !== 'undefined' && createPortal(
+        <nav
+          className="mobile-bottom-nav"
+          style={{
+            position: 'fixed',
+            bottom: 0,
+            left: 0,
+            right: 0,
+            width: '100%',
+            maxWidth: '100%',
+            zIndex: 999999,
+            margin: 0,
+          }}
         >
-          <CalendarCheck size={18} />
-          <span>Attendance</span>
-        </button>
+          <button
+            type="button"
+            onClick={() => handleSelect('attendance')}
+            className={`mobile-bottom-nav-item ${activeTab === 'attendance' || activeTab === 'simple-view' ? 'active' : ''}`}
+          >
+            <CalendarCheck size={18} />
+            <span>Attendance</span>
+          </button>
 
-        <button
-          type="button"
-          onClick={() => handleSelect('advances')}
-          className={`mobile-bottom-nav-item ${activeTab === 'advances' ? 'active' : ''}`}
-        >
-          <Wallet size={18} />
-          <span>Advance</span>
-        </button>
+          <button
+            type="button"
+            onClick={() => handleSelect('advances')}
+            className={`mobile-bottom-nav-item ${activeTab === 'advances' ? 'active' : ''}`}
+          >
+            <Wallet size={18} />
+            <span>Advance</span>
+          </button>
 
-        <button
-          type="button"
-          onClick={() => handleSelect('payroll')}
-          className={`mobile-bottom-nav-item ${activeTab === 'payroll' ? 'active' : ''}`}
-        >
-          <CreditCard size={18} />
-          <span>Salary</span>
-        </button>
+          <button
+            type="button"
+            onClick={() => handleSelect('payroll')}
+            className={`mobile-bottom-nav-item ${activeTab === 'payroll' ? 'active' : ''}`}
+          >
+            <CreditCard size={18} />
+            <span>Salary</span>
+          </button>
 
-        <button
-          type="button"
-          onClick={() => handleSelect('machinery')}
-          className={`mobile-bottom-nav-item ${activeTab === 'machinery' || activeTab === 'usage' ? 'active' : ''}`}
-        >
-          <Tractor size={18} />
-          <span>Tractors</span>
-        </button>
+          <button
+            type="button"
+            onClick={() => handleSelect('machinery')}
+            className={`mobile-bottom-nav-item ${activeTab === 'machinery' || activeTab === 'usage' ? 'active' : ''}`}
+          >
+            <Tractor size={18} />
+            <span>Tractors</span>
+          </button>
 
-        <button
-          type="button"
-          onClick={() => handleSelect('labourers')}
-          className={`mobile-bottom-nav-item ${activeTab === 'labourers' ? 'active' : ''}`}
-        >
-          <Users size={18} />
-          <span>Workers</span>
-        </button>
-      </nav>
+          <button
+            type="button"
+            onClick={() => handleSelect('labourers')}
+            className={`mobile-bottom-nav-item ${activeTab === 'labourers' ? 'active' : ''}`}
+          >
+            <Users size={18} />
+            <span>Workers</span>
+          </button>
+        </nav>,
+        document.body
+      )}
     </>
   );
 };
