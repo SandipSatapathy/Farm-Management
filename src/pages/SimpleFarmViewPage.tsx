@@ -508,48 +508,11 @@ export const SimpleFarmViewPage: React.FC = () => {
                 <div style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 800, textTransform: 'uppercase' }}>Total Payable Units</div>
                 <div style={{ fontSize: '1.45rem', fontWeight: 800, color: '#143823' }}>{totalPayableUnits} Days</div>
               </div>
-              <button
-                type="button"
-                onClick={handleMarkAllPresent}
-                style={{
-                  background: '#f0fdf4',
-                  border: '1px solid #86efac',
-                  color: '#15803d',
-                  fontWeight: 800,
-                  fontSize: '0.75rem',
-                  padding: '5px 10px',
-                  borderRadius: 10,
-                  cursor: 'pointer',
-                }}
-              >
-                Mark All
-              </button>
             </div>
           </div>
 
           {/* Mobile Sleek Attendance Ribbon (Single 44px Row, Saves 160px height) */}
           <div className="farm-mobile-att-ribbon">
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#16a34a' }}></span>
-                <span style={{ fontWeight: 800, fontSize: '0.9rem', color: '#15803d' }}>{presentCount}</span>
-                <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 600 }}>P</span>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#eab308' }}></span>
-                <span style={{ fontWeight: 800, fontSize: '0.9rem', color: '#b45309' }}>{halfDayCount}</span>
-                <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 600 }}>HD</span>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#dc2626' }}></span>
-                <span style={{ fontWeight: 800, fontSize: '0.9rem', color: '#b91c1c' }}>{absentCount}</span>
-                <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 600 }}>A</span>
-              </div>
-              <span style={{ fontSize: '0.72rem', color: '#15803d', fontWeight: 700, background: '#f0fdf4', padding: '2px 6px', borderRadius: 6 }}>
-                {totalPayableUnits}d Units
-              </span>
-            </div>
-
             <button
               type="button"
               onClick={handleMarkAllPresent}
