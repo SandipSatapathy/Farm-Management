@@ -7,10 +7,10 @@ export const Navbar: React.FC = () => {
 
   return (
     <header
+      className="app-navbar"
       style={{
         background: '#ffffff',
         borderBottom: '2px solid rgba(220, 235, 224, 0.8)',
-        padding: '12px 20px',
         position: 'sticky',
         top: 0,
         zIndex: 50,
@@ -135,7 +135,6 @@ export const Navbar: React.FC = () => {
             title="Sign out from farm session"
           >
             <LogOut size={15} />
-            <span>Sign Out</span>
           </button>
         </div>
       </div>

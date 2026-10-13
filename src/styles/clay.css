@@ -423,19 +423,18 @@ h1, h2, h3, h4, h5, h6 {
   transform: translateY(-1px);
 }
 
-/* Big Mobile Touch Status Buttons (Thumb-friendly >= 48px) */
 .mobile-status-btn {
   flex: 1;
   min-height: 48px;
-  padding: 8px 12px;
-  border-radius: 16px;
+  padding: 8px 8px;
+  border-radius: 14px;
   font-family: 'Plus Jakarta Sans', sans-serif;
   font-weight: 800;
-  font-size: 0.85rem;
+  font-size: 0.82rem;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: 4px;
   border: 2px solid #e2ece4;
   background: #ffffff;
   color: #475569;
@@ -443,7 +442,17 @@ h1, h2, h3, h4, h5, h6 {
   outline: none;
   transition: all 0.15s cubic-bezier(0.34, 1.56, 0.64, 1);
   user-select: none;
+  white-space: nowrap;
   -webkit-tap-highlight-color: transparent;
+}
+
+@media (max-width: 640px) {
+  .mobile-status-btn {
+    min-height: 44px;
+    padding: 6px 2px;
+    font-size: 0.78rem;
+    border-radius: 12px;
+  }
 }
 
 .mobile-status-btn:active {
@@ -455,7 +464,7 @@ h1, h2, h3, h4, h5, h6 {
   color: #ffffff;
   border-color: #16a34a;
   box-shadow: 
-    4px 4px 10px rgba(22, 163, 74, 0.35),
+    3px 3px 8px rgba(22, 163, 74, 0.3),
     inset 1px 1px 2px rgba(255, 255, 255, 0.5);
   transform: translateY(-1px);
 }
@@ -465,7 +474,7 @@ h1, h2, h3, h4, h5, h6 {
   color: #ffffff;
   border-color: #d97706;
   box-shadow: 
-    4px 4px 10px rgba(217, 119, 6, 0.35),
+    3px 3px 8px rgba(217, 119, 6, 0.3),
     inset 1px 1px 2px rgba(255, 255, 255, 0.5);
   transform: translateY(-1px);
 }
@@ -475,7 +484,7 @@ h1, h2, h3, h4, h5, h6 {
   color: #ffffff;
   border-color: #dc2626;
   box-shadow: 
-    4px 4px 10px rgba(220, 38, 38, 0.35),
+    3px 3px 8px rgba(220, 38, 38, 0.3),
     inset 1px 1px 2px rgba(255, 255, 255, 0.5);
   transform: translateY(-1px);
 }
@@ -507,6 +516,16 @@ h1, h2, h3, h4, h5, h6 {
   .clay-input {
     font-size: 1rem; /* Prevents auto-zoom on iOS */
     padding: 12px 14px;
+  }
+}
+
+.app-navbar {
+  padding: 12px 20px;
+}
+
+@media (max-width: 640px) {
+  .app-navbar {
+    padding: 8px 12px !important;
   }
 }
 
@@ -551,6 +570,22 @@ h1, h2, h3, h4, h5, h6 {
     gap: 16px;
   }
 
+  .farm-desktop-header {
+    display: block;
+  }
+
+  .farm-mobile-header {
+    display: none;
+  }
+
+  .farm-desktop-att-grid {
+    display: grid;
+  }
+
+  .farm-mobile-att-ribbon {
+    display: none;
+  }
+
   .mobile-routine-bar {
     max-width: 860px;
     margin: 0 auto 28px auto;
@@ -565,6 +600,22 @@ h1, h2, h3, h4, h5, h6 {
     font-size: 0.92rem !important;
     border-radius: 16px !important;
   }
+}
+
+.farm-desktop-header {
+  display: block;
+}
+
+.farm-mobile-header {
+  display: none;
+}
+
+.farm-desktop-att-grid {
+  display: grid;
+}
+
+.farm-mobile-att-ribbon {
+  display: none;
 }
 
 @media (max-width: 1023px) and (min-width: 641px) {
@@ -599,34 +650,90 @@ h1, h2, h3, h4, h5, h6 {
 
 @media (max-width: 640px) {
   .farm-dashboard-container {
-    padding: 12px 14px 90px 14px;
-    max-width: 100%;
+    padding: 10px 12px 100px 12px !important;
+    max-width: 100% !important;
+  }
+
+  .farm-desktop-header {
+    display: none !important;
+  }
+
+  .farm-mobile-header {
+    display: block !important;
+  }
+
+  .farm-desktop-att-grid {
+    display: none !important;
+  }
+
+  .farm-mobile-att-ribbon {
+    display: flex !important;
+    align-items: center;
+    justify-content: space-between;
+    background: #ffffff;
+    border: 1.5px solid rgba(220, 235, 224, 0.9);
+    border-radius: 18px;
+    padding: 10px 14px;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.04);
+    margin-bottom: 14px;
+    gap: 8px;
   }
 
   .farm-desktop-split,
   .farm-desktop-grid-2,
   .farm-desktop-grid-3 {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 12px !important;
   }
 
   .farm-desktop-grid-4 {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 10px;
+    display: grid !important;
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 10px !important;
   }
 
+  /* Sleek, horizontally scrollable mobile routine pills */
   .mobile-routine-bar {
-    padding: 5px;
-    border-radius: 18px;
-    gap: 4px;
+    display: flex !important;
+    gap: 8px !important;
+    overflow-x: auto !important;
+    padding: 4px 2px 10px 2px !important;
+    margin-bottom: 14px !important;
+    border: none !important;
+    box-shadow: none !important;
+    background: transparent !important;
+    -webkit-overflow-scrolling: touch !important;
+    scrollbar-width: none !important;
+  }
+
+  .mobile-routine-bar::-webkit-scrollbar {
+    display: none !important;
   }
 
   .mobile-routine-tab {
-    min-width: 58px;
-    padding: 8px 3px;
-    font-size: 0.72rem;
+    flex: 0 0 auto !important;
+    display: inline-flex !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    gap: 6px !important;
+    padding: 9px 15px !important;
+    border-radius: 9999px !important;
+    font-size: 0.82rem !important;
+    font-weight: 800 !important;
+    white-space: nowrap !important;
+    background: #ffffff !important;
+    border: 1.5px solid rgba(220, 235, 224, 0.9) !important;
+    color: #475569 !important;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04) !important;
+    min-height: 40px !important;
+  }
+
+  .mobile-routine-tab.active {
+    background: linear-gradient(135deg, #15803d, #166534) !important;
+    color: #ffffff !important;
+    border-color: #15803d !important;
+    box-shadow: 0 4px 12px rgba(21, 128, 61, 0.35) !important;
   }
 }
 
@@ -780,10 +887,28 @@ h1, h2, h3, h4, h5, h6 {
   text-align: center;
 }
 
+.cal-badge-desktop {
+  display: inline;
+}
+
+.cal-badge-mobile {
+  display: none;
+}
+
 @media (max-width: 640px) {
   .cal-day-status-badge {
-    font-size: 0.6rem;
+    font-size: 0.62rem;
     padding: 1px 4px;
+  }
+
+  .cal-badge-desktop {
+    display: none !important;
+  }
+
+  .cal-badge-mobile {
+    display: inline !important;
+    font-size: 0.65rem;
+    font-weight: 900;
   }
 }
 

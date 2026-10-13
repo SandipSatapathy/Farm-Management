@@ -292,8 +292,8 @@ export const SimpleFarmViewPage: React.FC = () => {
 
   return (
     <div className="farm-dashboard-container">
-      {/* Top Header */}
-      <div style={{ marginBottom: 20 }}>
+      {/* Desktop Header (Shown on desktop >= 1024px) */}
+      <div className="farm-desktop-header" style={{ marginBottom: 20 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6, flexWrap: 'wrap', gap: 6 }}>
           <span style={{ fontSize: '0.8rem', fontWeight: 800, color: '#15803d', background: '#dcfce7', padding: '3px 12px', borderRadius: 9999 }}>
             TODAY: 13 OCT 2026
@@ -341,14 +341,53 @@ export const SimpleFarmViewPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Routine Navigation Bar (Centered & Horizontal on Desktop, Snug on Mobile) */}
-      <div className="mobile-routine-bar" style={{ marginBottom: 24 }}>
+      {/* Mobile Top Header (Sleek, compact app bar, zero wasted screen height) */}
+      <div className="farm-mobile-header" style={{ marginBottom: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ fontSize: '0.8rem', fontWeight: 800, color: '#15803d', background: '#dcfce7', padding: '4px 12px', borderRadius: 9999, border: '1px solid #86efac' }}>
+              Today • 13 Oct 2026
+            </span>
+            <span style={{ fontSize: '0.78rem', color: '#64748b', fontWeight: 700 }}>
+              {labourers.length} Crew
+            </span>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setIsAddModalOpen(true)}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 5,
+              background: 'linear-gradient(135deg, #16a34a, #15803d)',
+              color: '#ffffff',
+              border: 'none',
+              borderRadius: 12,
+              padding: '7px 12px',
+              fontFamily: 'Plus Jakarta Sans, sans-serif',
+              fontWeight: 800,
+              fontSize: '0.78rem',
+              cursor: 'pointer',
+              boxShadow: '0 3px 8px rgba(21, 128, 61, 0.25)',
+              minHeight: 36,
+              flexShrink: 0,
+            }}
+          >
+            <UserPlus size={14} />
+            <span>+ Labour</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Routine Navigation Bar (Centered & Horizontal on Desktop, Smooth Horizontal Pill Carousel on Mobile) */}
+      <div className="mobile-routine-bar" style={{ marginBottom: 18 }}>
         <button
           type="button"
           className={`mobile-routine-tab ${activeSection === 'attendance' ? 'active' : ''}`}
           onClick={() => setActiveSection('attendance')}
         >
-          <CalendarCheck size={18} />
+          <CalendarCheck size={16} />
           <span>Attendance</span>
         </button>
 
@@ -357,7 +396,7 @@ export const SimpleFarmViewPage: React.FC = () => {
           className={`mobile-routine-tab ${activeSection === 'advance' ? 'active' : ''}`}
           onClick={() => setActiveSection('advance')}
         >
-          <Wallet size={18} />
+          <Wallet size={16} />
           <span>Advance Khata</span>
         </button>
 
@@ -366,7 +405,7 @@ export const SimpleFarmViewPage: React.FC = () => {
           className={`mobile-routine-tab ${activeSection === 'payday' ? 'active' : ''}`}
           onClick={() => setActiveSection('payday')}
         >
-          <CreditCard size={18} />
+          <CreditCard size={16} />
           <span>Payday Slips</span>
         </button>
 
@@ -375,7 +414,7 @@ export const SimpleFarmViewPage: React.FC = () => {
           className={`mobile-routine-tab ${activeSection === 'tractor' ? 'active' : ''}`}
           onClick={() => setActiveSection('tractor')}
         >
-          <Tractor size={18} />
+          <Tractor size={16} />
           <span>Hired Tractors</span>
         </button>
 
@@ -384,7 +423,7 @@ export const SimpleFarmViewPage: React.FC = () => {
           className={`mobile-routine-tab ${activeSection === 'labours' ? 'active' : ''}`}
           onClick={() => setActiveSection('labours')}
         >
-          <Users size={18} />
+          <Users size={16} />
           <span>Worker Roster</span>
         </button>
       </div>
@@ -394,8 +433,8 @@ export const SimpleFarmViewPage: React.FC = () => {
           ========================================================================= */}
       {activeSection === 'attendance' && (
         <div>
-          {/* Attendance Stats Cards */}
-          <div className="farm-desktop-grid-4" style={{ marginBottom: 16 }}>
+          {/* Desktop 4-Card Attendance Ribbon (Desktop >= 1024px) */}
+          <div className="farm-desktop-att-grid farm-desktop-grid-4" style={{ marginBottom: 16 }}>
             <div
               style={{
                 background: '#ffffff',
@@ -486,6 +525,48 @@ export const SimpleFarmViewPage: React.FC = () => {
                 Mark All
               </button>
             </div>
+          </div>
+
+          {/* Mobile Sleek Attendance Ribbon (Single 44px Row, Saves 160px height) */}
+          <div className="farm-mobile-att-ribbon">
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#16a34a' }}></span>
+                <span style={{ fontWeight: 800, fontSize: '0.9rem', color: '#15803d' }}>{presentCount}</span>
+                <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 600 }}>P</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#eab308' }}></span>
+                <span style={{ fontWeight: 800, fontSize: '0.9rem', color: '#b45309' }}>{halfDayCount}</span>
+                <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 600 }}>HD</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#dc2626' }}></span>
+                <span style={{ fontWeight: 800, fontSize: '0.9rem', color: '#b91c1c' }}>{absentCount}</span>
+                <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 600 }}>A</span>
+              </div>
+              <span style={{ fontSize: '0.72rem', color: '#15803d', fontWeight: 700, background: '#f0fdf4', padding: '2px 6px', borderRadius: 6 }}>
+                {totalPayableUnits}d Units
+              </span>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleMarkAllPresent}
+              style={{
+                background: '#f0fdf4',
+                border: '1.5px solid #86efac',
+                color: '#15803d',
+                fontWeight: 800,
+                fontSize: '0.75rem',
+                padding: '4px 10px',
+                borderRadius: 9999,
+                cursor: 'pointer',
+                flexShrink: 0,
+              }}
+            >
+              ✓ All P
+            </button>
           </div>
 
           {attSaved && (
@@ -611,7 +692,7 @@ export const SimpleFarmViewPage: React.FC = () => {
 
                     <button
                       type="button"
-                      className={`mobile-status-btn ${st === 'absent' ? 'selected-absent' : ''}`}
+                      className={`mobile-status-btn ${st === 'absent' || st === 'leave' ? 'selected-absent' : ''}`}
                       onClick={() => handleToggleStatus(lab.id, 'absent')}
                     >
                       <span>✗</span>

@@ -327,7 +327,8 @@ export const LabourAttendanceCalendarModal: React.FC<LabourAttendanceCalendarMod
               className="cal-weekday-label"
               style={{ color: i === 6 ? '#b91c1c' : undefined }}
             >
-              {wd}
+              <span className="cal-badge-desktop">{wd}</span>
+              <span className="cal-badge-mobile">{wd.slice(0, 1)}</span>
             </div>
           ))}
         </div>
@@ -338,7 +339,7 @@ export const LabourAttendanceCalendarModal: React.FC<LabourAttendanceCalendarMod
           {Array.from({ length: leadingBlanks }).map((_, i) => (
             <div
               key={`blank-${i}`}
-              style={{ minHeight: 48, background: 'transparent' }}
+              style={{ minHeight: 44, background: 'transparent' }}
             />
           ))}
 
@@ -356,7 +357,8 @@ export const LabourAttendanceCalendarModal: React.FC<LabourAttendanceCalendarMod
 
             const rec = data.records[dateStr];
             let cellStatusClass = 'cal-day-cell';
-            let badgeText = '';
+            let badgeTextDesktop = '—';
+            let badgeTextMobile = '—';
             let badgeClass = 'cal-day-status-badge';
 
             if (isToday) cellStatusClass += ' today';
@@ -365,34 +367,40 @@ export const LabourAttendanceCalendarModal: React.FC<LabourAttendanceCalendarMod
             if (rec) {
               if (rec.status === 'present') {
                 cellStatusClass += ' status-present';
-                badgeText = 'P (8h)';
+                badgeTextDesktop = 'P (8h)';
+                badgeTextMobile = 'P';
                 badgeClass += ' cal-status-p';
               } else if (rec.status === 'half_day') {
                 cellStatusClass += ' status-half_day';
-                badgeText = 'HD (4h)';
+                badgeTextDesktop = 'HD (4h)';
+                badgeTextMobile = 'HD';
                 badgeClass += ' cal-status-hd';
               } else if (rec.status === 'leave' || rec.status === 'absent') {
                 if (isSunday || rec.task_name?.includes('Sunday')) {
                   cellStatusClass += ' status-sunday';
-                  badgeText = 'Off';
+                  badgeTextDesktop = 'Off';
+                  badgeTextMobile = 'Off';
                   badgeClass += ' cal-status-off';
                 } else {
                   cellStatusClass += ' status-absent';
-                  badgeText = 'A (0h)';
+                  badgeTextDesktop = 'A (0h)';
+                  badgeTextMobile = 'A';
                   badgeClass += ' cal-status-a';
                 }
               }
             } else if (isSunday) {
               cellStatusClass += ' status-sunday';
-              badgeText = 'Off';
+              badgeTextDesktop = 'Off';
+              badgeTextMobile = 'Off';
               badgeClass += ' cal-status-off';
             } else if (isFuture) {
               cellStatusClass += ' future';
-              badgeText = '—';
+              badgeTextDesktop = '—';
+              badgeTextMobile = '—';
               badgeClass += ' cal-status-none';
             } else {
-              // Unmarked past day
-              badgeText = '—';
+              badgeTextDesktop = '—';
+              badgeTextMobile = '—';
               badgeClass += ' cal-status-none';
             }
 
@@ -401,7 +409,7 @@ export const LabourAttendanceCalendarModal: React.FC<LabourAttendanceCalendarMod
                 key={dateStr}
                 className={cellStatusClass}
                 onClick={() => setSelectedDate(dateStr)}
-                title={`${dateStr}: ${badgeText || 'Unmarked'}`}
+                title={`${dateStr}: ${badgeTextDesktop}`}
               >
                 <div
                   style={{
@@ -426,10 +434,10 @@ export const LabourAttendanceCalendarModal: React.FC<LabourAttendanceCalendarMod
                       style={{
                         background: '#15803d',
                         color: '#ffffff',
-                        fontSize: '0.58rem',
-                        fontWeight: 800,
+                        fontSize: '0.55rem',
+                        fontWeight: 900,
                         padding: '1px 3px',
-                        borderRadius: 4
+                        borderRadius: 3
                       }}
                     >
                       NOW
@@ -437,7 +445,10 @@ export const LabourAttendanceCalendarModal: React.FC<LabourAttendanceCalendarMod
                   )}
                 </div>
 
-                <div className={badgeClass}>{badgeText}</div>
+                <div className={badgeClass}>
+                  <span className="cal-badge-desktop">{badgeTextDesktop}</span>
+                  <span className="cal-badge-mobile">{badgeTextMobile}</span>
+                </div>
               </div>
             );
           })}
