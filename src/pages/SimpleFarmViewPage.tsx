@@ -478,7 +478,7 @@ export const SimpleFarmViewPage: React.FC = () => {
           onClick={() => setActiveSection('advance')}
         >
           <Wallet size={16} />
-          <span>Advance Khata</span>
+          <span>Advance</span>
         </button>
 
         <button
@@ -487,7 +487,7 @@ export const SimpleFarmViewPage: React.FC = () => {
           onClick={() => setActiveSection('payday')}
         >
           <CreditCard size={16} />
-          <span>Payday Slips</span>
+          <span>Salary</span>
         </button>
 
         <button
@@ -510,7 +510,7 @@ export const SimpleFarmViewPage: React.FC = () => {
           onClick={() => setActiveSection('labours')}
         >
           <Users size={16} />
-          <span>Worker Roster</span>
+          <span>Workers</span>
           <span style={{ fontSize: '0.7rem', background: activeSection === 'labours' ? 'rgba(255,255,255,0.25)' : '#f1f5f9', color: activeSection === 'labours' ? '#ffffff' : '#475569', padding: '1px 6px', borderRadius: 9999, fontWeight: 800 }}>
             {labourers.length}
           </span>
@@ -2476,7 +2476,7 @@ export const SimpleFarmViewPage: React.FC = () => {
           onClick={() => setActiveSection('payday')}
         >
           <CreditCard size={18} />
-          <span>Payday</span>
+          <span>Salary</span>
         </button>
 
         <button
@@ -2485,7 +2485,7 @@ export const SimpleFarmViewPage: React.FC = () => {
           onClick={() => setActiveSection('tractor')}
         >
           <Tractor size={18} />
-          <span>Tractor</span>
+          <span>Hired Tractors</span>
         </button>
 
         <button
