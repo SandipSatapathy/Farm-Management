@@ -67,7 +67,6 @@ export const SimpleFarmViewPage: React.FC = () => {
   const [deleteConfirmLab, setDeleteConfirmLab] = useState<Labourer | null>(null);
   const [newLabName, setNewLabName] = useState('');
   const [newLabRate, setNewLabRate] = useState<number>(450);
-  const [newLabCategory, setNewLabCategory] = useState('Harvest & Picking');
   const [newLabPhone, setNewLabPhone] = useState('');
   const [newLabNotes, setNewLabNotes] = useState('');
   const [labSuccessMsg, setLabSuccessMsg] = useState('');
@@ -214,7 +213,6 @@ export const SimpleFarmViewPage: React.FC = () => {
       const added = dataService.saveLabourer({
         full_name: newLabName.trim(),
         base_rate: newLabRate,
-        work_category: newLabCategory,
         phone: newLabPhone.trim() || undefined,
         notes: newLabNotes.trim() || undefined,
       });
@@ -444,7 +442,6 @@ export const SimpleFarmViewPage: React.FC = () => {
                 <thead>
                   <tr>
                     <th className="ledger-th">Labourer</th>
-                    <th className="ledger-th">Work Category</th>
                     <th className="ledger-th">Daily Wage Rate</th>
                     <th className="ledger-th">Advance Khata</th>
                     <th className="ledger-th" style={{ textAlign: 'center' }}>Today Attendance Status</th>
@@ -485,9 +482,6 @@ export const SimpleFarmViewPage: React.FC = () => {
                               <div style={{ fontSize: '0.72rem', color: '#64748b' }}>{lab.labour_code}</div>
                             </div>
                           </div>
-                        </td>
-                        <td className="ledger-td" style={{ fontSize: '0.82rem', color: '#475569', fontWeight: 600 }}>
-                          {lab.work_category}
                         </td>
                         <td className="ledger-td" style={{ fontWeight: 800, color: '#143823' }}>
                           ₹{lab.base_rate} <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 500 }}>/day</span>
@@ -595,7 +589,7 @@ export const SimpleFarmViewPage: React.FC = () => {
                           </span>
                         </div>
                         <div style={{ fontSize: '0.76rem', color: '#4b6354', fontWeight: 600 }}>
-                          ₹{lab.base_rate}/day • {lab.work_category}
+                          ₹{lab.base_rate}/day
                         </div>
                       </div>
                     </div>
@@ -795,7 +789,6 @@ export const SimpleFarmViewPage: React.FC = () => {
                   <thead>
                     <tr>
                       <th className="ledger-th">Worker</th>
-                      <th className="ledger-th">Category</th>
                       <th className="ledger-th">Total Given</th>
                       <th className="ledger-th">Total Repaid</th>
                       <th className="ledger-th">Current Due</th>
@@ -832,9 +825,6 @@ export const SimpleFarmViewPage: React.FC = () => {
                                 <div style={{ fontSize: '0.72rem', color: '#64748b' }}>{l.labour_code}</div>
                               </div>
                             </div>
-                          </td>
-                          <td className="ledger-td" style={{ fontSize: '0.82rem', color: '#475569', fontWeight: 600 }}>
-                            {l.work_category}
                           </td>
                           <td className="ledger-td" style={{ color: '#475569', fontWeight: 600 }}>
                             ₹{bal.totalIssued}
@@ -901,7 +891,6 @@ export const SimpleFarmViewPage: React.FC = () => {
                         </div>
                         <div>
                           <div style={{ fontWeight: 800, fontSize: '0.94rem', color: '#143823' }}>{l.full_name}</div>
-                          <div style={{ fontSize: '0.74rem', color: '#4b6354', fontWeight: 600 }}>{l.work_category}</div>
                         </div>
                       </div>
 
@@ -1549,7 +1538,6 @@ export const SimpleFarmViewPage: React.FC = () => {
                   <tr>
                     <th className="ledger-th">Code</th>
                     <th className="ledger-th">Full Name</th>
-                    <th className="ledger-th">Work Category</th>
                     <th className="ledger-th">Daily Wage</th>
                     <th className="ledger-th">Phone</th>
                     <th className="ledger-th">Khata Due</th>
@@ -1587,9 +1575,6 @@ export const SimpleFarmViewPage: React.FC = () => {
                             </div>
                             <span style={{ fontWeight: 800, color: '#143823' }}>{lab.full_name}</span>
                           </div>
-                        </td>
-                        <td className="ledger-td" style={{ fontSize: '0.82rem', color: '#475569', fontWeight: 600 }}>
-                          {lab.work_category}
                         </td>
                         <td className="ledger-td" style={{ fontWeight: 800, color: '#15803d' }}>
                           ₹{lab.base_rate}/day
@@ -1668,7 +1653,7 @@ export const SimpleFarmViewPage: React.FC = () => {
                       <div>
                         <div style={{ fontWeight: 800, fontSize: '0.95rem', color: '#143823' }}>{lab.full_name}</div>
                         <div style={{ fontSize: '0.74rem', color: '#4b6354', fontWeight: 600 }}>
-                          {lab.labour_code} • ₹{lab.base_rate}/day • {lab.work_category}
+                          {lab.labour_code} • ₹{lab.base_rate}/day
                         </div>
                       </div>
                     </div>
@@ -1823,22 +1808,6 @@ export const SimpleFarmViewPage: React.FC = () => {
                   className="ledger-input"
                   required
                 />
-              </div>
-
-              <div style={{ marginBottom: 12 }}>
-                <label className="ledger-label">Work Category</label>
-                <select
-                  value={newLabCategory}
-                  onChange={(e) => setNewLabCategory(e.target.value)}
-                  className="ledger-input"
-                >
-                  <option value="Harvest & Picking">Harvest & Picking</option>
-                  <option value="Pruning & Weeding">Pruning & Weeding</option>
-                  <option value="Irrigation & Sprinkler">Irrigation & Sprinkler</option>
-                  <option value="Tractor Operator">Tractor Operator</option>
-                  <option value="Packing & Grading">Packing & Grading</option>
-                  <option value="General Farm Labour">General Farm Labour</option>
-                </select>
               </div>
 
               <div style={{ marginBottom: 12 }}>

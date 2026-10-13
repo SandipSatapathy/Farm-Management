@@ -37,7 +37,6 @@ export const LabourersPage: React.FC = () => {
     labour_code: '',
     full_name: '',
     phone: '',
-    work_category: 'Harvesting & Field Hand',
     wage_basis: 'daily' as WageBasis,
     base_rate: 500,
     notes: '',
@@ -58,7 +57,6 @@ export const LabourersPage: React.FC = () => {
       labour_code: `LAB-${String(labourers.length + 1).padStart(3, '0')}`,
       full_name: '',
       phone: '',
-      work_category: 'Harvesting & Field Hand',
       wage_basis: 'daily',
       base_rate: 500,
       notes: '',
@@ -73,7 +71,6 @@ export const LabourersPage: React.FC = () => {
       labour_code: lab.labour_code,
       full_name: lab.full_name,
       phone: lab.phone || '',
-      work_category: lab.work_category || 'General Field Labour',
       wage_basis: lab.wage_basis,
       base_rate: lab.base_rate,
       notes: lab.notes || '',
@@ -99,7 +96,6 @@ export const LabourersPage: React.FC = () => {
         labour_code: formData.labour_code.trim().toUpperCase(),
         full_name: formData.full_name.trim(),
         phone: formData.phone.trim(),
-        work_category: formData.work_category,
         wage_basis: formData.wage_basis,
         base_rate: Number(formData.base_rate),
         notes: formData.notes.trim(),
@@ -122,12 +118,9 @@ export const LabourersPage: React.FC = () => {
       l.full_name.toLowerCase().includes(search.toLowerCase()) ||
       l.labour_code.toLowerCase().includes(search.toLowerCase()) ||
       (l.phone && l.phone.includes(search));
-    const matchesCat = filterCategory === 'all' || l.work_category === filterCategory;
     const matchesActive = !showActiveOnly || l.is_active;
-    return matchesSearch && matchesCat && matchesActive;
+    return matchesSearch && matchesActive;
   });
-
-  const categories = Array.from(new Set(labourers.map((l) => l.work_category).filter(Boolean)));
 
   return (
     <div className="page-wrapper">
@@ -166,20 +159,7 @@ export const LabourersPage: React.FC = () => {
             <Search size={18} color="#64748b" style={{ position: 'absolute', left: 14, top: 14 }} />
           </div>
 
-          <div style={{ minWidth: 180 }}>
-            <select
-              value={filterCategory}
-              onChange={(e) => setFilterCategory(e.target.value)}
-              className="clay-input"
-            >
-              <option value="all">All Categories</option>
-              {categories.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </select>
-          </div>
+
 
           <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: '0.9rem', fontWeight: 600 }}>
             <input
@@ -215,9 +195,6 @@ export const LabourersPage: React.FC = () => {
                     {lab.labour_code}
                   </span>
                   <h3 style={{ margin: '6px 0 2px 0', fontSize: '1.15rem' }}>{lab.full_name}</h3>
-                  <div style={{ fontSize: '0.82rem', color: 'var(--color-text-muted)' }}>
-                    {lab.work_category}
-                  </div>
                 </div>
 
                 <ClayBadge
@@ -355,27 +332,15 @@ export const LabourersPage: React.FC = () => {
             </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
-            <div>
-              <label className="clay-label">Phone (Optional)</label>
-              <input
-                type="tel"
-                placeholder="10-digit number"
-                value={formData.phone}
-                onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                className="clay-input"
-              />
-            </div>
-            <div>
-              <label className="clay-label">Work Category</label>
-              <input
-                type="text"
-                placeholder="e.g. Harvester, Spraying"
-                value={formData.work_category}
-                onChange={(e) => setFormData({ ...formData, work_category: e.target.value })}
-                className="clay-input"
-              />
-            </div>
+          <div style={{ marginBottom: 14 }}>
+            <label className="clay-label">Phone (Optional)</label>
+            <input
+              type="tel"
+              placeholder="10-digit number"
+              value={formData.phone}
+              onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+              className="clay-input"
+            />
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>

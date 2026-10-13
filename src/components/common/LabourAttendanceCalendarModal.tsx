@@ -178,7 +178,7 @@ export const LabourAttendanceCalendarModal: React.FC<LabourAttendanceCalendarMod
                   flexWrap: 'wrap'
                 }}
               >
-                <span>{labourer.work_category}</span>
+                {labourer.work_category && <span>{labourer.work_category}</span>}
                 {labourer.phone && (
                   <a
                     href={`tel:${labourer.phone}`}
