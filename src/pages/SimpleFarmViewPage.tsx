@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { dataService, round2 } from '../lib/dataService';
-import { Labourer, AttendanceStatus, TractorRentalLog } from '../types';
+import { Labourer, AttendanceStatus, TractorRentalLog, Advance } from '../types';
 import { LabourAttendanceCalendarModal } from '../components/common/LabourAttendanceCalendarModal';
 import confetti from 'canvas-confetti';
 import {
@@ -29,7 +29,7 @@ import {
 type RoutineSection = 'attendance' | 'advance' | 'payday' | 'tractor' | 'labours';
 
 export const SimpleFarmViewPage: React.FC = () => {
-  const { farm } = useAuth();
+  const { farm, currentUser } = useAuth();
   const [labourers, setLabourers] = useState<Labourer[]>([]);
   const today = '2026-10-13';
 
@@ -59,7 +59,9 @@ export const SimpleFarmViewPage: React.FC = () => {
   // Advance state
   const [advLabId, setAdvLabId] = useState('');
   const [advAmount, setAdvAmount] = useState<number>(500);
+  const [advGivenBy, setAdvGivenBy] = useState<string>(currentUser?.name || 'Sandip');
   const [advSuccess, setAdvSuccess] = useState(false);
+  const [recentAdvances, setRecentAdvances] = useState<Advance[]>([]);
 
   // Settlement state
   const [settledLabId, setSettledLabId] = useState<string | null>(null);
@@ -114,6 +116,7 @@ export const SimpleFarmViewPage: React.FC = () => {
     setAttendance(map);
 
     setTractorRentals(dataService.getTractorRentals(tractorDateFilter));
+    setRecentAdvances(dataService.getAdvances());
     refreshCalMonthRecords();
   };
 
@@ -274,11 +277,14 @@ export const SimpleFarmViewPage: React.FC = () => {
     e.preventDefault();
     if (advAmount <= 0) return;
 
+    const person = advGivenBy.trim() || currentUser?.name || 'Sandip';
+
     dataService.issueAdvance({
       labourer_id: advLabId,
       amount: advAmount,
       payment_method: 'cash',
       purpose: 'Field work cash advance',
+      issued_by: person,
     });
 
     setAdvSuccess(true);
@@ -1501,6 +1507,43 @@ export const SimpleFarmViewPage: React.FC = () => {
               </div>
 
               <div style={{ marginBottom: 12 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                  <label className="ledger-label" style={{ margin: 0 }}>Given By</label>
+                  <span style={{ fontSize: '0.72rem', color: '#64748b' }}>Who gave cash advance</span>
+                </div>
+                <input
+                  type="text"
+                  value={advGivenBy}
+                  onChange={(e) => setAdvGivenBy(e.target.value)}
+                  placeholder="Enter name (e.g. Sandip, Manager, Munshi)"
+                  className="ledger-input"
+                  style={{ fontWeight: 700 }}
+                  required
+                />
+                <div style={{ display: 'flex', gap: 6, marginTop: 5, flexWrap: 'wrap' }}>
+                  {['Sandip', 'Manager', 'Munshi'].map((presetName) => (
+                    <button
+                      key={presetName}
+                      type="button"
+                      onClick={() => setAdvGivenBy(presetName)}
+                      style={{
+                        padding: '2px 8px',
+                        borderRadius: 6,
+                        border: advGivenBy === presetName ? '1.5px solid #16a34a' : '1px solid #dcebe0',
+                        background: advGivenBy === presetName ? '#dcfce7' : '#f8fafc',
+                        color: advGivenBy === presetName ? '#15803d' : '#475569',
+                        fontSize: '0.72rem',
+                        fontWeight: 700,
+                        cursor: 'pointer'
+                      }}
+                    >
+                      {presetName}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div style={{ marginBottom: 12 }}>
                 <label className="ledger-label">Cash Amount (₹)</label>
                 <input
                   type="number"
@@ -1710,6 +1753,106 @@ export const SimpleFarmViewPage: React.FC = () => {
                   </div>
                 );
               })}
+            </div>
+
+            {/* Recent Cash Advances Disbursed History */}
+            <div style={{ marginTop: 24, paddingTop: 18, borderTop: '2px solid rgba(220, 235, 224, 0.7)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                <div>
+                  <h4 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800, color: '#143823' }}>
+                    Recent Cash Advances Issued
+                  </h4>
+                  <div style={{ fontSize: '0.78rem', color: '#4b6354', fontWeight: 600 }}>
+                    History of cash advances handed to crew members with person who disbursed it
+                  </div>
+                </div>
+                <span style={{ fontSize: '0.75rem', fontWeight: 800, background: '#f0fdf4', color: '#15803d', padding: '3px 8px', borderRadius: 8, border: '1px solid #bbf7d0' }}>
+                  {recentAdvances.length} Records
+                </span>
+              </div>
+
+              {recentAdvances.length === 0 ? (
+                <div style={{ padding: '20px', textAlign: 'center', color: '#64748b', fontSize: '0.82rem' }}>
+                  No cash advances issued yet.
+                </div>
+              ) : (
+                <>
+                  <div className="ledger-desktop-only">
+                    <div className="ledger-table-wrap">
+                      <table className="ledger-table">
+                        <thead>
+                          <tr>
+                            <th className="ledger-th">Date</th>
+                            <th className="ledger-th">Worker</th>
+                            <th className="ledger-th">Amount</th>
+                            <th className="ledger-th">Given By</th>
+                            <th className="ledger-th">Purpose</th>
+                            <th className="ledger-th">Status</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {recentAdvances.slice(0, 10).map((adv) => (
+                            <tr key={adv.id} className="ledger-tr">
+                              <td className="ledger-td" style={{ fontSize: '0.82rem', color: '#475569' }}>
+                                {new Date(adv.issued_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                              </td>
+                              <td className="ledger-td" style={{ fontWeight: 800, color: '#143823' }}>
+                                {adv.labourer_name}
+                              </td>
+                              <td className="ledger-td" style={{ fontWeight: 800, color: '#b45309', fontSize: '0.95rem' }}>
+                                ₹{adv.amount}
+                              </td>
+                              <td className="ledger-td">
+                                <span style={{
+                                  background: '#f0fdf4',
+                                  color: '#15803d',
+                                  border: '1px solid #86efac',
+                                  padding: '3px 8px',
+                                  borderRadius: 8,
+                                  fontWeight: 800,
+                                  fontSize: '0.78rem',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: 4
+                                }}>
+                                  👤 {adv.issued_by || 'Owner/Manager'}
+                                </span>
+                              </td>
+                              <td className="ledger-td" style={{ fontSize: '0.8rem', color: '#64748b' }}>
+                                {adv.purpose || 'Cash advance'}
+                              </td>
+                              <td className="ledger-td">
+                                <span style={{ background: '#dcfce7', color: '#15803d', padding: '2px 7px', borderRadius: 6, fontSize: '0.72rem', fontWeight: 800 }}>
+                                  Posted
+                                </span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  <div className="ledger-mobile-only">
+                    {recentAdvances.slice(0, 10).map((adv) => (
+                      <div key={adv.id} className="ledger-mobile-row" style={{ padding: '10px 12px', marginBottom: 8 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                          <span style={{ fontWeight: 800, fontSize: '0.9rem', color: '#143823' }}>
+                            {adv.labourer_name}
+                          </span>
+                          <span style={{ fontWeight: 800, color: '#b45309', fontSize: '0.92rem' }}>
+                            ₹{adv.amount}
+                          </span>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.74rem', color: '#64748b' }}>
+                          <span>Given By: <strong style={{ color: '#15803d' }}>{adv.issued_by || 'Owner/Manager'}</strong></span>
+                          <span>{new Date(adv.issued_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>

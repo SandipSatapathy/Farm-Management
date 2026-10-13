@@ -28,6 +28,7 @@ export const AdvancesPage: React.FC = () => {
   const [purpose, setPurpose] = useState('');
   const [method, setMethod] = useState<PaymentMethod>('cash');
   const [reference, setReference] = useState('');
+  const [issuedBy, setIssuedBy] = useState('Sandip');
   const [errorMsg, setErrorMsg] = useState('');
 
   // Direct Repayment Modal
@@ -62,6 +63,7 @@ export const AdvancesPage: React.FC = () => {
         purpose,
         payment_method: method,
         payment_reference: reference,
+        issued_by: issuedBy,
       });
       setIsIssueModalOpen(false);
       loadData();
@@ -189,6 +191,7 @@ export const AdvancesPage: React.FC = () => {
               <th>Date</th>
               <th>Labourer</th>
               <th>Amount (₹)</th>
+              <th>Given By</th>
               <th>Purpose</th>
               <th>Mode & Ref</th>
               <th>Status</th>
@@ -208,6 +211,19 @@ export const AdvancesPage: React.FC = () => {
                   </td>
                   <td style={{ fontWeight: 800, color: '#b45309', fontSize: '1rem' }}>
                     ₹{adv.amount.toLocaleString('en-IN')}
+                  </td>
+                  <td>
+                    <span style={{
+                      background: '#f0fdf4',
+                      color: '#15803d',
+                      border: '1px solid #86efac',
+                      padding: '3px 8px',
+                      borderRadius: 8,
+                      fontWeight: 700,
+                      fontSize: '0.8rem'
+                    }}>
+                      👤 {adv.issued_by || 'Owner/Manager'}
+                    </span>
                   </td>
                   <td>{adv.purpose || 'Personal advance'}</td>
                   <td>
@@ -267,6 +283,18 @@ export const AdvancesPage: React.FC = () => {
                 </option>
               ))}
             </select>
+          </div>
+
+          <div style={{ marginBottom: 14 }}>
+            <label className="clay-label">Given By (Who gave advance)</label>
+            <input
+              type="text"
+              placeholder="e.g. Sandip, Manager"
+              value={issuedBy}
+              onChange={(e) => setIssuedBy(e.target.value)}
+              className="clay-input"
+              required
+            />
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>

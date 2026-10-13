@@ -430,7 +430,7 @@ export const dataService = {
     const outstanding = round2(Math.max(0, totalIssued - totalRecovered));
     return { totalIssued, totalRecovered, outstanding };
   },
-  issueAdvance: (data: { labourer_id: string; amount: number; purpose?: string; payment_method: PaymentMethod; payment_reference?: string; notes?: string }): Advance => {
+  issueAdvance: (data: { labourer_id: string; amount: number; purpose?: string; payment_method: PaymentMethod; payment_reference?: string; notes?: string; issued_by?: string }): Advance => {
     const store = getStore();
     const lab = store.labourers.find(l => l.id === data.labourer_id);
     if (!lab) throw new Error('Labourer not found');
@@ -448,14 +448,14 @@ export const dataService = {
       payment_method: data.payment_method,
       payment_reference: data.payment_reference || '',
       status: 'posted',
-      issued_by: 'Owner/Manager',
+      issued_by: data.issued_by?.trim() || 'Owner/Manager',
       notes: data.notes || '',
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     };
 
     store.advances.push(newAdvance);
-    dataService.logAudit('ISSUE_ADVANCE', 'advances', newAdvance.id, `Issued advance ₹${newAdvance.amount} to ${lab.full_name}`);
+    dataService.logAudit('ISSUE_ADVANCE', 'advances', newAdvance.id, `Issued advance ₹${newAdvance.amount} to ${lab.full_name} (Given by: ${newAdvance.issued_by})`);
     saveStore(store);
     return newAdvance;
   },
