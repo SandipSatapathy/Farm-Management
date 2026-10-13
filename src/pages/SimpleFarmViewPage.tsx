@@ -476,55 +476,6 @@ export const SimpleFarmViewPage: React.FC = () => {
 
   return (
     <div className="ledger-container">
-      {/* Top Application Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18, flexWrap: 'wrap', gap: 12 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div style={{
-            width: 48,
-            height: 48,
-            borderRadius: 16,
-            background: 'linear-gradient(135deg, #16a34a, #15803d)',
-            color: '#ffffff',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            boxShadow: '4px 4px 12px rgba(21, 128, 61, 0.35), inset 1px 1px 2px rgba(255, 255, 255, 0.5)',
-            border: '2px solid rgba(255, 255, 255, 0.7)',
-            flexShrink: 0
-          }}>
-            <CalendarCheck size={24} />
-          </div>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-              <h1 style={{ margin: 0, fontSize: '1.45rem', fontWeight: 800, color: '#143823', letterSpacing: '-0.02em', fontFamily: 'Outfit, Plus Jakarta Sans, sans-serif' }}>
-                Farm Operations & Daily Khata
-              </h1>
-              <span style={{ fontSize: '0.72rem', fontWeight: 800, background: '#dcfce7', color: '#15803d', padding: '3px 8px', borderRadius: 8, border: '1px solid #86efac' }}>
-                {farm.name}
-              </span>
-            </div>
-            <div style={{ fontSize: '0.82rem', color: '#4b6354', fontWeight: 600 }}>
-              Daily attendance, cash advances, salary settlements & hired tractor accounts
-            </div>
-          </div>
-        </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: '0.78rem', fontWeight: 800, color: '#15803d', background: '#dcfce7', border: '1.5px solid #86efac', padding: '6px 12px', borderRadius: 12, boxShadow: '2px 2px 6px rgba(22, 163, 74, 0.15)' }}>
-            Today • 13 Oct 2026
-          </span>
-          <button
-            type="button"
-            onClick={() => setIsAddModalOpen(true)}
-            className="ledger-action-btn ledger-action-btn-primary"
-            style={{ padding: '8px 14px', fontSize: '0.82rem' }}
-          >
-            <UserPlus size={15} />
-            <span>+ Add Labour</span>
-          </button>
-        </div>
-      </div>
-
       {/* Desktop Enterprise Tab Strip */}
       <div className="desktop-ledger-tabs">
         <button
