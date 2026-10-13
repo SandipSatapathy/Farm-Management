@@ -2,19 +2,14 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { dataService, round2 } from '../lib/dataService';
 import { Labourer, AttendanceStatus, TractorRentalLog } from '../types';
-import { ClayCard } from '../components/common/ClayCard';
-import { ClayButton } from '../components/common/ClayButton';
 import { LabourAttendanceCalendarModal } from '../components/common/LabourAttendanceCalendarModal';
 import confetti from 'canvas-confetti';
 import {
   CalendarCheck,
   Wallet,
   CheckCircle2,
-  DollarSign,
   Tractor,
-  ArrowRight,
   Plus,
-  Minus,
   Users,
   X,
   CreditCard,
@@ -24,7 +19,8 @@ import {
   AlertTriangle,
   Clock,
   Filter,
-  Calendar
+  Calendar,
+  IndianRupee
 } from 'lucide-react';
 
 type RoutineSection = 'attendance' | 'advance' | 'payday' | 'tractor' | 'labours';
@@ -34,7 +30,7 @@ export const SimpleFarmViewPage: React.FC = () => {
   const [labourers, setLabourers] = useState<Labourer[]>([]);
   const today = '2026-10-13';
 
-  // Routine tab switcher
+  // Active section state
   const [activeSection, setActiveSection] = useState<RoutineSection>('attendance');
 
   // Selected labourer for monthly calendar modal view
@@ -148,125 +144,88 @@ export const SimpleFarmViewPage: React.FC = () => {
     e.preventDefault();
     if (advAmount <= 0) return;
 
-    try {
-      dataService.issueAdvance({
-        labourer_id: advLabId,
-        amount: advAmount,
-        purpose: 'Cash Advance',
-        payment_method: 'cash',
-      });
-      setAdvSuccess(true);
-      loadData();
-      confetti({
-        particleCount: 40,
-        spread: 50,
-        origin: { y: 0.7 }
-      });
-      setTimeout(() => setAdvSuccess(false), 2500);
-    } catch (err: any) {
-      alert(err.message);
-    }
+    dataService.issueAdvance({
+      labourer_id: advLabId,
+      amount: advAmount,
+      payment_method: 'cash',
+      purpose: 'Field work cash advance',
+    });
+
+    setAdvSuccess(true);
+    setAdvAmount(500);
+    setTimeout(() => setAdvSuccess(false), 3000);
+    loadData();
   };
 
   // Salary Settlement Handlers
-  const handleSettleSalary = (lab: Labourer, netPayable: number) => {
-    confetti({
-      particleCount: 75,
-      spread: 70,
-      origin: { y: 0.6 }
-    });
+  const handleSettleSalary = (lab: Labourer, netPay: number) => {
     setSettledLabId(lab.id);
+    confetti({
+      particleCount: 40,
+      spread: 50,
+      origin: { y: 0.8 }
+    });
     setTimeout(() => setSettledLabId(null), 3000);
   };
 
-  // Hired Tractor Rental Handlers
+  // Tractor Handlers
   const handleSaveTractorRental = (e: React.FormEvent) => {
     e.preventDefault();
-    if (rentalHours <= 0 || rentalRate <= 0) return;
+    const gross = round2(rentalHours * rentalRate);
+    const rest = round2(Math.max(0, gross - rentalAdvance));
 
-    try {
-      const saved = dataService.saveTractorRental({
-        tractor_name: rentalTractorName,
-        vendor_name: rentalVendorName,
-        work_date: rentalDate,
-        hours_worked: rentalHours,
-        hourly_rate: rentalRate,
-        advance_amount: rentalAdvance,
-        task_name: rentalTask,
-        notes: rentalNotes,
-      });
+    const newLog = dataService.saveTractorRental({
+      work_date: rentalDate,
+      vendor_name: rentalVendorName,
+      tractor_name: rentalTractorName,
+      hours_worked: rentalHours,
+      hourly_rate: rentalRate,
+      advance_amount: rentalAdvance,
+      task_name: rentalTask,
+      notes: rentalNotes,
+    });
 
-      confetti({
-        particleCount: 60,
-        spread: 60,
-        origin: { y: 0.7 }
-      });
+    setTractorRentals(dataService.getTractorRentals(tractorDateFilter));
+    setTractorSuccessMsg(`Hired tractor session logged: ${newLog.tractor_name} (Rest Due: ₹${rest})`);
+    setIsNewRentalOpen(false);
+    setTimeout(() => setTractorSuccessMsg(''), 3500);
+  };
 
-      setIsNewRentalOpen(false);
-      setTractorSuccessMsg(`Hired tractor logged! Total: ₹${saved.gross_amount}, Rest Due: ₹${saved.rest_amount}`);
+  const handleSettleRental = (rentalId: string) => {
+    dataService.settleTractorRental(rentalId);
+    setTractorRentals(dataService.getTractorRentals(tractorDateFilter));
+    setTractorSuccessMsg('Tractor rental balance settled in full.');
+    setTimeout(() => setTractorSuccessMsg(''), 3000);
+  };
+
+  const handleDeleteRental = (rentalId: string) => {
+    if (confirm('Delete this hired tractor rental log?')) {
+      dataService.deleteTractorRental(rentalId);
       setTractorRentals(dataService.getTractorRentals(tractorDateFilter));
-      setTimeout(() => setTractorSuccessMsg(''), 3500);
-    } catch (err: any) {
-      alert(err.message || 'Error saving tractor rental');
     }
   };
 
-  const handleSettleRental = (id: string) => {
-    try {
-      dataService.settleTractorRental(id);
-      confetti({
-        particleCount: 50,
-        spread: 50,
-        origin: { y: 0.6 }
-      });
-      setTractorSuccessMsg('Hired tractor balance marked as settled / paid in full!');
-      setTractorRentals(dataService.getTractorRentals(tractorDateFilter));
-      setTimeout(() => setTractorSuccessMsg(''), 3000);
-    } catch (err: any) {
-      alert(err.message || 'Error settling rental');
-    }
-  };
-
-  const handleDeleteRental = (id: string) => {
-    if (window.confirm('Delete this hired tractor rental record?')) {
-      dataService.deleteTractorRental(id);
-      setTractorSuccessMsg('Tractor rental entry removed.');
-      setTractorRentals(dataService.getTractorRentals(tractorDateFilter));
-      setTimeout(() => setTractorSuccessMsg(''), 3000);
-    }
-  };
-
-  // Labourer Management Handlers
+  // Labour Management Handlers
   const handleAddLabour = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newLabName.trim()) return;
 
     try {
-      const created = dataService.saveLabourer({
+      const added = dataService.saveLabourer({
         full_name: newLabName.trim(),
         base_rate: newLabRate,
-        wage_basis: 'daily',
-        work_category: newLabCategory.trim() || 'General Farm Labour',
-        phone: newLabPhone.trim(),
-        notes: newLabNotes.trim(),
+        work_category: newLabCategory,
+        phone: newLabPhone.trim() || undefined,
+        notes: newLabNotes.trim() || undefined,
       });
 
-      confetti({
-        particleCount: 60,
-        spread: 60,
-        origin: { y: 0.7 }
-      });
-
+      setIsAddModalOpen(false);
       setNewLabName('');
-      setNewLabRate(450);
-      setNewLabCategory('Harvest & Picking');
       setNewLabPhone('');
       setNewLabNotes('');
-      setIsAddModalOpen(false);
-
       loadData();
-      setLabSuccessMsg(`Labourer "${created.full_name}" registered successfully!`);
-      setTimeout(() => setLabSuccessMsg(''), 3000);
+      setLabSuccessMsg(`Labourer ${added.full_name} (${added.labour_code}) registered successfully.`);
+      setTimeout(() => setLabSuccessMsg(''), 3500);
     } catch (err: any) {
       alert(err.message || 'Error registering labourer');
     }
@@ -284,116 +243,63 @@ export const SimpleFarmViewPage: React.FC = () => {
     }
   };
 
-  // Counts
+  // Attendance Counts
   const presentCount = Object.values(attendance).filter((s) => s === 'present').length;
   const halfDayCount = Object.values(attendance).filter((s) => s === 'half_day').length;
   const absentCount = Object.values(attendance).filter((s) => s === 'absent' || s === 'leave').length;
   const totalPayableUnits = round2(presentCount + halfDayCount * 0.5);
 
   return (
-    <div className="farm-dashboard-container">
-      {/* Desktop Header (Shown on desktop >= 1024px) */}
-      <div className="farm-desktop-header" style={{ marginBottom: 20 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6, flexWrap: 'wrap', gap: 6 }}>
-          <span style={{ fontSize: '0.8rem', fontWeight: 800, color: '#15803d', background: '#dcfce7', padding: '3px 12px', borderRadius: 9999 }}>
-            TODAY: 13 OCT 2026
-          </span>
-          <span style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: 600 }}>
-            {farm.name} • FY 2026-27
-          </span>
-        </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 14, flexWrap: 'wrap' }}>
-          <div>
-            <h1 style={{ fontSize: '2rem', margin: 0, color: '#143823', letterSpacing: '-0.02em', fontWeight: 800 }}>
-              Farm Operations & Daily Khata
+    <div className="ledger-container">
+      {/* Top Application Header */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14, flexWrap: 'wrap', gap: 10 }}>
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
+            <h1 style={{ margin: 0, fontSize: '1.4rem', fontWeight: 800, color: '#0f172a', letterSpacing: '-0.02em' }}>
+              Farm Ledger & Operations
             </h1>
-            <p style={{ margin: '4px 0 0 0', color: 'var(--color-text-muted)', fontSize: '0.92rem' }}>
-              Labour attendance, cash advance ledgers, salary slips & hired tractor accounts
-            </p>
+            <span style={{ fontSize: '0.72rem', fontWeight: 800, background: '#f1f5f9', color: '#475569', padding: '2px 8px', borderRadius: 6, border: '1px solid #cbd5e1' }}>
+              {farm.name}
+            </span>
           </div>
-
-          <button
-            type="button"
-            onClick={() => setIsAddModalOpen(true)}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              background: 'linear-gradient(135deg, #16a34a, #15803d)',
-              color: '#ffffff',
-              border: 'none',
-              borderRadius: 14,
-              padding: '10px 18px',
-              fontFamily: 'Plus Jakarta Sans, sans-serif',
-              fontWeight: 800,
-              fontSize: '0.88rem',
-              cursor: 'pointer',
-              boxShadow: '0 4px 12px rgba(21, 128, 61, 0.3)',
-              minHeight: 44,
-              flexShrink: 0,
-            }}
-            title="Register a new labourer to the farm crew"
-          >
-            <UserPlus size={18} />
-            <span>+ Add New Labour</span>
-          </button>
+          <div style={{ fontSize: '0.8rem', color: '#64748b' }}>
+            Daily attendance, cash advances, salary settlements & hired tractor accounts
+          </div>
         </div>
-      </div>
 
-      {/* Mobile Top Header (Sleek, compact app bar, zero wasted screen height) */}
-      <div className="farm-mobile-header" style={{ marginBottom: 12 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ fontSize: '0.8rem', fontWeight: 800, color: '#15803d', background: '#dcfce7', padding: '4px 12px', borderRadius: 9999, border: '1px solid #86efac' }}>
-              Today • 13 Oct 2026
-            </span>
-            <span style={{ fontSize: '0.78rem', color: '#64748b', fontWeight: 700 }}>
-              {labourers.length} Crew
-            </span>
-          </div>
-
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: '0.76rem', fontWeight: 700, color: '#16a34a', background: '#dcfce7', border: '1px solid #86efac', padding: '5px 10px', borderRadius: 6 }}>
+            13 Oct 2026
+          </span>
           <button
             type="button"
             onClick={() => setIsAddModalOpen(true)}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 5,
-              background: 'linear-gradient(135deg, #16a34a, #15803d)',
-              color: '#ffffff',
-              border: 'none',
-              borderRadius: 12,
-              padding: '7px 12px',
-              fontFamily: 'Plus Jakarta Sans, sans-serif',
-              fontWeight: 800,
-              fontSize: '0.78rem',
-              cursor: 'pointer',
-              boxShadow: '0 3px 8px rgba(21, 128, 61, 0.25)',
-              minHeight: 36,
-              flexShrink: 0,
-            }}
+            className="ledger-action-btn ledger-action-btn-primary"
+            style={{ padding: '6px 12px', fontSize: '0.8rem' }}
           >
             <UserPlus size={14} />
-            <span>+ Labour</span>
+            <span>Add Labour</span>
           </button>
         </div>
       </div>
 
-      {/* Routine Navigation Bar (Centered & Horizontal on Desktop, Smooth Horizontal Pill Carousel on Mobile) */}
-      <div className="mobile-routine-bar" style={{ marginBottom: 18 }}>
+      {/* Desktop Enterprise Tab Strip */}
+      <div className="desktop-ledger-tabs">
         <button
           type="button"
-          className={`mobile-routine-tab ${activeSection === 'attendance' ? 'active' : ''}`}
+          className={`desktop-ledger-tab-btn ${activeSection === 'attendance' ? 'active' : ''}`}
           onClick={() => setActiveSection('attendance')}
         >
           <CalendarCheck size={16} />
           <span>Attendance</span>
+          <span style={{ fontSize: '0.7rem', background: '#dcfce7', color: '#15803d', padding: '1px 6px', borderRadius: 9999, fontWeight: 800 }}>
+            {presentCount}/{labourers.length}
+          </span>
         </button>
 
         <button
           type="button"
-          className={`mobile-routine-tab ${activeSection === 'advance' ? 'active' : ''}`}
+          className={`desktop-ledger-tab-btn ${activeSection === 'advance' ? 'active' : ''}`}
           onClick={() => setActiveSection('advance')}
         >
           <Wallet size={16} />
@@ -402,7 +308,7 @@ export const SimpleFarmViewPage: React.FC = () => {
 
         <button
           type="button"
-          className={`mobile-routine-tab ${activeSection === 'payday' ? 'active' : ''}`}
+          className={`desktop-ledger-tab-btn ${activeSection === 'payday' ? 'active' : ''}`}
           onClick={() => setActiveSection('payday')}
         >
           <CreditCard size={16} />
@@ -411,276 +317,299 @@ export const SimpleFarmViewPage: React.FC = () => {
 
         <button
           type="button"
-          className={`mobile-routine-tab ${activeSection === 'tractor' ? 'active' : ''}`}
+          className={`desktop-ledger-tab-btn ${activeSection === 'tractor' ? 'active' : ''}`}
           onClick={() => setActiveSection('tractor')}
         >
           <Tractor size={16} />
           <span>Hired Tractors</span>
+          {tractorRentals.filter(r => r.rest_amount > 0).length > 0 && (
+            <span style={{ fontSize: '0.7rem', background: '#fef3c7', color: '#92400e', padding: '1px 6px', borderRadius: 9999, fontWeight: 800 }}>
+              {tractorRentals.filter(r => r.rest_amount > 0).length} Due
+            </span>
+          )}
         </button>
 
         <button
           type="button"
-          className={`mobile-routine-tab ${activeSection === 'labours' ? 'active' : ''}`}
+          className={`desktop-ledger-tab-btn ${activeSection === 'labours' ? 'active' : ''}`}
           onClick={() => setActiveSection('labours')}
         >
           <Users size={16} />
           <span>Worker Roster</span>
+          <span style={{ fontSize: '0.7rem', background: '#f1f5f9', color: '#475569', padding: '1px 6px', borderRadius: 9999, fontWeight: 800 }}>
+            {labourers.length}
+          </span>
         </button>
       </div>
 
+      {/* Global Success Banner */}
+      {attSaved && (
+        <div style={{ background: '#dcfce7', border: '1px solid #86efac', color: '#14532d', padding: '10px 14px', borderRadius: 8, marginBottom: 14, fontSize: '0.84rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <CheckCircle2 size={16} color="#16a34a" />
+          <span>Attendance saved successfully for today (13 Oct 2026).</span>
+        </div>
+      )}
+
       {/* =========================================================================
-          SECTION 1: ATTENDANCE
+          SECTION 1: ATTENDANCE LEDGER
           ========================================================================= */}
       {activeSection === 'attendance' && (
         <div>
-          {/* Desktop 4-Card Attendance Ribbon (Desktop >= 1024px) */}
-          <div className="farm-desktop-att-grid farm-desktop-grid-4" style={{ marginBottom: 16 }}>
-            <div
-              style={{
-                background: '#ffffff',
-                borderRadius: 18,
-                padding: '12px 16px',
-                boxShadow: 'var(--clay-card-shadow)',
-                border: '2px solid #bbf7d0',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-              }}
-            >
-              <div>
-                <div style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 800, textTransform: 'uppercase' }}>Present Crew</div>
-                <div style={{ fontSize: '1.45rem', fontWeight: 800, color: '#15803d' }}>{presentCount}</div>
-              </div>
-              <span style={{ fontSize: '1.2rem' }}>🟢</span>
+          {/* KPI Metrics Strip */}
+          <div className="ledger-kpi-grid">
+            <div className="ledger-kpi-box" style={{ borderLeft: '3px solid #16a34a' }}>
+              <div className="ledger-kpi-title">Present Crew</div>
+              <div className="ledger-kpi-value" style={{ color: '#16a34a' }}>{presentCount}</div>
+              <div className="ledger-kpi-sub">Full shift (8 hrs)</div>
             </div>
 
-            <div
-              style={{
-                background: '#ffffff',
-                borderRadius: 18,
-                padding: '12px 16px',
-                boxShadow: 'var(--clay-card-shadow)',
-                border: '2px solid #fde68a',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-              }}
-            >
-              <div>
-                <div style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 800, textTransform: 'uppercase' }}>Half-Day</div>
-                <div style={{ fontSize: '1.45rem', fontWeight: 800, color: '#b45309' }}>{halfDayCount}</div>
-              </div>
-              <span style={{ fontSize: '1.2rem' }}>🟡</span>
+            <div className="ledger-kpi-box" style={{ borderLeft: '3px solid #d97706' }}>
+              <div className="ledger-kpi-title">Half-Day Crew</div>
+              <div className="ledger-kpi-value" style={{ color: '#d97706' }}>{halfDayCount}</div>
+              <div className="ledger-kpi-sub">Half shift (4 hrs)</div>
             </div>
 
-            <div
-              style={{
-                background: '#ffffff',
-                borderRadius: 18,
-                padding: '12px 16px',
-                boxShadow: 'var(--clay-card-shadow)',
-                border: '2px solid #fecaca',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-              }}
-            >
-              <div>
-                <div style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 800, textTransform: 'uppercase' }}>Absent / Leave</div>
-                <div style={{ fontSize: '1.45rem', fontWeight: 800, color: '#b91c1c' }}>{absentCount}</div>
-              </div>
-              <span style={{ fontSize: '1.2rem' }}>🔴</span>
+            <div className="ledger-kpi-box" style={{ borderLeft: '3px solid #dc2626' }}>
+              <div className="ledger-kpi-title">Absent Crew</div>
+              <div className="ledger-kpi-value" style={{ color: '#dc2626' }}>{absentCount}</div>
+              <div className="ledger-kpi-sub">Unpaid leave</div>
             </div>
 
-            <div
-              style={{
-                background: '#ffffff',
-                borderRadius: 18,
-                padding: '12px 16px',
-                boxShadow: 'var(--clay-card-shadow)',
-                border: '2px solid rgba(220, 235, 224, 0.9)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-              }}
-            >
-              <div>
-                <div style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 800, textTransform: 'uppercase' }}>Total Payable Units</div>
-                <div style={{ fontSize: '1.45rem', fontWeight: 800, color: '#143823' }}>{totalPayableUnits} Days</div>
-              </div>
+            <div className="ledger-kpi-box" style={{ borderLeft: '3px solid #0284c7' }}>
+              <div className="ledger-kpi-title">Effective Paid Days</div>
+              <div className="ledger-kpi-value" style={{ color: '#0284c7' }}>{totalPayableUnits}</div>
+              <div className="ledger-kpi-sub">Total crew days payable</div>
             </div>
           </div>
 
-          {/* Mobile Sleek Attendance Ribbon (Single 44px Row, Saves 160px height) */}
-          <div className="farm-mobile-att-ribbon">
-            <button
-              type="button"
-              onClick={handleMarkAllPresent}
-              style={{
-                background: '#f0fdf4',
-                border: '1.5px solid #86efac',
-                color: '#15803d',
-                fontWeight: 800,
-                fontSize: '0.75rem',
-                padding: '4px 10px',
-                borderRadius: 9999,
-                cursor: 'pointer',
-                flexShrink: 0,
-              }}
-            >
-              ✓ All P
-            </button>
+          {/* Action Toolbar */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: '8px 12px', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
+            <div style={{ fontSize: '0.82rem', fontWeight: 700, color: '#334155' }}>
+              Daily Attendance Sheet • {labourers.length} Registered Labourers
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <button
+                type="button"
+                onClick={handleMarkAllPresent}
+                className="ledger-action-btn ledger-action-btn-secondary"
+              >
+                Mark All Present
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveAttendance}
+                className="ledger-action-btn ledger-action-btn-primary"
+              >
+                <CheckCircle2 size={14} />
+                <span>Save Attendance</span>
+              </button>
+            </div>
           </div>
 
-          {attSaved && (
-            <div style={{ background: '#dcfce7', color: '#14532d', padding: '12px 16px', borderRadius: 16, marginBottom: 16, fontWeight: 700, fontSize: '0.88rem', display: 'flex', alignItems: 'center', gap: 8, border: '2px solid #86efac' }}>
-              <CheckCircle2 size={18} color="#15803d" />
-              <span>Today's attendance saved & logged to permanent farm records!</span>
-            </div>
-          )}
+          {/* Desktop Table View */}
+          <div className="ledger-desktop-only">
+            <div className="ledger-table-wrap">
+              <table className="ledger-table">
+                <thead>
+                  <tr>
+                    <th className="ledger-th">Labourer</th>
+                    <th className="ledger-th">Work Category</th>
+                    <th className="ledger-th">Daily Wage Rate</th>
+                    <th className="ledger-th">Advance Khata</th>
+                    <th className="ledger-th" style={{ textAlign: 'center' }}>Today Attendance Status</th>
+                    <th className="ledger-th">Today Earned</th>
+                    <th className="ledger-th" style={{ textAlign: 'right' }}>Monthly Audit</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {labourers.map((lab) => {
+                    const st = attendance[lab.id] || 'present';
+                    const units = st === 'present' ? 1.0 : (st === 'half_day' ? 0.5 : 0.0);
+                    const earned = round2(units * lab.base_rate);
+                    const bal = dataService.getLabourerAdvanceBalance(lab.id);
 
-          {/* Worker Cards Grid (2-Column on Desktop, 1-Column on Mobile) */}
-          <div className="farm-desktop-grid-2" style={{ gap: 14 }}>
+                    return (
+                      <tr key={lab.id} className="ledger-tr">
+                        <td className="ledger-td">
+                          <div style={{ fontWeight: 800, color: '#0f172a' }}>{lab.full_name}</div>
+                          <div style={{ fontSize: '0.72rem', color: '#64748b' }}>{lab.labour_code}</div>
+                        </td>
+                        <td className="ledger-td" style={{ fontSize: '0.82rem', color: '#475569' }}>
+                          {lab.work_category}
+                        </td>
+                        <td className="ledger-td" style={{ fontWeight: 700, color: '#0f172a' }}>
+                          ₹{lab.base_rate} <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 500 }}>/day</span>
+                        </td>
+                        <td className="ledger-td">
+                          {bal.outstanding > 0 ? (
+                            <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#b45309', background: '#fef3c7', padding: '2px 8px', borderRadius: 4, border: '1px solid #fde68a' }}>
+                              Due: ₹{bal.outstanding}
+                            </span>
+                          ) : (
+                            <span style={{ fontSize: '0.78rem', fontWeight: 600, color: '#16a34a' }}>
+                              Clear
+                            </span>
+                          )}
+                        </td>
+                        <td className="ledger-td" style={{ textAlign: 'center' }}>
+                          <div className="ledger-seg-control">
+                            <button
+                              type="button"
+                              className={`ledger-seg-btn ${st === 'present' ? 'active-present' : ''}`}
+                              onClick={() => handleToggleStatus(lab.id, 'present')}
+                            >
+                              Present
+                            </button>
+                            <button
+                              type="button"
+                              className={`ledger-seg-btn ${st === 'half_day' ? 'active-half' : ''}`}
+                              onClick={() => handleToggleStatus(lab.id, 'half_day')}
+                            >
+                              Half-Day
+                            </button>
+                            <button
+                              type="button"
+                              className={`ledger-seg-btn ${st === 'absent' || st === 'leave' ? 'active-absent' : ''}`}
+                              onClick={() => handleToggleStatus(lab.id, 'absent')}
+                            >
+                              Absent
+                            </button>
+                          </div>
+                        </td>
+                        <td className="ledger-td">
+                          <span style={{ fontWeight: 800, color: earned > 0 ? '#16a34a' : '#64748b' }}>
+                            ₹{earned}
+                          </span>
+                          <span style={{ fontSize: '0.72rem', color: '#64748b', marginLeft: 4 }}>
+                            ({units} day)
+                          </span>
+                        </td>
+                        <td className="ledger-td" style={{ textAlign: 'right' }}>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedLabourerForCalendar(lab)}
+                            className="ledger-action-btn ledger-action-btn-secondary"
+                            style={{ padding: '4px 8px', fontSize: '0.75rem' }}
+                          >
+                            <Calendar size={13} />
+                            <span>View Calendar</span>
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Mobile High-Density Rows View */}
+          <div className="ledger-mobile-only">
             {labourers.map((lab) => {
               const st = attendance[lab.id] || 'present';
+              const units = st === 'present' ? 1.0 : (st === 'half_day' ? 0.5 : 0.0);
+              const earned = round2(units * lab.base_rate);
+              const bal = dataService.getLabourerAdvanceBalance(lab.id);
 
               return (
-                <div
-                  key={lab.id}
-                  style={{
-                    background: '#ffffff',
-                    borderRadius: 20,
-                    padding: '16px 18px',
-                    boxShadow: 'var(--clay-card-shadow)',
-                    border: '2px solid rgba(220, 235, 224, 0.7)',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: 12,
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
-                    <div
-                      onClick={() => setSelectedLabourerForCalendar(lab)}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 12,
-                        cursor: 'pointer',
-                        padding: '2px 4px',
-                        borderRadius: 12,
-                        transition: 'background 0.15s ease',
-                      }}
-                      title="Click to view monthly attendance calendar & numbers"
-                    >
-                      <div
-                        style={{
-                          width: 44,
-                          height: 44,
-                          borderRadius: 14,
-                          background: st === 'present' ? '#dcfce7' : (st === 'half_day' ? '#fef3c7' : '#fee2e2'),
-                          color: st === 'present' ? '#15803d' : (st === 'half_day' ? '#b45309' : '#dc2626'),
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          fontWeight: 800,
-                          fontSize: '1.05rem',
-                          flexShrink: 0,
-                          border: '2px solid rgba(255,255,255,0.8)',
-                          boxShadow: '2px 2px 5px rgba(166,184,170,0.2)'
-                        }}
-                      >
-                        {lab.full_name.charAt(0)}
+                <div key={lab.id} className="ledger-mobile-row">
+                  {/* Row Top: Name, Rate, Khata */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span style={{ fontWeight: 800, fontSize: '0.95rem', color: '#0f172a' }}>
+                          {lab.full_name}
+                        </span>
+                        <span style={{ fontSize: '0.68rem', color: '#64748b', background: '#f1f5f9', padding: '1px 5px', borderRadius: 4 }}>
+                          {lab.labour_code}
+                        </span>
                       </div>
-                      <div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                          <span style={{ fontWeight: 800, fontSize: '1.05rem', color: '#143823' }}>
-                            {lab.full_name}
-                          </span>
-                          <span
-                            style={{
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: 3,
-                              background: '#f0fdf4',
-                              color: '#15803d',
-                              fontSize: '0.68rem',
-                              fontWeight: 700,
-                              padding: '2px 6px',
-                              borderRadius: 6,
-                              border: '1px solid #bbf7d0'
-                            }}
-                          >
-                            <Calendar size={11} /> Calendar
-                          </span>
-                        </div>
-                        <div style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)', fontWeight: 600 }}>
-                          ₹{lab.base_rate}/day • {lab.work_category}
-                        </div>
+                      <div style={{ fontSize: '0.76rem', color: '#64748b' }}>
+                        ₹{lab.base_rate}/day • {lab.work_category}
                       </div>
                     </div>
 
-                    <span
-                      style={{
-                        fontSize: '0.75rem',
-                        fontWeight: 800,
-                        padding: '4px 10px',
-                        borderRadius: 9999,
-                        background: st === 'present' ? '#dcfce7' : (st === 'half_day' ? '#fef3c7' : '#fee2e2'),
-                        color: st === 'present' ? '#15803d' : (st === 'half_day' ? '#b45309' : '#b91c1c'),
-                      }}
-                    >
-                      {st === 'present' ? '1.0 Day' : (st === 'half_day' ? '0.5 Day' : '0.0')}
-                    </span>
+                    <div style={{ textAlign: 'right' }}>
+                      {bal.outstanding > 0 ? (
+                        <span style={{ fontSize: '0.72rem', fontWeight: 800, color: '#b45309', background: '#fef3c7', padding: '2px 6px', borderRadius: 4, border: '1px solid #fde68a' }}>
+                          Due: ₹{bal.outstanding}
+                        </span>
+                      ) : (
+                        <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#16a34a' }}>
+                          Khata Clear
+                        </span>
+                      )}
+                    </div>
                   </div>
 
-                  {/* 3 Touch Status Buttons */}
-                  <div style={{ display: 'flex', gap: 8 }}>
+                  {/* 1-Tap Segmented Control */}
+                  <div className="ledger-seg-control" style={{ marginBottom: 8 }}>
                     <button
                       type="button"
-                      className={`mobile-status-btn ${st === 'present' ? 'selected-present' : ''}`}
+                      className={`ledger-seg-btn ${st === 'present' ? 'active-present' : ''}`}
                       onClick={() => handleToggleStatus(lab.id, 'present')}
                     >
-                      <span>✓</span>
-                      <span>Present</span>
+                      Present
                     </button>
-
                     <button
                       type="button"
-                      className={`mobile-status-btn ${st === 'half_day' ? 'selected-half' : ''}`}
+                      className={`ledger-seg-btn ${st === 'half_day' ? 'active-half' : ''}`}
                       onClick={() => handleToggleStatus(lab.id, 'half_day')}
                     >
-                      <span>½</span>
-                      <span>Half</span>
+                      Half-Day
                     </button>
+                    <button
+                      type="button"
+                      className={`ledger-seg-btn ${st === 'absent' || st === 'leave' ? 'active-absent' : ''}`}
+                      onClick={() => handleToggleStatus(lab.id, 'absent')}
+                    >
+                      Absent
+                    </button>
+                  </div>
+
+                  {/* Row Bottom: Summary and Calendar */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: 6, borderTop: '1px dashed #e2e8f0' }}>
+                    <div style={{ fontSize: '0.78rem', color: '#334155' }}>
+                      Today: <strong>{units} Day</strong> • <strong style={{ color: earned > 0 ? '#16a34a' : '#64748b' }}>₹{earned}</strong>
+                    </div>
 
                     <button
                       type="button"
-                      className={`mobile-status-btn ${st === 'absent' || st === 'leave' ? 'selected-absent' : ''}`}
-                      onClick={() => handleToggleStatus(lab.id, 'absent')}
+                      onClick={() => setSelectedLabourerForCalendar(lab)}
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        color: '#16a34a',
+                        fontWeight: 700,
+                        fontSize: '0.75rem',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 4,
+                        cursor: 'pointer',
+                        padding: '2px 4px',
+                      }}
                     >
-                      <span>✗</span>
-                      <span>Absent</span>
+                      <Calendar size={13} />
+                      <span>Monthly Calendar</span>
                     </button>
                   </div>
                 </div>
               );
             })}
-          </div>
 
-          {/* Sticky Action Footer */}
-          <div className="mobile-sticky-bar">
-            <div>
-              <div style={{ fontSize: '0.72rem', fontWeight: 800, color: '#4b6354', textTransform: 'uppercase' }}>
-                Crew Total
-              </div>
-              <div style={{ fontSize: '1.15rem', fontWeight: 800, color: '#15803d' }}>
-                {totalPayableUnits} Days Worked Today
-              </div>
+            {/* Mobile Fixed Save Button at top or bottom */}
+            <div style={{ marginTop: 12 }}>
+              <button
+                type="button"
+                onClick={handleSaveAttendance}
+                className="ledger-action-btn ledger-action-btn-primary"
+                style={{ width: '100%', padding: '12px', fontSize: '0.9rem' }}
+              >
+                <CheckCircle2 size={16} />
+                <span>Save Today's Attendance ({totalPayableUnits} Days)</span>
+              </button>
             </div>
-
-            <ClayButton variant="primary" onClick={handleSaveAttendance} style={{ minHeight: 46 }}>
-              Save Attendance
-            </ClayButton>
           </div>
         </div>
       )}
@@ -689,72 +618,72 @@ export const SimpleFarmViewPage: React.FC = () => {
           SECTION 2: CASH ADVANCE KHATA
           ========================================================================= */}
       {activeSection === 'advance' && (
-        <div className="farm-desktop-split">
-          {/* Left Column: Issue Cash Advance Form */}
-          <ClayCard style={{ padding: 22 }}>
-            <h2 style={{ fontSize: '1.35rem', margin: '0 0 6px 0', color: '#14532d', fontWeight: 800 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 360px) 1fr', gap: 16 }} className="farm-desktop-split">
+          {/* Issue Advance Form */}
+          <div className="ledger-card">
+            <h2 style={{ fontSize: '1.1rem', margin: '0 0 4px 0', color: '#0f172a', fontWeight: 800 }}>
               Issue Cash Advance
             </h2>
-            <p style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)', margin: '0 0 16px 0' }}>
-              Recorded cash advances are automatically tracked in Khata and deducted on payday.
+            <p style={{ fontSize: '0.78rem', color: '#64748b', margin: '0 0 14px 0' }}>
+              Cash advance issued is added to worker's balance and deducted on settlement.
             </p>
 
             {advSuccess && (
-              <div style={{ background: '#dcfce7', color: '#14532d', padding: '12px 16px', borderRadius: 16, marginBottom: 16, fontWeight: 700, fontSize: '0.88rem', display: 'flex', alignItems: 'center', gap: 8, border: '2px solid #86efac' }}>
-                <CheckCircle2 size={18} color="#15803d" />
-                <span>Advance recorded successfully! Added to worker's khata.</span>
+              <div style={{ background: '#dcfce7', border: '1px solid #86efac', color: '#14532d', padding: '8px 12px', borderRadius: 6, marginBottom: 12, fontSize: '0.8rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
+                <CheckCircle2 size={15} color="#16a34a" />
+                <span>Advance recorded and updated in Khata.</span>
               </div>
             )}
 
             <form onSubmit={handleGiveAdvance}>
-              <div style={{ marginBottom: 16 }}>
-                <label className="clay-label">Select Worker</label>
+              <div style={{ marginBottom: 12 }}>
+                <label className="ledger-label">Select Worker</label>
                 <select
                   value={advLabId}
                   onChange={(e) => setAdvLabId(e.target.value)}
-                  className="clay-input"
-                  style={{ padding: '12px 14px', fontSize: '0.95rem' }}
+                  className="ledger-input"
                 >
                   {labourers.map((l) => {
                     const bal = dataService.getLabourerAdvanceBalance(l.id);
                     return (
                       <option key={l.id} value={l.id}>
-                        {l.full_name} (Current Due: ₹{bal.outstanding})
+                        {l.full_name} ({bal.outstanding > 0 ? `Due: ₹${bal.outstanding}` : 'Clear'})
                       </option>
                     );
                   })}
                 </select>
               </div>
 
-              <div style={{ marginBottom: 16 }}>
-                <label className="clay-label">Cash Amount (₹)</label>
+              <div style={{ marginBottom: 12 }}>
+                <label className="ledger-label">Cash Amount (₹)</label>
                 <input
                   type="number"
                   min="50"
                   step="50"
                   value={advAmount}
                   onChange={(e) => setAdvAmount(Number(e.target.value))}
-                  className="clay-input"
-                  style={{ fontSize: '1.4rem', fontWeight: 800, padding: '14px 18px', textAlign: 'center' }}
+                  className="ledger-input"
+                  style={{ fontSize: '1.15rem', fontWeight: 800, textAlign: 'center' }}
                   required
                 />
               </div>
 
-              {/* Quick Preset Chips */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, marginBottom: 20 }}>
+              {/* Quick Presets */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6, marginBottom: 16 }}>
                 {[200, 500, 1000, 2000].map((amt) => (
                   <button
                     key={amt}
                     type="button"
                     onClick={() => setAdvAmount(amt)}
                     style={{
-                      minHeight: 44,
-                      background: advAmount === amt ? 'linear-gradient(135deg, #fef3c7, #fde68a)' : '#ffffff',
-                      border: advAmount === amt ? '2px solid #d97706' : '1px solid #d1e5d5',
-                      color: advAmount === amt ? '#92400e' : '#334155',
-                      fontWeight: 800,
-                      fontSize: '0.88rem',
-                      borderRadius: 14,
+                      padding: '6px 0',
+                      borderRadius: 6,
+                      border: '1px solid',
+                      borderColor: advAmount === amt ? '#16a34a' : '#cbd5e1',
+                      background: advAmount === amt ? '#f0fdf4' : '#ffffff',
+                      color: advAmount === amt ? '#16a34a' : '#334155',
+                      fontWeight: 700,
+                      fontSize: '0.8rem',
                       cursor: 'pointer',
                     }}
                   >
@@ -763,93 +692,228 @@ export const SimpleFarmViewPage: React.FC = () => {
                 ))}
               </div>
 
-              <ClayButton variant="accent" type="submit" style={{ width: '100%', minHeight: 48, fontSize: '1.02rem' }}>
-                Give Cash Advance Now
-              </ClayButton>
+              <button
+                type="submit"
+                className="ledger-action-btn ledger-action-btn-primary"
+                style={{ width: '100%', padding: '10px', fontSize: '0.88rem' }}
+              >
+                Record Cash Advance
+              </button>
             </form>
-          </ClayCard>
+          </div>
 
-          {/* Right Column: Running Advance Balances */}
-          <ClayCard style={{ padding: 22 }}>
-            <h3 style={{ fontSize: '1.15rem', color: '#143823', margin: '0 0 4px 0', fontWeight: 800 }}>
-              Worker Advance Balances (Khata)
-            </h3>
-            <p style={{ fontSize: '0.82rem', color: 'var(--color-text-muted)', margin: '0 0 16px 0' }}>
-              Active advances owed by workers across the farm
-            </p>
+          {/* Running Khata Balances Table */}
+          <div className="ledger-card">
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800, color: '#0f172a' }}>
+                  Worker Advance Balances (Khata)
+                </h3>
+                <div style={{ fontSize: '0.78rem', color: '#64748b' }}>
+                  Cumulative advances issued, recovered, and currently outstanding
+                </div>
+              </div>
+            </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {/* Desktop Khata Table */}
+            <div className="ledger-desktop-only">
+              <div className="ledger-table-wrap">
+                <table className="ledger-table">
+                  <thead>
+                    <tr>
+                      <th className="ledger-th">Worker</th>
+                      <th className="ledger-th">Category</th>
+                      <th className="ledger-th">Total Given</th>
+                      <th className="ledger-th">Total Repaid</th>
+                      <th className="ledger-th">Current Due</th>
+                      <th className="ledger-th" style={{ textAlign: 'right' }}>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {labourers.map((l) => {
+                      const bal = dataService.getLabourerAdvanceBalance(l.id);
+
+                      return (
+                        <tr key={l.id} className="ledger-tr">
+                          <td className="ledger-td">
+                            <span style={{ fontWeight: 800, color: '#0f172a' }}>{l.full_name}</span>
+                            <span style={{ fontSize: '0.72rem', color: '#64748b', marginLeft: 6 }}>{l.labour_code}</span>
+                          </td>
+                          <td className="ledger-td" style={{ fontSize: '0.8rem', color: '#475569' }}>
+                            {l.work_category}
+                          </td>
+                          <td className="ledger-td" style={{ color: '#475569' }}>
+                            ₹{bal.totalIssued}
+                          </td>
+                          <td className="ledger-td" style={{ color: '#16a34a' }}>
+                            ₹{bal.totalRecovered}
+                          </td>
+                          <td className="ledger-td">
+                            <span style={{
+                              fontWeight: 800,
+                              fontSize: '0.85rem',
+                              padding: '2px 8px',
+                              borderRadius: 4,
+                              background: bal.outstanding > 0 ? '#fef3c7' : '#f0fdf4',
+                              color: bal.outstanding > 0 ? '#b45309' : '#16a34a',
+                              border: `1px solid ${bal.outstanding > 0 ? '#fde68a' : '#bbf7d0'}`,
+                            }}>
+                              {bal.outstanding > 0 ? `Due: ₹${bal.outstanding}` : 'Clear'}
+                            </span>
+                          </td>
+                          <td className="ledger-td" style={{ textAlign: 'right' }}>
+                            <button
+                              type="button"
+                              onClick={() => setSelectedLabourerForCalendar(l)}
+                              className="ledger-action-btn ledger-action-btn-secondary"
+                              style={{ padding: '4px 8px', fontSize: '0.75rem' }}
+                            >
+                              <Calendar size={13} />
+                              <span>Calendar</span>
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Mobile Khata Rows */}
+            <div className="ledger-mobile-only">
               {labourers.map((l) => {
                 const bal = dataService.getLabourerAdvanceBalance(l.id);
 
                 return (
-                  <div
-                    key={l.id}
-                    onClick={() => setSelectedLabourerForCalendar(l)}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      background: '#ffffff',
-                      padding: '12px 14px',
-                      borderRadius: 16,
-                      border: '1.5px solid rgba(220, 235, 224, 0.7)',
-                      cursor: 'pointer',
-                      transition: 'transform 0.15s ease',
-                    }}
-                    title="Click to view monthly attendance calendar & numbers"
-                  >
-                    <div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <span style={{ fontWeight: 800, fontSize: '0.98rem', color: '#143823' }}>
-                          {l.full_name}
-                        </span>
-                        <span style={{ fontSize: '0.7rem', color: '#15803d', fontWeight: 700 }}>
-                          📅 Calendar
-                        </span>
+                  <div key={l.id} className="ledger-mobile-row">
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                      <div>
+                        <div style={{ fontWeight: 800, fontSize: '0.92rem', color: '#0f172a' }}>{l.full_name}</div>
+                        <div style={{ fontSize: '0.74rem', color: '#64748b' }}>{l.work_category}</div>
                       </div>
-                      <div style={{ fontSize: '0.75rem', color: '#64748b' }}>
-                        Total Given: ₹{bal.totalIssued} • Repaid: ₹{bal.totalRecovered}
-                      </div>
+
+                      <span style={{
+                        fontWeight: 800,
+                        fontSize: '0.82rem',
+                        padding: '2px 8px',
+                        borderRadius: 4,
+                        background: bal.outstanding > 0 ? '#fef3c7' : '#f0fdf4',
+                        color: bal.outstanding > 0 ? '#b45309' : '#16a34a',
+                        border: `1px solid ${bal.outstanding > 0 ? '#fde68a' : '#bbf7d0'}`,
+                      }}>
+                        {bal.outstanding > 0 ? `Due: ₹${bal.outstanding}` : 'Clear'}
+                      </span>
                     </div>
 
-                    <span
-                      style={{
-                        fontWeight: 800,
-                        fontSize: '0.95rem',
-                        padding: '4px 10px',
-                        borderRadius: 10,
-                        background: bal.outstanding > 0 ? '#fef3c7' : '#f0fdf4',
-                        color: bal.outstanding > 0 ? '#b45309' : '#15803d',
-                        border: bal.outstanding > 0 ? '1px solid #fde68a' : '1px solid #bbf7d0',
-                      }}
-                    >
-                      {bal.outstanding > 0 ? `Due: ₹${bal.outstanding}` : 'Clear'}
-                    </span>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.78rem', color: '#475569', paddingTop: 6, borderTop: '1px dashed #e2e8f0' }}>
+                      <span>Given: ₹{bal.totalIssued} • Repaid: ₹{bal.totalRecovered}</span>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedLabourerForCalendar(l)}
+                        style={{
+                          background: 'transparent',
+                          border: 'none',
+                          color: '#16a34a',
+                          fontWeight: 700,
+                          fontSize: '0.74rem',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        Calendar
+                      </button>
+                    </div>
                   </div>
                 );
               })}
             </div>
-          </ClayCard>
+          </div>
         </div>
       )}
 
       {/* =========================================================================
-          SECTION 3: PAYDAY SLIPS
+          SECTION 3: PAYDAY SETTLEMENT SLIPS
           ========================================================================= */}
       {activeSection === 'payday' && (
         <div>
-          <div style={{ marginBottom: 16 }}>
-            <h2 style={{ fontSize: '1.35rem', margin: '0 0 4px 0', color: '#143823', fontWeight: 800 }}>
+          <div style={{ marginBottom: 12 }}>
+            <h2 style={{ fontSize: '1.2rem', margin: '0 0 2px 0', color: '#0f172a', fontWeight: 800 }}>
               Daily Payday Slips & Settlements
             </h2>
-            <div style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>
-              Formula: <strong>Gross Wage (Days × Rate) − Advance Deducted = Take-Home Pay</strong>
+            <div style={{ fontSize: '0.8rem', color: '#64748b' }}>
+              Formula: <strong>Gross Wage (Days × Rate) − Khata Advance Deducted = Take-Home Pay</strong>
             </div>
           </div>
 
-          {/* Payslips Grid (2-Column on Desktop, 1-Column on Mobile) */}
-          <div className="farm-desktop-grid-2" style={{ gap: 16 }}>
+          {/* Desktop Settlement Table */}
+          <div className="ledger-desktop-only">
+            <div className="ledger-table-wrap">
+              <table className="ledger-table">
+                <thead>
+                  <tr>
+                    <th className="ledger-th">Worker</th>
+                    <th className="ledger-th">Daily Rate</th>
+                    <th className="ledger-th">Days Worked Today</th>
+                    <th className="ledger-th">Gross Wage</th>
+                    <th className="ledger-th">Khata Deducted</th>
+                    <th className="ledger-th">Net Take-Home Pay</th>
+                    <th className="ledger-th" style={{ textAlign: 'right' }}>Payment Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {labourers.map((lab) => {
+                    const att = attendance[lab.id] || 'present';
+                    const daysWorked = att === 'present' ? 1.0 : (att === 'half_day' ? 0.5 : 0.0);
+                    const gross = round2(daysWorked * lab.base_rate);
+                    const bal = dataService.getLabourerAdvanceBalance(lab.id);
+                    const advanceDeducted = round2(Math.min(bal.outstanding, gross));
+                    const netPay = round2(Math.max(0, gross - advanceDeducted));
+                    const isSettled = settledLabId === lab.id;
+
+                    return (
+                      <tr key={lab.id} className="ledger-tr">
+                        <td className="ledger-td">
+                          <span style={{ fontWeight: 800, color: '#0f172a' }}>{lab.full_name}</span>
+                          <span style={{ fontSize: '0.72rem', color: '#64748b', marginLeft: 6 }}>{lab.labour_code}</span>
+                        </td>
+                        <td className="ledger-td" style={{ color: '#475569' }}>
+                          ₹{lab.base_rate}/day
+                        </td>
+                        <td className="ledger-td" style={{ fontWeight: 700, color: '#0f172a' }}>
+                          {daysWorked} Day
+                        </td>
+                        <td className="ledger-td" style={{ fontWeight: 800, color: '#0f172a' }}>
+                          ₹{gross}
+                        </td>
+                        <td className="ledger-td" style={{ color: advanceDeducted > 0 ? '#b45309' : '#64748b', fontWeight: advanceDeducted > 0 ? 700 : 400 }}>
+                          {advanceDeducted > 0 ? `− ₹${advanceDeducted}` : '₹0'}
+                        </td>
+                        <td className="ledger-td">
+                          <span style={{ fontSize: '1.05rem', fontWeight: 900, color: '#16a34a' }}>
+                            ₹{netPay.toLocaleString('en-IN')}
+                          </span>
+                        </td>
+                        <td className="ledger-td" style={{ textAlign: 'right' }}>
+                          <button
+                            type="button"
+                            disabled={isSettled}
+                            onClick={() => handleSettleSalary(lab, netPay)}
+                            className={`ledger-action-btn ${isSettled ? 'ledger-action-btn-secondary' : 'ledger-action-btn-primary'}`}
+                            style={{ padding: '5px 12px', fontSize: '0.78rem' }}
+                          >
+                            {isSettled ? '✓ Paid / Settled' : 'Pay Cash / UPI'}
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Mobile Settlement Cards */}
+          <div className="ledger-mobile-only">
             {labourers.map((lab) => {
               const att = attendance[lab.id] || 'present';
               const daysWorked = att === 'present' ? 1.0 : (att === 'half_day' ? 0.5 : 0.0);
@@ -860,88 +924,35 @@ export const SimpleFarmViewPage: React.FC = () => {
               const isSettled = settledLabId === lab.id;
 
               return (
-                <div
-                  key={lab.id}
-                  style={{
-                    background: '#ffffff',
-                    borderRadius: 20,
-                    padding: '16px 18px',
-                    boxShadow: 'var(--clay-card-shadow)',
-                    border: isSettled ? '2px solid #22c55e' : '2px solid rgba(220, 235, 224, 0.7)',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: 12,
-                  }}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 8 }}>
-                    <div
-                      onClick={() => setSelectedLabourerForCalendar(lab)}
-                      style={{ cursor: 'pointer' }}
-                      title="Click to audit monthly attendance calendar & numbers"
-                    >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <span style={{ fontWeight: 800, fontSize: '1.1rem', color: '#143823' }}>
-                          {lab.full_name}
-                        </span>
-                        <span style={{ fontSize: '0.7rem', color: '#15803d', fontWeight: 700, background: '#f0fdf4', padding: '1px 6px', borderRadius: 6, border: '1px solid #bbf7d0' }}>
-                          📅 Audit Month
-                        </span>
-                      </div>
-                      <div style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>
-                        {lab.work_category} • ₹{lab.base_rate}/day
-                      </div>
-                    </div>
-
-                    <span style={{ fontSize: '0.78rem', fontWeight: 800, background: '#dcfce7', color: '#15803d', padding: '3px 10px', borderRadius: 9999 }}>
-                      {daysWorked} Days Worked Today
-                    </span>
-                  </div>
-
-                  {/* Salary Math Box */}
-                  <div style={{ background: '#f8faf8', padding: '10px 14px', borderRadius: 14, fontSize: '0.85rem', color: '#334155' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                      <span>Earned: {daysWorked}d × ₹{lab.base_rate}</span>
-                      <strong>₹{gross}</strong>
-                    </div>
-                    {advanceDeducted > 0 && (
-                      <div style={{ display: 'flex', justifyContent: 'space-between', color: '#b45309' }}>
-                        <span>Less advance:</span>
-                        <strong>−₹{advanceDeducted}</strong>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Net Take-Home and Action Button */}
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 }}>
+                <div key={lab.id} className="ledger-mobile-row">
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
                     <div>
-                      <div style={{ fontSize: '0.72rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 700 }}>
-                        Take-Home Pay
-                      </div>
-                      <div style={{ fontSize: '1.45rem', fontWeight: 800, color: '#15803d' }}>
+                      <div style={{ fontWeight: 800, fontSize: '0.95rem', color: '#0f172a' }}>{lab.full_name}</div>
+                      <div style={{ fontSize: '0.74rem', color: '#64748b' }}>₹{lab.base_rate}/day • {daysWorked} Day Worked</div>
+                    </div>
+
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontSize: '0.68rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 700 }}>Take-Home</div>
+                      <div style={{ fontSize: '1.2rem', fontWeight: 900, color: '#16a34a' }}>
                         ₹{netPay.toLocaleString('en-IN')}
                       </div>
                     </div>
-
-                    <button
-                      type="button"
-                      disabled={isSettled}
-                      onClick={() => handleSettleSalary(lab, netPay)}
-                      style={{
-                        padding: '10px 20px',
-                        minHeight: 46,
-                        borderRadius: 9999,
-                        background: isSettled ? '#dcfce7' : 'linear-gradient(135deg, #16a34a, #15803d)',
-                        color: isSettled ? '#15803d' : '#ffffff',
-                        border: isSettled ? '2px solid #86efac' : 'none',
-                        fontWeight: 800,
-                        fontSize: '0.9rem',
-                        cursor: 'pointer',
-                        boxShadow: isSettled ? 'none' : '4px 4px 10px rgba(21, 128, 61, 0.35)',
-                      }}
-                    >
-                      {isSettled ? '✓ Settled' : 'Pay Cash / UPI'}
-                    </button>
                   </div>
+
+                  <div style={{ background: '#f8fafc', padding: '6px 10px', borderRadius: 6, fontSize: '0.76rem', color: '#475569', marginBottom: 8 }}>
+                    <span>Gross: ₹{gross}</span>
+                    {advanceDeducted > 0 && <span style={{ color: '#b45309', marginLeft: 8 }}>Less Advance: −₹{advanceDeducted}</span>}
+                  </div>
+
+                  <button
+                    type="button"
+                    disabled={isSettled}
+                    onClick={() => handleSettleSalary(lab, netPay)}
+                    className={`ledger-action-btn ${isSettled ? 'ledger-action-btn-secondary' : 'ledger-action-btn-primary'}`}
+                    style={{ width: '100%', padding: '9px', fontSize: '0.82rem' }}
+                  >
+                    {isSettled ? '✓ Paid & Settled' : `Pay Cash / UPI (₹${netPay})`}
+                  </button>
                 </div>
               );
             })}
@@ -957,903 +968,607 @@ export const SimpleFarmViewPage: React.FC = () => {
 
         return (
           <div>
-            {/* Header Row */}
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14, flexWrap: 'wrap', gap: 10 }}>
+            {/* Header Strip */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
               <div>
-                <h2 style={{ fontSize: '1.4rem', margin: 0, color: '#143823', fontWeight: 800 }}>
-                  Hired Tractor & Rental Khata
+                <h2 style={{ fontSize: '1.2rem', margin: '0 0 2px 0', color: '#0f172a', fontWeight: 800 }}>
+                  Hired Tractor Rental Logs & Balance Khata
                 </h2>
-                <div style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)', fontWeight: 600 }}>
-                  Log hired tractor runs, vendor rates, advance paid & rest balance due (Zero owned tractors)
+                <div style={{ fontSize: '0.8rem', color: '#64748b' }}>
+                  Track hired tractor hours, rental rates, advance paid & balance due (Zero owned tractors)
                 </div>
               </div>
 
               <button
                 type="button"
                 onClick={() => setIsNewRentalOpen(!isNewRentalOpen)}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  background: isNewRentalOpen ? '#f1f5f9' : 'linear-gradient(135deg, #16a34a, #15803d)',
-                  color: isNewRentalOpen ? '#475569' : '#ffffff',
-                  border: isNewRentalOpen ? '1px solid #cbd5e1' : 'none',
-                  borderRadius: 14,
-                  padding: '10px 16px',
-                  fontWeight: 800,
-                  fontSize: '0.85rem',
-                  cursor: 'pointer',
-                  boxShadow: isNewRentalOpen ? 'none' : '0 4px 10px rgba(21, 128, 61, 0.25)',
-                  minHeight: 40,
-                }}
+                className="ledger-action-btn ledger-action-btn-primary"
+                style={{ padding: '6px 12px' }}
               >
-                <Plus size={16} />
-                <span>{isNewRentalOpen ? 'Hide Form' : '+ Log Hired Tractor'}</span>
+                <Plus size={14} />
+                <span>{isNewRentalOpen ? 'Close Form' : 'Log Hired Tractor'}</span>
               </button>
             </div>
 
-            {/* Success Alert */}
             {tractorSuccessMsg && (
-              <div
-                style={{
-                  background: '#dcfce7',
-                  border: '2px solid #86efac',
-                  color: '#14532d',
-                  padding: '12px 16px',
-                  borderRadius: 16,
-                  marginBottom: 16,
-                  fontSize: '0.88rem',
-                  fontWeight: 700,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 8,
-                }}
-              >
-                <CheckCircle2 size={18} color="#16a34a" />
+              <div style={{ background: '#dcfce7', border: '1px solid #86efac', color: '#14532d', padding: '8px 12px', borderRadius: 6, marginBottom: 12, fontSize: '0.82rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
+                <CheckCircle2 size={15} color="#16a34a" />
                 <span>{tractorSuccessMsg}</span>
               </div>
             )}
 
-            {/* Date Filter Bar */}
-            <ClayCard style={{ padding: '14px 18px', marginBottom: 16 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
-                <Filter size={16} color="#15803d" />
-                <span style={{ fontSize: '0.85rem', fontWeight: 800, color: '#143823' }}>
-                  Filter Hired Tractor Sessions by Date:
-                </span>
-                {tractorDateFilter !== 'all' && (
-                  <button
-                    type="button"
-                    onClick={() => setTractorDateFilter('all')}
-                    style={{
-                      marginLeft: 'auto',
-                      background: 'transparent',
-                      border: 'none',
-                      color: '#15803d',
-                      fontSize: '0.8rem',
-                      fontWeight: 700,
-                      cursor: 'pointer',
-                      textDecoration: 'underline',
-                    }}
-                  >
-                    Clear Filter (Show All)
-                  </button>
-                )}
+            {/* KPI Boxes */}
+            <div className="ledger-kpi-grid">
+              <div className="ledger-kpi-box" style={{ borderLeft: '3px solid #0284c7' }}>
+                <div className="ledger-kpi-title">Hired Hours Worked</div>
+                <div className="ledger-kpi-value" style={{ color: '#0284c7' }}>{totals.totalHours} hrs</div>
+                <div className="ledger-kpi-sub">{totals.count} tractor runs recorded</div>
               </div>
 
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-                {['all', '2026-10-13', '2026-10-12', '2026-10-11'].map((d) => {
-                  const label = d === 'all' ? 'All Dates' : (d === '2026-10-13' ? 'Today (13 Oct)' : (d === '2026-10-12' ? '12 Oct' : '11 Oct'));
-                  const isActive = tractorDateFilter === d;
-
-                  return (
-                    <button
-                      key={d}
-                      type="button"
-                      onClick={() => setTractorDateFilter(d)}
-                      style={{
-                        padding: '6px 14px',
-                        borderRadius: 12,
-                        border: '1.5px solid',
-                        borderColor: isActive ? '#16a34a' : '#cbdcd0',
-                        background: isActive ? '#dcfce7' : '#ffffff',
-                        color: isActive ? '#14532d' : '#475569',
-                        fontSize: '0.8rem',
-                        fontWeight: 800,
-                        cursor: 'pointer',
-                      }}
-                    >
-                      {label}
-                    </button>
-                  );
-                })}
-
-                {/* Calendar Input */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 'auto' }}>
-                  <Calendar size={15} color="#64748b" />
-                  <input
-                    type="date"
-                    value={tractorDateFilter === 'all' ? '' : tractorDateFilter}
-                    onChange={(e) => setTractorDateFilter(e.target.value || 'all')}
-                    style={{
-                      padding: '5px 10px',
-                      fontSize: '0.82rem',
-                      borderRadius: 10,
-                      border: '1.5px solid #cbdcd0',
-                      background: '#ffffff',
-                      color: '#143823',
-                      fontWeight: 600,
-                      outline: 'none',
-                    }}
-                  />
-                </div>
-              </div>
-            </ClayCard>
-
-            {/* Live Calculated Financial Summary for Filter (4 Horizontal Cards on Desktop, 2x2 on Mobile) */}
-            <div className="farm-desktop-grid-4" style={{ marginBottom: 20 }}>
-              <div
-                style={{
-                  background: '#ffffff',
-                  borderRadius: 18,
-                  padding: '14px 16px',
-                  boxShadow: 'var(--clay-card-shadow)',
-                  border: '2px solid rgba(220, 235, 224, 0.9)',
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                  <Clock size={16} color="#15803d" />
-                  <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 800, textTransform: 'uppercase' }}>
-                    Total Hired Hours
-                  </span>
-                </div>
-                <div style={{ fontSize: '1.6rem', fontWeight: 800, color: '#15803d' }}>
-                  {totals.totalHours} <span style={{ fontSize: '0.9rem', color: '#64748b' }}>hrs</span>
-                </div>
-                <div style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: 600 }}>
-                  {totals.count} tractor runs
-                </div>
+              <div className="ledger-kpi-box" style={{ borderLeft: '3px solid #0f172a' }}>
+                <div className="ledger-kpi-title">Gross Rental Bill</div>
+                <div className="ledger-kpi-value">₹{totals.totalGross.toLocaleString('en-IN')}</div>
+                <div className="ledger-kpi-sub">Hours × Hourly rate</div>
               </div>
 
-              <div
-                style={{
-                  background: '#ffffff',
-                  borderRadius: 18,
-                  padding: '14px 16px',
-                  boxShadow: 'var(--clay-card-shadow)',
-                  border: '2px solid rgba(220, 235, 224, 0.9)',
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                  <DollarSign size={16} color="#15803d" />
-                  <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 800, textTransform: 'uppercase' }}>
-                    Gross Rent Bill
-                  </span>
-                </div>
-                <div style={{ fontSize: '1.6rem', fontWeight: 800, color: '#143823' }}>
-                  ₹{totals.totalGross.toLocaleString('en-IN')}
-                </div>
-                <div style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: 600 }}>
-                  Hours × Hourly Rate
-                </div>
+              <div className="ledger-kpi-box" style={{ borderLeft: '3px solid #2563eb' }}>
+                <div className="ledger-kpi-title">Advance Paid</div>
+                <div className="ledger-kpi-value" style={{ color: '#2563eb' }}>₹{totals.totalAdvance.toLocaleString('en-IN')}</div>
+                <div className="ledger-kpi-sub">Prepaid to vendor</div>
               </div>
 
-              <div
-                style={{
-                  background: '#ffffff',
-                  borderRadius: 18,
-                  padding: '14px 16px',
-                  boxShadow: 'var(--clay-card-shadow)',
-                  border: '2px solid #93c5fd',
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                  <Wallet size={16} color="#2563eb" />
-                  <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 800, textTransform: 'uppercase' }}>
-                    Advance Paid
-                  </span>
-                </div>
-                <div style={{ fontSize: '1.6rem', fontWeight: 800, color: '#2563eb' }}>
-                  ₹{totals.totalAdvance.toLocaleString('en-IN')}
-                </div>
-                <div style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: 600 }}>
-                  Prepaid to owner/driver
-                </div>
-              </div>
-
-              <div
-                style={{
-                  background: totals.totalRest > 0 ? '#fffbeb' : '#f0fdf4',
-                  borderRadius: 18,
-                  padding: '14px 16px',
-                  boxShadow: 'var(--clay-card-shadow)',
-                  border: totals.totalRest > 0 ? '2px solid #fde68a' : '2px solid #bbf7d0',
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                  <CheckCircle2 size={16} color={totals.totalRest > 0 ? '#d97706' : '#16a34a'} />
-                  <span style={{ fontSize: '0.72rem', color: totals.totalRest > 0 ? '#92400e' : '#14532d', fontWeight: 800, textTransform: 'uppercase' }}>
-                    Rest Due To Pay
-                  </span>
-                </div>
-                <div style={{ fontSize: '1.6rem', fontWeight: 800, color: totals.totalRest > 0 ? '#b45309' : '#15803d' }}>
+              <div className="ledger-kpi-box" style={{ borderLeft: totals.totalRest > 0 ? '3px solid #d97706' : '3px solid #16a34a' }}>
+                <div className="ledger-kpi-title">Rest Balance Due</div>
+                <div className="ledger-kpi-value" style={{ color: totals.totalRest > 0 ? '#b45309' : '#16a34a' }}>
                   ₹{totals.totalRest.toLocaleString('en-IN')}
                 </div>
-                <div style={{ fontSize: '0.75rem', color: totals.totalRest > 0 ? '#b45309' : '#15803d', fontWeight: 700 }}>
-                  {totals.totalRest > 0 ? 'Pending Settlement' : '✓ Fully Settled'}
-                </div>
+                <div className="ledger-kpi-sub">{totals.totalRest > 0 ? 'Pending payment' : 'Fully settled'}</div>
               </div>
             </div>
 
-            {/* Desktop 2-Column Split: Form on Left, Logs Ledger on Right */}
-            <div className="farm-desktop-split">
-              {/* Column 1: Log Hired Tractor Run Form */}
-              <ClayCard style={{ padding: 22, border: '2px solid #86efac', background: '#fbfdfb' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
-                  <div
+            {/* Date Filter Bar */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: '8px 12px', marginBottom: 14, flexWrap: 'wrap' }}>
+              <Filter size={14} color="#64748b" />
+              <span style={{ fontSize: '0.8rem', fontWeight: 700, color: '#334155' }}>Filter Date:</span>
+
+              {['all', '2026-10-13', '2026-10-12', '2026-10-11'].map((d) => {
+                const label = d === 'all' ? 'All Dates' : (d === '2026-10-13' ? 'Today (13 Oct)' : (d === '2026-10-12' ? '12 Oct' : '11 Oct'));
+                const isActive = tractorDateFilter === d;
+
+                return (
+                  <button
+                    key={d}
+                    type="button"
+                    onClick={() => setTractorDateFilter(d)}
                     style={{
-                      width: 40,
-                      height: 40,
-                      borderRadius: 12,
-                      background: 'linear-gradient(135deg, #16a34a, #15803d)',
-                      color: '#ffffff',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
+                      padding: '4px 10px',
+                      borderRadius: 6,
+                      border: '1px solid',
+                      borderColor: isActive ? '#16a34a' : '#cbd5e1',
+                      background: isActive ? '#dcfce7' : '#ffffff',
+                      color: isActive ? '#15803d' : '#475569',
+                      fontSize: '0.78rem',
+                      fontWeight: 700,
+                      cursor: 'pointer',
                     }}
                   >
-                    <Tractor size={20} />
-                  </div>
-                  <div>
-                    <h3 style={{ margin: 0, fontSize: '1.2rem', color: '#143823', fontWeight: 800 }}>
-                      Log Hired Tractor Run
-                    </h3>
-                    <div style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
-                      Enter rental hours, rate & advance paid
-                    </div>
-                  </div>
-                </div>
+                    {label}
+                  </button>
+                );
+              })}
+
+              <input
+                type="date"
+                value={tractorDateFilter === 'all' ? '' : tractorDateFilter}
+                onChange={(e) => setTractorDateFilter(e.target.value || 'all')}
+                style={{
+                  padding: '4px 8px',
+                  fontSize: '0.78rem',
+                  borderRadius: 6,
+                  border: '1px solid #cbd5e1',
+                  marginLeft: 'auto',
+                }}
+              />
+            </div>
+
+            {/* Log Hired Run Collapsible Form */}
+            {isNewRentalOpen && (
+              <div className="ledger-card" style={{ marginBottom: 16, border: '1px solid #86efac', background: '#fbfdfb' }}>
+                <h3 style={{ margin: '0 0 10px 0', fontSize: '1.05rem', fontWeight: 800, color: '#0f172a' }}>
+                  Log Hired Tractor Run
+                </h3>
 
                 <form onSubmit={handleSaveTractorRental}>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10, marginBottom: 14 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10, marginBottom: 10 }}>
                     <div>
-                      <label className="clay-label">Work Date *</label>
+                      <label className="ledger-label">Work Date *</label>
                       <input
                         type="date"
                         value={rentalDate}
                         onChange={(e) => setRentalDate(e.target.value)}
-                        className="clay-input"
-                        style={{ minHeight: 44, fontSize: '0.88rem' }}
+                        className="ledger-input"
                         required
                       />
                     </div>
                     <div>
-                      <label className="clay-label">Vendor / Rental Owner *</label>
+                      <label className="ledger-label">Vendor / Rental Owner *</label>
                       <input
                         type="text"
                         placeholder="e.g. Patil Agri Rentals"
                         value={rentalVendorName}
                         onChange={(e) => setRentalVendorName(e.target.value)}
-                        className="clay-input"
-                        style={{ minHeight: 44, fontSize: '0.88rem' }}
+                        className="ledger-input"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="ledger-label">Hired Tractor Model *</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Mahindra 575 DI (Hired)"
+                        value={rentalTractorName}
+                        onChange={(e) => setRentalTractorName(e.target.value)}
+                        className="ledger-input"
                         required
                       />
                     </div>
                   </div>
 
-                  <div style={{ marginBottom: 14 }}>
-                    <label className="clay-label">Hired Tractor Model *</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. Mahindra 575 DI (Hired) or John Deere"
-                      value={rentalTractorName}
-                      onChange={(e) => setRentalTractorName(e.target.value)}
-                      className="clay-input"
-                      style={{ minHeight: 44 }}
-                      required
-                    />
-                  </div>
-
-                  {/* Hours Stepper */}
-                  <div style={{ marginBottom: 14, background: '#ffffff', padding: 12, borderRadius: 16, border: '1.5px solid #d1fae5' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-                      <label className="clay-label" style={{ margin: 0 }}>Hours Worked</label>
-                      <span style={{ fontSize: '0.75rem', color: '#15803d', fontWeight: 700 }}>
-                        Tap + or − to adjust
-                      </span>
-                    </div>
-
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 18 }}>
-                      <button
-                        type="button"
-                        onClick={() => setRentalHours(Math.max(0.5, round2(rentalHours - 0.5)))}
-                        style={{
-                          width: 44,
-                          height: 44,
-                          borderRadius: '50%',
-                          background: '#f8fafc',
-                          border: '2px solid #cbd5e1',
-                          fontSize: '1.3rem',
-                          fontWeight: 800,
-                          cursor: 'pointer',
-                        }}
-                      >
-                        −
-                      </button>
-
-                      <div style={{ textAlign: 'center', minWidth: 100 }}>
-                        <div style={{ fontSize: '1.8rem', fontWeight: 800, color: '#15803d', lineHeight: 1 }}>
-                          {rentalHours}
-                        </div>
-                        <div style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: 600 }}>
-                          Hours Duration
-                        </div>
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={() => setRentalHours(round2(rentalHours + 0.5))}
-                        style={{
-                          width: 44,
-                          height: 44,
-                          borderRadius: '50%',
-                          background: '#f8fafc',
-                          border: '2px solid #cbd5e1',
-                          fontSize: '1.3rem',
-                          fontWeight: 800,
-                          cursor: 'pointer',
-                        }}
-                      >
-                        +
-                      </button>
-                    </div>
-                  </div>
-
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10, marginBottom: 14 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10, marginBottom: 10 }}>
                     <div>
-                      <label className="clay-label">Hourly Rate (₹/hr) *</label>
+                      <label className="ledger-label">Hours Worked *</label>
+                      <input
+                        type="number"
+                        step="0.5"
+                        min="0.5"
+                        value={rentalHours}
+                        onChange={(e) => setRentalHours(Number(e.target.value))}
+                        className="ledger-input"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="ledger-label">Hourly Rate (₹/hr) *</label>
                       <input
                         type="number"
                         min="100"
                         step="25"
-                        placeholder="e.g. 900"
                         value={rentalRate}
                         onChange={(e) => setRentalRate(Number(e.target.value))}
-                        className="clay-input"
-                        style={{ minHeight: 44 }}
+                        className="ledger-input"
                         required
                       />
                     </div>
-
                     <div>
-                      <label className="clay-label">Advance Paid (₹)</label>
+                      <label className="ledger-label">Advance Paid (₹)</label>
                       <input
                         type="number"
                         min="0"
                         step="100"
-                        placeholder="e.g. 1000"
                         value={rentalAdvance}
                         onChange={(e) => setRentalAdvance(Number(e.target.value))}
-                        className="clay-input"
-                        style={{ minHeight: 44 }}
+                        className="ledger-input"
                       />
                     </div>
                   </div>
 
-                  {/* Quick Advance Chips */}
-                  <div style={{ display: 'flex', gap: 6, marginBottom: 16, alignItems: 'center', flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 700 }}>Quick Advance:</span>
-                    {[0, 500, 1000, 1500, 2000].map((amt) => (
-                      <button
-                        key={amt}
-                        type="button"
-                        onClick={() => setRentalAdvance(amt)}
-                        style={{
-                          padding: '4px 10px',
-                          borderRadius: 10,
-                          border: '1px solid #cbdcd0',
-                          background: rentalAdvance === amt ? '#dcfce7' : '#ffffff',
-                          color: rentalAdvance === amt ? '#15803d' : '#475569',
-                          fontWeight: 700,
-                          fontSize: '0.75rem',
-                          cursor: 'pointer',
-                        }}
-                      >
-                        {amt === 0 ? 'No Adv' : `₹${amt}`}
-                      </button>
-                    ))}
-                  </div>
-
-                  {/* Live Calculation Preview Box */}
-                  {(() => {
-                    const gross = round2(rentalHours * rentalRate);
-                    const rest = round2(Math.max(0, gross - rentalAdvance));
-
-                    return (
-                      <div
-                        style={{
-                          background: '#f0fdf4',
-                          border: '2px solid #86efac',
-                          borderRadius: 16,
-                          padding: '14px 16px',
-                          marginBottom: 16,
-                        }}
-                      >
-                        <div style={{ fontSize: '0.75rem', fontWeight: 800, color: '#15803d', textTransform: 'uppercase', marginBottom: 6 }}>
-                          Live Bill Breakdown
-                        </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.88rem', color: '#143823', marginBottom: 4 }}>
-                          <span>Gross Cost ({rentalHours}h × ₹{rentalRate}/h):</span>
-                          <strong>₹{gross.toLocaleString('en-IN')}</strong>
-                        </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.88rem', color: '#2563eb', marginBottom: 6 }}>
-                          <span>Advance Deducted:</span>
-                          <strong>− ₹{rentalAdvance.toLocaleString('en-IN')}</strong>
-                        </div>
-                        <div
-                          style={{
-                            display: 'flex',
-                            justifyContent: 'space-between',
-                            alignItems: 'center',
-                            borderTop: '1.5px dashed #86efac',
-                            paddingTop: 8,
-                            fontSize: '1rem',
-                            fontWeight: 800,
-                            color: rest > 0 ? '#b45309' : '#15803d',
-                          }}
-                        >
-                          <span>👉 Rest Due to Pay:</span>
-                          <span style={{ fontSize: '1.3rem' }}>₹{rest.toLocaleString('en-IN')}</span>
-                        </div>
-                      </div>
-                    );
-                  })()}
-
-                  <div style={{ marginBottom: 16 }}>
-                    <label className="clay-label">Operation / Task Description</label>
+                  <div style={{ marginBottom: 12 }}>
+                    <label className="ledger-label">Operation / Task Description</label>
                     <input
                       type="text"
                       placeholder="e.g. Deep Plowing & Bed Preparation"
                       value={rentalTask}
                       onChange={(e) => setRentalTask(e.target.value)}
-                      className="clay-input"
-                      style={{ minHeight: 44 }}
+                      className="ledger-input"
                     />
                   </div>
 
-                  <ClayButton variant="primary" type="submit" style={{ width: '100%', minHeight: 48, fontSize: '1.02rem' }}>
-                    Save Hired Tractor Run
-                  </ClayButton>
-                </form>
-              </ClayCard>
+                  {/* Calculation summary */}
+                  {(() => {
+                    const gross = round2(rentalHours * rentalRate);
+                    const rest = round2(Math.max(0, gross - rentalAdvance));
 
-              {/* Column 2: Rental Session Logs Ledger */}
+                    return (
+                      <div style={{ background: '#f1f5f9', padding: '8px 12px', borderRadius: 6, fontSize: '0.82rem', marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span>Gross Bill: <strong>₹{gross}</strong> • Advance: <strong>−₹{rentalAdvance}</strong></span>
+                        <span style={{ fontWeight: 800, color: rest > 0 ? '#b45309' : '#16a34a' }}>
+                          Rest Balance Due: ₹{rest}
+                        </span>
+                      </div>
+                    );
+                  })()}
+
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button
+                      type="button"
+                      onClick={() => setIsNewRentalOpen(false)}
+                      className="ledger-action-btn ledger-action-btn-secondary"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      className="ledger-action-btn ledger-action-btn-primary"
+                    >
+                      Save Hired Run
+                    </button>
+                  </div>
+                </form>
+              </div>
+            )}
+
+            {/* Tractor Runs Table */}
+            {tractorRentals.length === 0 ? (
+              <div className="ledger-card" style={{ textAlign: 'center', padding: '30px 16px', color: '#64748b' }}>
+                <Tractor size={32} color="#94a3b8" style={{ marginBottom: 8 }} />
+                <div style={{ fontWeight: 700, fontSize: '0.95rem', color: '#334155' }}>No Hired Tractor Runs Found</div>
+                <div style={{ fontSize: '0.8rem' }}>Click "+ Log Hired Tractor" to record your first run.</div>
+              </div>
+            ) : (
               <div>
-                <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <span style={{ fontWeight: 800, fontSize: '1rem', color: '#143823' }}>
-                    Rental Session Logs ({tractorRentals.length})
-                  </span>
-                  <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)', fontWeight: 600 }}>
-                    {tractorDateFilter === 'all' ? 'All recorded runs' : `Date: ${tractorDateFilter}`}
-                  </span>
+                {/* Desktop Tractor Table */}
+                <div className="ledger-desktop-only">
+                  <div className="ledger-table-wrap">
+                    <table className="ledger-table">
+                      <thead>
+                        <tr>
+                          <th className="ledger-th">Date</th>
+                          <th className="ledger-th">Vendor & Tractor</th>
+                          <th className="ledger-th">Task</th>
+                          <th className="ledger-th">Hours</th>
+                          <th className="ledger-th">Rate</th>
+                          <th className="ledger-th">Gross Bill</th>
+                          <th className="ledger-th">Advance Paid</th>
+                          <th className="ledger-th">Balance Due</th>
+                          <th className="ledger-th" style={{ textAlign: 'right' }}>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {tractorRentals.map((log) => {
+                          const isSettled = log.status === 'settled';
+
+                          return (
+                            <tr key={log.id} className="ledger-tr">
+                              <td className="ledger-td" style={{ fontSize: '0.82rem', color: '#475569' }}>
+                                {log.work_date}
+                              </td>
+                              <td className="ledger-td">
+                                <div style={{ fontWeight: 800, color: '#0f172a' }}>{log.tractor_name}</div>
+                                <div style={{ fontSize: '0.74rem', color: '#64748b' }}>{log.vendor_name}</div>
+                              </td>
+                              <td className="ledger-td" style={{ fontSize: '0.8rem', color: '#475569' }}>
+                                {log.task_name}
+                              </td>
+                              <td className="ledger-td" style={{ fontWeight: 700 }}>
+                                {log.hours_worked} hrs
+                              </td>
+                              <td className="ledger-td" style={{ color: '#475569' }}>
+                                ₹{log.hourly_rate}/hr
+                              </td>
+                              <td className="ledger-td" style={{ fontWeight: 800 }}>
+                                ₹{log.gross_amount}
+                              </td>
+                              <td className="ledger-td" style={{ color: '#2563eb' }}>
+                                ₹{log.advance_amount}
+                              </td>
+                              <td className="ledger-td">
+                                <span style={{
+                                  fontWeight: 800,
+                                  fontSize: '0.85rem',
+                                  padding: '2px 8px',
+                                  borderRadius: 4,
+                                  background: isSettled ? '#dcfce7' : '#fef3c7',
+                                  color: isSettled ? '#16a34a' : '#b45309',
+                                  border: `1px solid ${isSettled ? '#86efac' : '#fde68a'}`,
+                                }}>
+                                  {isSettled ? '✓ Settled' : `Due: ₹${log.rest_amount}`}
+                                </span>
+                              </td>
+                              <td className="ledger-td" style={{ textAlign: 'right' }}>
+                                <div style={{ display: 'inline-flex', gap: 6 }}>
+                                  {!isSettled && log.rest_amount > 0 && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleSettleRental(log.id)}
+                                      className="ledger-action-btn ledger-action-btn-primary"
+                                      style={{ padding: '4px 8px', fontSize: '0.74rem' }}
+                                    >
+                                      Settle Due
+                                    </button>
+                                  )}
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteRental(log.id)}
+                                    className="ledger-action-btn ledger-action-btn-danger"
+                                    style={{ padding: '4px 6px' }}
+                                    title="Delete Log"
+                                  >
+                                    <Trash2 size={13} />
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
 
-                {tractorRentals.length === 0 ? (
-                  <ClayCard style={{ textAlign: 'center', padding: '36px 20px' }}>
-                    <Tractor size={36} color="#16a34a" style={{ marginBottom: 10 }} />
-                    <h4 style={{ margin: '0 0 6px 0', color: '#143823', fontSize: '1.1rem' }}>No Tractor Runs Found</h4>
-                    <p style={{ margin: '0 0 16px 0', fontSize: '0.88rem', color: 'var(--color-text-muted)' }}>
-                      {tractorDateFilter === 'all'
-                        ? 'No hired tractor runs recorded yet. Use the form on the left to log your first run.'
-                        : `No hired tractor runs recorded for date ${tractorDateFilter}.`}
-                    </p>
-                  </ClayCard>
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                    {tractorRentals.map((log) => {
-                      const isSettled = log.status === 'settled';
+                {/* Mobile Tractor Rows */}
+                <div className="ledger-mobile-only">
+                  {tractorRentals.map((log) => {
+                    const isSettled = log.status === 'settled';
 
-                      return (
-                        <ClayCard key={log.id} style={{ padding: '16px 18px' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-                            <div>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                                <span style={{ fontWeight: 800, fontSize: '1.05rem', color: '#143823' }}>
-                                  {log.tractor_name}
-                                </span>
-                                <span
-                                  style={{
-                                    fontSize: '0.72rem',
-                                    fontWeight: 800,
-                                    background: '#f1f5f9',
-                                    color: '#475569',
-                                    padding: '2px 8px',
-                                    borderRadius: 6,
-                                  }}
-                                >
-                                  {log.work_date}
-                                </span>
-                              </div>
-                              <div style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', fontWeight: 600 }}>
-                                Vendor: <strong>{log.vendor_name}</strong> • {log.task_name}
-                              </div>
-                            </div>
-
-                            <span
-                              style={{
-                                fontSize: '0.78rem',
-                                fontWeight: 800,
-                                padding: '4px 12px',
-                                borderRadius: 9999,
-                                background: isSettled ? '#dcfce7' : '#fef3c7',
-                                color: isSettled ? '#15803d' : '#b45309',
-                                border: isSettled ? '1px solid #86efac' : '1px solid #fde68a',
-                              }}
-                            >
-                              {isSettled ? '✓ Fully Settled' : `Rest Due: ₹${log.rest_amount}`}
-                            </span>
+                    return (
+                      <div key={log.id} className="ledger-mobile-row">
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                          <div>
+                            <div style={{ fontWeight: 800, fontSize: '0.95rem', color: '#0f172a' }}>{log.tractor_name}</div>
+                            <div style={{ fontSize: '0.74rem', color: '#64748b' }}>{log.work_date} • {log.vendor_name}</div>
                           </div>
 
-                          {/* Mobile-Friendly Key-Value Grid */}
-                          <div
-                            style={{
-                              background: '#f8faf8',
-                              borderRadius: 14,
-                              padding: '12px 14px',
-                              marginBottom: 12,
-                              border: '1px solid rgba(220, 235, 224, 0.7)',
-                            }}
+                          <span style={{
+                            fontWeight: 800,
+                            fontSize: '0.76rem',
+                            padding: '2px 8px',
+                            borderRadius: 4,
+                            background: isSettled ? '#dcfce7' : '#fef3c7',
+                            color: isSettled ? '#16a34a' : '#b45309',
+                            border: `1px solid ${isSettled ? '#86efac' : '#fde68a'}`,
+                          }}>
+                            {isSettled ? 'Settled' : `Due: ₹${log.rest_amount}`}
+                          </span>
+                        </div>
+
+                        <div style={{ background: '#f8fafc', padding: '6px 10px', borderRadius: 6, fontSize: '0.76rem', color: '#475569', marginBottom: 8 }}>
+                          <div>{log.hours_worked} hrs @ ₹{log.hourly_rate}/hr = <strong>₹{log.gross_amount} Gross</strong></div>
+                          <div>Advance Paid: ₹{log.advance_amount} • Task: {log.task_name}</div>
+                        </div>
+
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 6 }}>
+                          {!isSettled && log.rest_amount > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => handleSettleRental(log.id)}
+                              className="ledger-action-btn ledger-action-btn-primary"
+                              style={{ padding: '6px 10px', fontSize: '0.76rem' }}
+                            >
+                              Settle (₹{log.rest_amount})
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteRental(log.id)}
+                            className="ledger-action-btn ledger-action-btn-danger"
+                            style={{ padding: '6px 8px' }}
                           >
-                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10, marginBottom: 8 }}>
-                              <div>
-                                <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 700, textTransform: 'uppercase' }}>Time Worked: </span>
-                                <strong style={{ color: '#15803d', fontSize: '0.95rem' }}>{log.hours_worked} hrs</strong>
-                              </div>
-                              <div>
-                                <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 700, textTransform: 'uppercase' }}>Hourly Rate: </span>
-                                <strong style={{ color: '#143823', fontSize: '0.95rem' }}>₹{log.hourly_rate}/hr</strong>
-                              </div>
-                              <div>
-                                <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 700, textTransform: 'uppercase' }}>Total Gross Bill: </span>
-                                <strong style={{ color: '#143823', fontSize: '0.95rem' }}>₹{log.gross_amount}</strong>
-                              </div>
-                              <div>
-                                <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 700, textTransform: 'uppercase' }}>Advance Paid: </span>
-                                <strong style={{ color: '#2563eb', fontSize: '0.95rem' }}>₹{log.advance_amount}</strong>
-                              </div>
-                            </div>
-
-                            <div
-                              style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'space-between',
-                                borderTop: '1px dashed #cbdcd0',
-                                paddingTop: 6,
-                              }}
-                            >
-                              <span style={{ fontSize: '0.8rem', fontWeight: 700, color: '#475569' }}>
-                                Remaining Balance Due:
-                              </span>
-                              <strong style={{ fontSize: '1.15rem', color: log.rest_amount > 0 ? '#b45309' : '#15803d' }}>
-                                ₹{log.rest_amount}
-                              </strong>
-                            </div>
-                          </div>
-
-                          {/* Action Row */}
-                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-                            <div style={{ fontSize: '0.76rem', color: 'var(--color-text-muted)', fontStyle: 'italic' }}>
-                              {log.notes || `Log ID: ${log.id}`}
-                            </div>
-
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                              {!isSettled && log.rest_amount > 0 && (
-                                <button
-                                  type="button"
-                                  onClick={() => handleSettleRental(log.id)}
-                                  style={{
-                                    background: 'linear-gradient(135deg, #16a34a, #15803d)',
-                                    color: '#ffffff',
-                                    border: 'none',
-                                    borderRadius: 12,
-                                    padding: '8px 16px',
-                                    fontSize: '0.82rem',
-                                    fontWeight: 800,
-                                    cursor: 'pointer',
-                                    boxShadow: '0 2px 6px rgba(21, 128, 61, 0.25)',
-                                    minHeight: 38,
-                                  }}
-                                >
-                                  Settle Balance (₹{log.rest_amount})
-                                </button>
-                              )}
-
-                              <button
-                                type="button"
-                                onClick={() => handleDeleteRental(log.id)}
-                                style={{
-                                  background: '#ffffff',
-                                  border: '1px solid #fecaca',
-                                  color: '#dc2626',
-                                  borderRadius: 10,
-                                  padding: '7px 10px',
-                                  cursor: 'pointer',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                  minHeight: 38,
-                                }}
-                                title="Delete this rental log"
-                              >
-                                <Trash2 size={15} color="#dc2626" />
-                              </button>
-                            </div>
-                          </div>
-                        </ClayCard>
-                      );
-                    })}
-                  </div>
-                )}
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
+            )}
           </div>
         );
       })()}
 
       {/* =========================================================================
-          SECTION 5: WORKER ROSTER (LABOURS)
+          SECTION 5: WORKER ROSTER
           ========================================================================= */}
       {activeSection === 'labours' && (
         <div>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ fontWeight: 800, color: '#15803d', background: '#dcfce7', padding: '4px 12px', borderRadius: 10, fontSize: '0.88rem' }}>
-                {labourers.length} Active Farm Labourers
-              </span>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+            <div>
+              <h2 style={{ fontSize: '1.2rem', margin: '0 0 2px 0', color: '#0f172a', fontWeight: 800 }}>
+                Farm Crew Directory ({labourers.length} Labourers)
+              </h2>
+              <div style={{ fontSize: '0.8rem', color: '#64748b' }}>
+                Manage registered labourers, wage rates & view monthly attendance records
+              </div>
             </div>
+
             <button
               type="button"
               onClick={() => setIsAddModalOpen(true)}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6,
-                background: '#ffffff',
-                border: '2px solid #bbf7d0',
-                color: '#15803d',
-                borderRadius: 12,
-                padding: '8px 14px',
-                fontWeight: 800,
-                fontSize: '0.82rem',
-                cursor: 'pointer',
-              }}
+              className="ledger-action-btn ledger-action-btn-primary"
             >
-              <UserPlus size={16} />
-              <span>+ Add Labour</span>
+              <UserPlus size={14} />
+              <span>Add New Labour</span>
             </button>
           </div>
 
           {labSuccessMsg && (
-            <div
-              style={{
-                background: '#dcfce7',
-                border: '2px solid #86efac',
-                color: '#14532d',
-                padding: '12px 16px',
-                borderRadius: 16,
-                marginBottom: 16,
-                fontSize: '0.88rem',
-                fontWeight: 700,
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-              }}
-            >
-              <CheckCircle2 size={18} color="#16a34a" />
+            <div style={{ background: '#dcfce7', border: '1px solid #86efac', color: '#14532d', padding: '8px 12px', borderRadius: 6, marginBottom: 12, fontSize: '0.82rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
+              <CheckCircle2 size={15} color="#16a34a" />
               <span>{labSuccessMsg}</span>
             </div>
           )}
 
-          {/* Labourers Cards Grid (3-Column on Desktop, 1-Column on Mobile) */}
-          <div className="farm-desktop-grid-3" style={{ gap: 16 }}>
+          {/* Desktop Labourers Table */}
+          <div className="ledger-desktop-only">
+            <div className="ledger-table-wrap">
+              <table className="ledger-table">
+                <thead>
+                  <tr>
+                    <th className="ledger-th">Code</th>
+                    <th className="ledger-th">Full Name</th>
+                    <th className="ledger-th">Work Category</th>
+                    <th className="ledger-th">Daily Wage</th>
+                    <th className="ledger-th">Phone</th>
+                    <th className="ledger-th">Khata Due</th>
+                    <th className="ledger-th" style={{ textAlign: 'right' }}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {labourers.map((lab) => {
+                    const bal = dataService.getLabourerAdvanceBalance(lab.id);
+
+                    return (
+                      <tr key={lab.id} className="ledger-tr">
+                        <td className="ledger-td" style={{ fontSize: '0.78rem', color: '#64748b', fontWeight: 700 }}>
+                          {lab.labour_code}
+                        </td>
+                        <td className="ledger-td" style={{ fontWeight: 800, color: '#0f172a' }}>
+                          {lab.full_name}
+                        </td>
+                        <td className="ledger-td" style={{ fontSize: '0.82rem', color: '#475569' }}>
+                          {lab.work_category}
+                        </td>
+                        <td className="ledger-td" style={{ fontWeight: 800, color: '#16a34a' }}>
+                          ₹{lab.base_rate}/day
+                        </td>
+                        <td className="ledger-td" style={{ fontSize: '0.82rem', color: '#475569' }}>
+                          {lab.phone || '—'}
+                        </td>
+                        <td className="ledger-td">
+                          <span style={{
+                            fontWeight: 700,
+                            fontSize: '0.78rem',
+                            padding: '2px 6px',
+                            borderRadius: 4,
+                            background: bal.outstanding > 0 ? '#fef3c7' : '#f0fdf4',
+                            color: bal.outstanding > 0 ? '#b45309' : '#16a34a',
+                          }}>
+                            {bal.outstanding > 0 ? `₹${bal.outstanding}` : 'Clear'}
+                          </span>
+                        </td>
+                        <td className="ledger-td" style={{ textAlign: 'right' }}>
+                          <div style={{ display: 'inline-flex', gap: 6 }}>
+                            <button
+                              type="button"
+                              onClick={() => setSelectedLabourerForCalendar(lab)}
+                              className="ledger-action-btn ledger-action-btn-secondary"
+                              style={{ padding: '4px 8px', fontSize: '0.75rem' }}
+                            >
+                              <Calendar size={13} />
+                              <span>Monthly Calendar</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setDeleteConfirmLab(lab)}
+                              className="ledger-action-btn ledger-action-btn-danger"
+                              style={{ padding: '4px 6px' }}
+                              title="Remove Worker"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Mobile Labourers Rows */}
+          <div className="ledger-mobile-only">
             {labourers.map((lab) => {
-              const balance = dataService.getLabourerAdvanceBalance(lab.id).outstanding;
+              const bal = dataService.getLabourerAdvanceBalance(lab.id);
 
               return (
-                <ClayCard
-                  key={lab.id}
-                  style={{
-                    padding: '16px 18px',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: 12,
-                  }}
-                >
-                  <div
-                    onClick={() => setSelectedLabourerForCalendar(lab)}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      cursor: 'pointer',
-                      padding: '2px 4px',
-                      borderRadius: 12,
-                      transition: 'background 0.15s ease',
-                    }}
-                    title="Click to view monthly attendance calendar & numbers"
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                      <div
-                        style={{
-                          width: 44,
-                          height: 44,
-                          borderRadius: 14,
-                          background: 'linear-gradient(135deg, #16a34a, #15803d)',
-                          color: '#ffffff',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          fontWeight: 800,
-                          fontSize: '1rem',
-                          boxShadow: '2px 2px 6px rgba(21, 128, 61, 0.25)',
-                          flexShrink: 0,
-                        }}
-                      >
-                        {lab.full_name.charAt(0)}
-                      </div>
-                      <div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                          <span style={{ fontWeight: 800, fontSize: '1.05rem', color: '#143823' }}>
-                            {lab.full_name}
-                          </span>
-                          <span
-                            style={{
-                              fontSize: '0.68rem',
-                              fontWeight: 700,
-                              background: '#f1f5f9',
-                              color: '#475569',
-                              padding: '2px 6px',
-                              borderRadius: 6,
-                            }}
-                          >
-                            {lab.labour_code}
-                          </span>
-                        </div>
-                        <div style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)', fontWeight: 600 }}>
-                          {lab.work_category}
-                        </div>
+                <div key={lab.id} className="ledger-mobile-row">
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                    <div>
+                      <div style={{ fontWeight: 800, fontSize: '0.95rem', color: '#0f172a' }}>{lab.full_name}</div>
+                      <div style={{ fontSize: '0.74rem', color: '#64748b' }}>
+                        {lab.labour_code} • ₹{lab.base_rate}/day • {lab.work_category}
                       </div>
                     </div>
 
-                    <div style={{ textAlign: 'right' }}>
-                      <div style={{ fontWeight: 800, fontSize: '1.1rem', color: '#15803d' }}>
-                        ₹{lab.base_rate}
-                      </div>
-                      <div style={{ fontSize: '0.7rem', color: '#64748b', fontWeight: 600 }}>
-                        per day
-                      </div>
-                    </div>
+                    <span style={{
+                      fontWeight: 800,
+                      fontSize: '0.76rem',
+                      padding: '2px 6px',
+                      borderRadius: 4,
+                      background: bal.outstanding > 0 ? '#fef3c7' : '#f0fdf4',
+                      color: bal.outstanding > 0 ? '#b45309' : '#16a34a',
+                    }}>
+                      {bal.outstanding > 0 ? `Due: ₹${bal.outstanding}` : 'Khata Clear'}
+                    </span>
                   </div>
 
-                  {/* Monthly Attendance & Numbers button */}
-                  <button
-                    type="button"
-                    onClick={() => setSelectedLabourerForCalendar(lab)}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: 6,
-                      width: '100%',
-                      background: 'linear-gradient(135deg, #f0fdf4, #dcfce7)',
-                      border: '1.5px solid #86efac',
-                      color: '#15803d',
-                      borderRadius: 12,
-                      padding: '8px 12px',
-                      fontSize: '0.82rem',
-                      fontWeight: 800,
-                      cursor: 'pointer',
-                      boxShadow: '0 2px 5px rgba(21, 128, 61, 0.1)',
-                    }}
-                  >
-                    <Calendar size={15} color="#15803d" />
-                    <span>Monthly Attendance & Numbers</span>
-                  </button>
-
-                  <div
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      borderTop: '1px solid rgba(220, 235, 224, 0.7)',
-                      paddingTop: 10,
-                      gap: 8,
-                      flexWrap: 'wrap',
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                      {balance > 0 ? (
-                        <span
-                          style={{
-                            background: '#fef3c7',
-                            color: '#b45309',
-                            fontSize: '0.75rem',
-                            fontWeight: 700,
-                            padding: '3px 8px',
-                            borderRadius: 8,
-                            border: '1px solid #fde68a',
-                          }}
-                        >
-                          Khata Due: ₹{balance}
-                        </span>
-                      ) : (
-                        <span
-                          style={{
-                            background: '#f0fdf4',
-                            color: '#15803d',
-                            fontSize: '0.75rem',
-                            fontWeight: 700,
-                            padding: '3px 8px',
-                            borderRadius: 8,
-                            border: '1px solid #bbf7d0',
-                          }}
-                        >
-                          Clear Advance
-                        </span>
-                      )}
-
-                      {lab.phone && (
-                        <a
-                          href={`tel:${lab.phone}`}
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 4,
-                            background: '#f8fafc',
-                            color: '#334155',
-                            textDecoration: 'none',
-                            fontSize: '0.75rem',
-                            fontWeight: 600,
-                            padding: '3px 8px',
-                            borderRadius: 8,
-                            border: '1px solid #e2e8f0',
-                          }}
-                        >
-                          <Phone size={12} color="#64748b" />
-                          <span>{lab.phone}</span>
-                        </a>
-                      )}
-                    </div>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: 6, borderTop: '1px dashed #e2e8f0' }}>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedLabourerForCalendar(lab)}
+                      className="ledger-action-btn ledger-action-btn-secondary"
+                      style={{ padding: '5px 10px', fontSize: '0.76rem' }}
+                    >
+                      <Calendar size={13} />
+                      <span>Monthly Calendar & Numbers</span>
+                    </button>
 
                     <button
                       type="button"
                       onClick={() => setDeleteConfirmLab(lab)}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 4,
-                        background: '#ffffff',
-                        border: '1.5px solid #fecaca',
-                        color: '#dc2626',
-                        borderRadius: 10,
-                        padding: '5px 10px',
-                        fontSize: '0.75rem',
-                        fontWeight: 700,
-                        cursor: 'pointer',
-                      }}
-                      title="Remove worker from farm crew"
+                      className="ledger-action-btn ledger-action-btn-danger"
+                      style={{ padding: '5px 8px', fontSize: '0.76rem' }}
                     >
-                      <Trash2 size={13} color="#dc2626" />
-                      <span>Remove</span>
+                      <Trash2 size={13} />
                     </button>
                   </div>
-                </ClayCard>
+                </div>
               );
             })}
           </div>
         </div>
       )}
+
+      {/* =========================================================================
+          NATIVE MOBILE FIXED BOTTOM NAVIGATION BAR
+          ========================================================================= */}
+      <nav className="mobile-bottom-nav">
+        <button
+          type="button"
+          className={`mobile-bottom-nav-item ${activeSection === 'attendance' ? 'active' : ''}`}
+          onClick={() => setActiveSection('attendance')}
+        >
+          <CalendarCheck size={18} />
+          <span>Attendance</span>
+        </button>
+
+        <button
+          type="button"
+          className={`mobile-bottom-nav-item ${activeSection === 'advance' ? 'active' : ''}`}
+          onClick={() => setActiveSection('advance')}
+        >
+          <Wallet size={18} />
+          <span>Advance</span>
+        </button>
+
+        <button
+          type="button"
+          className={`mobile-bottom-nav-item ${activeSection === 'payday' ? 'active' : ''}`}
+          onClick={() => setActiveSection('payday')}
+        >
+          <CreditCard size={18} />
+          <span>Payday</span>
+        </button>
+
+        <button
+          type="button"
+          className={`mobile-bottom-nav-item ${activeSection === 'tractor' ? 'active' : ''}`}
+          onClick={() => setActiveSection('tractor')}
+        >
+          <Tractor size={18} />
+          <span>Tractor</span>
+        </button>
+
+        <button
+          type="button"
+          className={`mobile-bottom-nav-item ${activeSection === 'labours' ? 'active' : ''}`}
+          onClick={() => setActiveSection('labours')}
+        >
+          <Users size={18} />
+          <span>Workers</span>
+        </button>
+      </nav>
 
       {/* =========================================================================
           ADD LABOUR MODAL
@@ -1863,9 +1578,9 @@ export const SimpleFarmViewPage: React.FC = () => {
           style={{
             position: 'fixed',
             inset: 0,
-            background: 'rgba(20, 56, 35, 0.45)',
-            backdropFilter: 'blur(4px)',
-            zIndex: 100,
+            background: 'rgba(15, 23, 42, 0.45)',
+            backdropFilter: 'blur(3px)',
+            zIndex: 150,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -1874,72 +1589,37 @@ export const SimpleFarmViewPage: React.FC = () => {
           onClick={() => setIsAddModalOpen(false)}
         >
           <div
-            style={{
-              maxWidth: 440,
-              width: '100%',
-              background: '#f4f8f5',
-              borderRadius: 24,
-              padding: 24,
-              boxShadow: '0 20px 40px rgba(0,0,0,0.2), inset 1px 1px 2px #ffffff',
-              border: '2px solid rgba(220, 235, 224, 0.9)',
-            }}
+            className="ledger-card"
+            style={{ maxWidth: 440, width: '100%', padding: 20 }}
             onClick={(e) => e.stopPropagation()}
           >
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <div
-                  style={{
-                    width: 38,
-                    height: 38,
-                    borderRadius: 12,
-                    background: 'linear-gradient(135deg, #16a34a, #15803d)',
-                    color: '#ffffff',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                >
-                  <UserPlus size={20} />
-                </div>
-                <h2 style={{ margin: 0, fontSize: '1.25rem', color: '#143823' }}>Add New Labour</h2>
-              </div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+              <h2 style={{ margin: 0, fontSize: '1.15rem', color: '#0f172a', fontWeight: 800 }}>Add New Labourer</h2>
               <button
                 type="button"
                 onClick={() => setIsAddModalOpen(false)}
-                style={{
-                  background: '#ffffff',
-                  border: '1px solid #cbdcd0',
-                  borderRadius: '50%',
-                  width: 32,
-                  height: 32,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  cursor: 'pointer',
-                  color: '#64748b',
-                }}
+                style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#64748b' }}
               >
-                <X size={16} />
+                <X size={18} />
               </button>
             </div>
 
             <form onSubmit={handleAddLabour}>
-              <div style={{ marginBottom: 14 }}>
-                <label className="clay-label">Full Name *</label>
+              <div style={{ marginBottom: 12 }}>
+                <label className="ledger-label">Full Name *</label>
                 <input
                   type="text"
                   placeholder="e.g. Suresh Patil"
                   value={newLabName}
                   onChange={(e) => setNewLabName(e.target.value)}
-                  className="clay-input"
-                  style={{ minHeight: 44 }}
+                  className="ledger-input"
                   required
                   autoFocus
                 />
               </div>
 
-              <div style={{ marginBottom: 14 }}>
-                <label className="clay-label">Daily Wage Rate (₹/day) *</label>
+              <div style={{ marginBottom: 12 }}>
+                <label className="ledger-label">Daily Wage Rate (₹/day) *</label>
                 <input
                   type="number"
                   step="10"
@@ -1947,19 +1627,17 @@ export const SimpleFarmViewPage: React.FC = () => {
                   placeholder="e.g. 450"
                   value={newLabRate}
                   onChange={(e) => setNewLabRate(Number(e.target.value))}
-                  className="clay-input"
-                  style={{ minHeight: 44 }}
+                  className="ledger-input"
                   required
                 />
               </div>
 
-              <div style={{ marginBottom: 14 }}>
-                <label className="clay-label">Work Category / Specialization</label>
+              <div style={{ marginBottom: 12 }}>
+                <label className="ledger-label">Work Category</label>
                 <select
                   value={newLabCategory}
                   onChange={(e) => setNewLabCategory(e.target.value)}
-                  className="clay-input"
-                  style={{ minHeight: 44 }}
+                  className="ledger-input"
                 >
                   <option value="Harvest & Picking">Harvest & Picking</option>
                   <option value="Pruning & Weeding">Pruning & Weeding</option>
@@ -1970,56 +1648,44 @@ export const SimpleFarmViewPage: React.FC = () => {
                 </select>
               </div>
 
-              <div style={{ marginBottom: 14 }}>
-                <label className="clay-label">Mobile Phone (Optional)</label>
+              <div style={{ marginBottom: 12 }}>
+                <label className="ledger-label">Mobile Phone (Optional)</label>
                 <input
                   type="tel"
                   placeholder="e.g. 9876543210"
                   value={newLabPhone}
                   onChange={(e) => setNewLabPhone(e.target.value)}
-                  className="clay-input"
-                  style={{ minHeight: 44 }}
+                  className="ledger-input"
                 />
               </div>
 
-              <div style={{ marginBottom: 20 }}>
-                <label className="clay-label">Notes (Optional)</label>
+              <div style={{ marginBottom: 16 }}>
+                <label className="ledger-label">Notes (Optional)</label>
                 <input
                   type="text"
                   placeholder="e.g. Vineyard specialist"
                   value={newLabNotes}
                   onChange={(e) => setNewLabNotes(e.target.value)}
-                  className="clay-input"
-                  style={{ minHeight: 44 }}
+                  className="ledger-input"
                 />
               </div>
 
-              <div style={{ display: 'flex', gap: 10 }}>
+              <div style={{ display: 'flex', gap: 8 }}>
                 <button
                   type="button"
                   onClick={() => setIsAddModalOpen(false)}
-                  style={{
-                    flex: 1,
-                    background: '#ffffff',
-                    border: '2px solid #cbdcd0',
-                    borderRadius: 14,
-                    padding: '10px 14px',
-                    fontWeight: 700,
-                    fontSize: '0.9rem',
-                    color: '#64748b',
-                    cursor: 'pointer',
-                    minHeight: 46,
-                  }}
+                  className="ledger-action-btn ledger-action-btn-secondary"
+                  style={{ flex: 1, padding: '10px' }}
                 >
                   Cancel
                 </button>
-                <ClayButton
-                  variant="primary"
+                <button
                   type="submit"
-                  style={{ flex: 2, minHeight: 46, fontSize: '0.95rem' }}
+                  className="ledger-action-btn ledger-action-btn-primary"
+                  style={{ flex: 2, padding: '10px' }}
                 >
                   Save & Register
-                </ClayButton>
+                </button>
               </div>
             </form>
           </div>
@@ -2027,16 +1693,16 @@ export const SimpleFarmViewPage: React.FC = () => {
       )}
 
       {/* =========================================================================
-          REMOVE LABOURER CONFIRMATION MODAL
+          REMOVE LABOUR CONFIRMATION MODAL
           ========================================================================= */}
       {deleteConfirmLab && (
         <div
           style={{
             position: 'fixed',
             inset: 0,
-            background: 'rgba(20, 56, 35, 0.45)',
-            backdropFilter: 'blur(4px)',
-            zIndex: 100,
+            background: 'rgba(15, 23, 42, 0.45)',
+            backdropFilter: 'blur(3px)',
+            zIndex: 150,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -2045,76 +1711,34 @@ export const SimpleFarmViewPage: React.FC = () => {
           onClick={() => setDeleteConfirmLab(null)}
         >
           <div
-            style={{
-              maxWidth: 400,
-              width: '100%',
-              background: '#ffffff',
-              borderRadius: 24,
-              padding: 24,
-              boxShadow: '0 20px 40px rgba(0,0,0,0.2)',
-              border: '2px solid #fecaca',
-            }}
+            className="ledger-card"
+            style={{ maxWidth: 380, width: '100%', padding: 20, textAlign: 'center' }}
             onClick={(e) => e.stopPropagation()}
           >
-            <div style={{ textAlign: 'center', marginBottom: 18 }}>
-              <div
-                style={{
-                  width: 52,
-                  height: 52,
-                  borderRadius: '50%',
-                  background: '#fee2e2',
-                  color: '#dc2626',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  marginBottom: 12,
-                }}
-              >
-                <AlertTriangle size={28} />
-              </div>
-              <h3 style={{ margin: '0 0 6px 0', fontSize: '1.2rem', color: '#991b1b', fontWeight: 800 }}>
-                Remove Labourer?
-              </h3>
-              <p style={{ margin: 0, color: '#475569', fontSize: '0.88rem', lineHeight: 1.4 }}>
-                Are you sure you want to remove <strong>{deleteConfirmLab.full_name}</strong> ({deleteConfirmLab.labour_code}) from the active farm crew?
-              </p>
+            <div style={{ width: 44, height: 44, borderRadius: '50%', background: '#fee2e2', color: '#dc2626', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginBottom: 10 }}>
+              <AlertTriangle size={24} />
             </div>
+            <h3 style={{ margin: '0 0 6px 0', fontSize: '1.1rem', color: '#991b1b', fontWeight: 800 }}>
+              Remove Labourer?
+            </h3>
+            <p style={{ margin: '0 0 16px 0', color: '#475569', fontSize: '0.84rem' }}>
+              Are you sure you want to remove <strong>{deleteConfirmLab.full_name}</strong> ({deleteConfirmLab.labour_code}) from the active farm crew?
+            </p>
 
-            <div style={{ display: 'flex', gap: 10 }}>
+            <div style={{ display: 'flex', gap: 8 }}>
               <button
                 type="button"
                 onClick={() => setDeleteConfirmLab(null)}
-                style={{
-                  flex: 1,
-                  background: '#f1f5f9',
-                  border: '1px solid #cbd5e1',
-                  borderRadius: 14,
-                  padding: '10px 14px',
-                  fontWeight: 700,
-                  fontSize: '0.88rem',
-                  color: '#475569',
-                  cursor: 'pointer',
-                  minHeight: 44,
-                }}
+                className="ledger-action-btn ledger-action-btn-secondary"
+                style={{ flex: 1, padding: '9px' }}
               >
                 Cancel
               </button>
               <button
                 type="button"
                 onClick={() => handleConfirmRemoveLabour(deleteConfirmLab.id)}
-                style={{
-                  flex: 1,
-                  background: 'linear-gradient(135deg, #ef4444, #dc2626)',
-                  border: 'none',
-                  borderRadius: 14,
-                  padding: '10px 14px',
-                  fontWeight: 800,
-                  fontSize: '0.88rem',
-                  color: '#ffffff',
-                  cursor: 'pointer',
-                  minHeight: 44,
-                  boxShadow: '0 4px 10px rgba(220, 38, 38, 0.3)',
-                }}
+                className="ledger-action-btn ledger-action-btn-danger"
+                style={{ flex: 1, padding: '9px' }}
               >
                 Yes, Remove
               </button>
