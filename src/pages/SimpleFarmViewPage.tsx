@@ -63,6 +63,10 @@ export const SimpleFarmViewPage: React.FC = () => {
 
   // Settlement state
   const [settledLabId, setSettledLabId] = useState<string | null>(null);
+  const [salaryYear, setSalaryYear] = useState<number>(2026);
+  const [salaryMonth, setSalaryMonth] = useState<number>(10);
+  const [settledLabIds, setSettledLabIds] = useState<string[]>([]);
+  const [salarySettledSuccessMsg, setSalarySettledSuccessMsg] = useState('');
 
   // Hired Tractor Rental State (Purely Hired / Rented — Zero Owned Tractors)
   const [tractorRentals, setTractorRentals] = useState<TractorRentalLog[]>([]);
@@ -284,14 +288,44 @@ export const SimpleFarmViewPage: React.FC = () => {
   };
 
   // Salary Settlement Handlers
+  const handleSalaryPrevMonth = () => {
+    if (salaryMonth === 1) {
+      setSalaryMonth(12);
+      setSalaryYear((y) => y - 1);
+    } else {
+      setSalaryMonth((m) => m - 1);
+    }
+  };
+
+  const handleSalaryNextMonth = () => {
+    if (salaryMonth === 12) {
+      setSalaryMonth(1);
+      setSalaryYear((y) => y + 1);
+    } else {
+      setSalaryMonth((m) => m + 1);
+    }
+  };
+
+  const handleSalaryCurrentMonth = () => {
+    setSalaryYear(2026);
+    setSalaryMonth(10);
+  };
+
   const handleSettleSalary = (lab: Labourer, netPay: number) => {
+    const key = `${salaryYear}-${salaryMonth}-${lab.id}`;
+    setSettledLabIds((prev) => (prev.includes(key) ? prev : [...prev, key]));
     setSettledLabId(lab.id);
+    const mName = new Date(salaryYear, salaryMonth - 1, 1).toLocaleString('default', { month: 'long' });
+    setSalarySettledSuccessMsg(`Salary payout of ₹${netPay.toLocaleString('en-IN')} marked as paid for ${lab.full_name} (${mName} ${salaryYear}).`);
     confetti({
-      particleCount: 40,
-      spread: 50,
+      particleCount: 50,
+      spread: 60,
       origin: { y: 0.8 }
     });
-    setTimeout(() => setSettledLabId(null), 3000);
+    setTimeout(() => {
+      setSettledLabId(null);
+      setSalarySettledSuccessMsg('');
+    }, 3500);
   };
 
   // Tractor Handlers
@@ -407,6 +441,39 @@ export const SimpleFarmViewPage: React.FC = () => {
   };
   const singleWorkerRecords = singleWorkerData?.records || {};
 
+  // Monthly Salary Calculations
+  const salaryMonthName = new Date(salaryYear, salaryMonth - 1, 1).toLocaleString('default', { month: 'long' });
+
+  const salaryRows = labourers.map((lab) => {
+    const { summary } = dataService.getLabourerMonthlyAttendance(lab.id, salaryYear, salaryMonth);
+    const advanceInfo = dataService.getLabourerAdvanceBalance(lab.id);
+    const daysWorked = summary.effectiveDays;
+    const dailyRate = lab.base_rate;
+    const grossWage = summary.grossEarned;
+    const advanceDue = advanceInfo.outstanding;
+    const advanceDeducted = round2(Math.min(advanceDue, grossWage));
+    const netTakeHome = round2(Math.max(0, grossWage - advanceDeducted));
+    const isSettled = settledLabIds.includes(`${salaryYear}-${salaryMonth}-${lab.id}`);
+
+    return {
+      labourer: lab,
+      dailyRate,
+      daysWorked,
+      grossWage,
+      advanceDue,
+      advanceDeducted,
+      netTakeHome,
+      isSettled,
+      presentDays: summary.presentDays,
+      halfDays: summary.halfDays
+    };
+  });
+
+  const totalCrewDaysWorked = round2(salaryRows.reduce((sum, r) => sum + r.daysWorked, 0));
+  const totalGrossWages = round2(salaryRows.reduce((sum, r) => sum + r.grossWage, 0));
+  const totalAdvancesDeducted = round2(salaryRows.reduce((sum, r) => sum + r.advanceDeducted, 0));
+  const totalNetTakeHome = round2(salaryRows.reduce((sum, r) => sum + r.netTakeHome, 0));
+
   return (
     <div className="ledger-container">
       {/* Top Application Header */}
@@ -496,7 +563,7 @@ export const SimpleFarmViewPage: React.FC = () => {
           onClick={() => setActiveSection('tractor')}
         >
           <Tractor size={16} />
-          <span>Hired Tractors</span>
+          <span>Tractors</span>
           {tractorRentals.filter(r => r.rest_amount > 0).length > 0 && (
             <span style={{ fontSize: '0.7rem', background: activeSection === 'tractor' ? 'rgba(255,255,255,0.25)' : '#fef3c7', color: activeSection === 'tractor' ? '#ffffff' : '#92400e', padding: '1px 6px', borderRadius: 9999, fontWeight: 800 }}>
               {tractorRentals.filter(r => r.rest_amount > 0).length} Due
@@ -1685,18 +1752,110 @@ export const SimpleFarmViewPage: React.FC = () => {
       )}
 
       {/* =========================================================================
-          SECTION 3: PAYDAY SETTLEMENT SLIPS
+          SECTION 3: MONTHLY SALARY SETTLEMENTS
           ========================================================================= */}
       {activeSection === 'payday' && (
         <div>
-          <div style={{ marginBottom: 14 }}>
-            <h2 style={{ fontSize: '1.3rem', margin: '0 0 4px 0', color: '#143823', fontWeight: 800 }}>
-              Daily Payday Slips & Settlements
-            </h2>
-            <div style={{ fontSize: '0.82rem', color: '#4b6354', fontWeight: 600 }}>
-              Formula: <strong>Gross Wage (Days × Rate) − Khata Advance Deducted = Take-Home Pay</strong>
+          {/* Header & Month Navigation Toolbar */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            background: '#ffffff',
+            border: '2px solid rgba(220, 235, 224, 0.85)',
+            borderRadius: 16,
+            padding: '12px 18px',
+            marginBottom: 16,
+            boxShadow: '4px 4px 12px rgba(166, 184, 170, 0.2), inset 1px 1px 2px #ffffff',
+            flexWrap: 'wrap',
+            gap: 12
+          }}>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <CreditCard size={20} color="#15803d" />
+                <h2 style={{ fontSize: '1.25rem', margin: 0, color: '#143823', fontWeight: 800 }}>
+                  Monthly Salary Settlements ({salaryMonthName} {salaryYear})
+                </h2>
+              </div>
+              <div style={{ fontSize: '0.8rem', color: '#4b6354', fontWeight: 600, marginTop: 2 }}>
+                Formula: <strong>Gross Wage (Days Worked × Daily Rate) − Advance = Net Take-Home Pay</strong>
+              </div>
+            </div>
+
+            {/* Month Navigation Controls */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <button
+                type="button"
+                onClick={handleSalaryPrevMonth}
+                className="cal-nav-btn"
+                title="Previous Month"
+              >
+                <ChevronLeft size={18} />
+              </button>
+              <div style={{ fontWeight: 800, fontSize: '1rem', color: '#143823', minWidth: 120, textAlign: 'center' }}>
+                {salaryMonthName} {salaryYear}
+              </div>
+              <button
+                type="button"
+                onClick={handleSalaryNextMonth}
+                className="cal-nav-btn"
+                title="Next Month"
+              >
+                <ChevronRight size={18} />
+              </button>
+              <button
+                type="button"
+                onClick={handleSalaryCurrentMonth}
+                style={{
+                  background: '#f0fdf4',
+                  border: '1.5px solid #86efac',
+                  color: '#15803d',
+                  fontWeight: 800,
+                  fontSize: '0.78rem',
+                  padding: '6px 12px',
+                  borderRadius: 10,
+                  cursor: 'pointer',
+                  marginLeft: 4
+                }}
+              >
+                Current Month
+              </button>
             </div>
           </div>
+
+          {/* Monthly KPI Summary Cards Strip */}
+          <div className="ledger-kpi-grid" style={{ marginBottom: 16 }}>
+            <div className="ledger-kpi-box" style={{ background: 'linear-gradient(135deg, #ffffff 60%, #f0fdf4 100%)', borderColor: '#86efac' }}>
+              <div className="ledger-kpi-title" style={{ color: '#16a34a' }}>Crew Days Worked</div>
+              <div className="ledger-kpi-value" style={{ color: '#15803d' }}>{totalCrewDaysWorked}</div>
+              <div className="ledger-kpi-sub">Total payable shifts in {salaryMonthName}</div>
+            </div>
+
+            <div className="ledger-kpi-box" style={{ background: 'linear-gradient(135deg, #ffffff 60%, #f0fdf4 100%)', borderColor: '#86efac' }}>
+              <div className="ledger-kpi-title" style={{ color: '#16a34a' }}>Gross Wages</div>
+              <div className="ledger-kpi-value" style={{ color: '#15803d' }}>₹{totalGrossWages.toLocaleString('en-IN')}</div>
+              <div className="ledger-kpi-sub">Before deductions</div>
+            </div>
+
+            <div className="ledger-kpi-box" style={{ background: 'linear-gradient(135deg, #ffffff 60%, #fef3c7 100%)', borderColor: '#fcd34d' }}>
+              <div className="ledger-kpi-title" style={{ color: '#b45309' }}>Advance Deductions</div>
+              <div className="ledger-kpi-value" style={{ color: '#92400e' }}>₹{totalAdvancesDeducted.toLocaleString('en-IN')}</div>
+              <div className="ledger-kpi-sub">Recovered from Khata</div>
+            </div>
+
+            <div className="ledger-kpi-box" style={{ background: 'linear-gradient(135deg, #ffffff 60%, #f0f9ff 100%)', borderColor: '#bae6fd' }}>
+              <div className="ledger-kpi-title" style={{ color: '#0284c7' }}>Net Take-Home Pay</div>
+              <div className="ledger-kpi-value" style={{ color: '#0369a1' }}>₹{totalNetTakeHome.toLocaleString('en-IN')}</div>
+              <div className="ledger-kpi-sub">Total crew take-home payout</div>
+            </div>
+          </div>
+
+          {salarySettledSuccessMsg && (
+            <div style={{ background: '#dcfce7', border: '1.5px solid #86efac', color: '#14532d', padding: '10px 14px', borderRadius: 12, marginBottom: 14, fontSize: '0.85rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <CheckCircle2 size={16} color="#16a34a" />
+              <span>{salarySettledSuccessMsg}</span>
+            </div>
+          )}
 
           {/* Desktop Settlement Table */}
           <div className="ledger-desktop-only">
@@ -1706,22 +1865,16 @@ export const SimpleFarmViewPage: React.FC = () => {
                   <tr>
                     <th className="ledger-th">Worker</th>
                     <th className="ledger-th">Daily Rate</th>
-                    <th className="ledger-th">Days Worked Today</th>
+                    <th className="ledger-th">Days Worked</th>
                     <th className="ledger-th">Gross Wage</th>
-                    <th className="ledger-th">Khata Deducted</th>
+                    <th className="ledger-th">Advance</th>
                     <th className="ledger-th">Net Take-Home Pay</th>
                     <th className="ledger-th" style={{ textAlign: 'right' }}>Payment Action</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {labourers.map((lab) => {
-                    const att = attendance[lab.id] || 'present';
-                    const daysWorked = att === 'present' ? 1.0 : (att === 'half_day' ? 0.5 : 0.0);
-                    const gross = round2(daysWorked * lab.base_rate);
-                    const bal = dataService.getLabourerAdvanceBalance(lab.id);
-                    const advanceDeducted = round2(Math.min(bal.outstanding, gross));
-                    const netPay = round2(Math.max(0, gross - advanceDeducted));
-                    const isSettled = settledLabId === lab.id;
+                  {salaryRows.map((row) => {
+                    const { labourer: lab, dailyRate, daysWorked, grossWage, advanceDue, netTakeHome, isSettled } = row;
 
                     return (
                       <tr key={lab.id} className="ledger-tr">
@@ -1749,28 +1902,36 @@ export const SimpleFarmViewPage: React.FC = () => {
                             </div>
                           </div>
                         </td>
-                        <td className="ledger-td" style={{ color: '#475569', fontWeight: 600 }}>
-                          ₹{lab.base_rate}/day
+                        <td className="ledger-td" style={{ color: '#475569', fontWeight: 700 }}>
+                          ₹{dailyRate}/day
                         </td>
                         <td className="ledger-td" style={{ fontWeight: 800, color: '#143823' }}>
-                          {daysWorked} Day
+                          {daysWorked} Days
                         </td>
                         <td className="ledger-td" style={{ fontWeight: 800, color: '#143823' }}>
-                          ₹{gross}
-                        </td>
-                        <td className="ledger-td" style={{ color: advanceDeducted > 0 ? '#b45309' : '#64748b', fontWeight: advanceDeducted > 0 ? 800 : 500 }}>
-                          {advanceDeducted > 0 ? `− ₹${advanceDeducted}` : '₹0'}
+                          ₹{grossWage.toLocaleString('en-IN')}
                         </td>
                         <td className="ledger-td">
-                          <span style={{ fontSize: '1.15rem', fontWeight: 900, color: '#15803d', fontFamily: 'Outfit, Plus Jakarta Sans, sans-serif' }}>
-                            ₹{netPay.toLocaleString('en-IN')}
+                          {advanceDue > 0 ? (
+                            <span style={{ color: '#b45309', fontWeight: 800, background: '#fef3c7', padding: '2px 8px', borderRadius: 6, border: '1px solid #fde68a', fontSize: '0.8rem' }}>
+                              ₹{advanceDue.toLocaleString('en-IN')}
+                            </span>
+                          ) : (
+                            <span style={{ color: '#15803d', fontWeight: 700, background: '#f0fdf4', padding: '2px 8px', borderRadius: 6, border: '1px solid #bbf7d0', fontSize: '0.78rem' }}>
+                              ₹0
+                            </span>
+                          )}
+                        </td>
+                        <td className="ledger-td">
+                          <span style={{ fontSize: '1.18rem', fontWeight: 900, color: '#15803d', fontFamily: 'Outfit, Plus Jakarta Sans, sans-serif' }}>
+                            ₹{netTakeHome.toLocaleString('en-IN')}
                           </span>
                         </td>
                         <td className="ledger-td" style={{ textAlign: 'right' }}>
                           <button
                             type="button"
                             disabled={isSettled}
-                            onClick={() => handleSettleSalary(lab, netPay)}
+                            onClick={() => handleSettleSalary(lab, netTakeHome)}
                             className={`ledger-action-btn ${isSettled ? 'ledger-action-btn-secondary' : 'ledger-action-btn-primary'}`}
                             style={{ padding: '6px 14px', fontSize: '0.8rem' }}
                           >
@@ -1787,14 +1948,8 @@ export const SimpleFarmViewPage: React.FC = () => {
 
           {/* Mobile Settlement Cards */}
           <div className="ledger-mobile-only">
-            {labourers.map((lab) => {
-              const att = attendance[lab.id] || 'present';
-              const daysWorked = att === 'present' ? 1.0 : (att === 'half_day' ? 0.5 : 0.0);
-              const gross = round2(daysWorked * lab.base_rate);
-              const bal = dataService.getLabourerAdvanceBalance(lab.id);
-              const advanceDeducted = round2(Math.min(bal.outstanding, gross));
-              const netPay = round2(Math.max(0, gross - advanceDeducted));
-              const isSettled = settledLabId === lab.id;
+            {salaryRows.map((row) => {
+              const { labourer: lab, dailyRate, daysWorked, grossWage, advanceDue, netTakeHome, isSettled } = row;
 
               return (
                 <div key={lab.id} className="ledger-mobile-row">
@@ -1818,31 +1973,31 @@ export const SimpleFarmViewPage: React.FC = () => {
                       </div>
                       <div>
                         <div style={{ fontWeight: 800, fontSize: '0.95rem', color: '#143823' }}>{lab.full_name}</div>
-                        <div style={{ fontSize: '0.74rem', color: '#4b6354', fontWeight: 600 }}>₹{lab.base_rate}/day • {daysWorked} Day Worked</div>
+                        <div style={{ fontSize: '0.74rem', color: '#4b6354', fontWeight: 600 }}>₹{dailyRate}/day • {daysWorked} Days Worked</div>
                       </div>
                     </div>
 
                     <div style={{ textAlign: 'right' }}>
-                      <div style={{ fontSize: '0.68rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 800 }}>Take-Home</div>
+                      <div style={{ fontSize: '0.68rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 800 }}>Net Take-Home</div>
                       <div style={{ fontSize: '1.25rem', fontWeight: 900, color: '#15803d', fontFamily: 'Outfit, sans-serif' }}>
-                        ₹{netPay.toLocaleString('en-IN')}
+                        ₹{netTakeHome.toLocaleString('en-IN')}
                       </div>
                     </div>
                   </div>
 
                   <div style={{ background: '#f8faf8', border: '1px solid rgba(220, 235, 224, 0.8)', padding: '8px 12px', borderRadius: 10, fontSize: '0.78rem', color: '#334e3e', marginBottom: 10 }}>
-                    <span>Gross: <strong>₹{gross}</strong></span>
-                    {advanceDeducted > 0 && <span style={{ color: '#b45309', marginLeft: 10 }}>Less Advance: <strong>−₹{advanceDeducted}</strong></span>}
+                    <span>Gross Wage: <strong>₹{grossWage.toLocaleString('en-IN')}</strong></span>
+                    {advanceDue > 0 && <span style={{ color: '#b45309', marginLeft: 10 }}>Advance: <strong>₹{advanceDue.toLocaleString('en-IN')}</strong></span>}
                   </div>
 
                   <button
                     type="button"
                     disabled={isSettled}
-                    onClick={() => handleSettleSalary(lab, netPay)}
+                    onClick={() => handleSettleSalary(lab, netTakeHome)}
                     className={`ledger-action-btn ${isSettled ? 'ledger-action-btn-secondary' : 'ledger-action-btn-primary'}`}
                     style={{ width: '100%', padding: '10px', fontSize: '0.85rem', borderRadius: 12 }}
                   >
-                    {isSettled ? '✓ Paid & Settled' : `Pay Cash / UPI (₹${netPay})`}
+                    {isSettled ? '✓ Paid & Settled' : `Pay Cash / UPI (₹${netTakeHome})`}
                   </button>
                 </div>
               );
@@ -2485,7 +2640,7 @@ export const SimpleFarmViewPage: React.FC = () => {
           onClick={() => setActiveSection('tractor')}
         >
           <Tractor size={18} />
-          <span>Hired Tractors</span>
+          <span>Tractors</span>
         </button>
 
         <button
