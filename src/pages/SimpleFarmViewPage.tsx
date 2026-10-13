@@ -20,7 +20,10 @@ import {
   Clock,
   Filter,
   Calendar,
-  IndianRupee
+  IndianRupee,
+  List,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 
 type RoutineSection = 'attendance' | 'advance' | 'payday' | 'tractor' | 'labours';
@@ -35,6 +38,19 @@ export const SimpleFarmViewPage: React.FC = () => {
 
   // Selected labourer for monthly calendar modal view
   const [selectedLabourerForCalendar, setSelectedLabourerForCalendar] = useState<Labourer | null>(null);
+
+  // Attendance View Mode: 'list' (current daily sheet) | 'calendar' (monthly interactive calendar)
+  const [attendanceViewMode, setAttendanceViewMode] = useState<'list' | 'calendar'>('list');
+  const [attendanceDate, setAttendanceDate] = useState('2026-10-13');
+
+  // Calendar View states
+  const [calYear, setCalYear] = useState<number>(2026);
+  const [calMonth, setCalMonth] = useState<number>(10);
+  const [calWorkerId, setCalWorkerId] = useState<string>('all');
+  const [calSelectedDate, setCalSelectedDate] = useState<string>('2026-10-13');
+  const [calDayAttendance, setCalDayAttendance] = useState<Record<string, AttendanceStatus>>({});
+  const [calSavedMsg, setCalSavedMsg] = useState('');
+  const [calMonthRecords, setCalMonthRecords] = useState<any[]>([]);
 
   // Attendance state
   const [attendance, setAttendance] = useState<Record<string, AttendanceStatus>>({});
@@ -71,6 +87,13 @@ export const SimpleFarmViewPage: React.FC = () => {
   const [newLabNotes, setNewLabNotes] = useState('');
   const [labSuccessMsg, setLabSuccessMsg] = useState('');
 
+  const refreshCalMonthRecords = () => {
+    const monthStr = `${calYear}-${String(calMonth).padStart(2, '0')}`;
+    const days = new Date(calYear, calMonth, 0).getDate();
+    const recs = dataService.getAttendanceBetween(`${monthStr}-01`, `${monthStr}-${String(days).padStart(2, '0')}`);
+    setCalMonthRecords(recs);
+  };
+
   const loadData = () => {
     const labs = dataService.getLabourers(true);
     setLabourers(labs);
@@ -78,20 +101,35 @@ export const SimpleFarmViewPage: React.FC = () => {
       setAdvLabId(labs[0].id);
     }
 
-    const todayAtt = dataService.getAttendanceForDate(today);
+    const currentAtt = dataService.getAttendanceForDate(attendanceDate);
     const map: Record<string, AttendanceStatus> = {};
     labs.forEach((l) => {
-      const rec = todayAtt.find((a) => a.labourer_id === l.id);
+      const rec = currentAtt.find((a) => a.labourer_id === l.id);
       map[l.id] = rec ? rec.status : 'present';
     });
     setAttendance(map);
 
     setTractorRentals(dataService.getTractorRentals(tractorDateFilter));
+    refreshCalMonthRecords();
   };
 
   useEffect(() => {
     loadData();
   }, []);
+
+  useEffect(() => {
+    refreshCalMonthRecords();
+  }, [calYear, calMonth]);
+
+  useEffect(() => {
+    const recs = dataService.getAttendanceForDate(calSelectedDate);
+    const map: Record<string, AttendanceStatus> = {};
+    labourers.forEach((l) => {
+      const r = recs.find((rec) => rec.labourer_id === l.id);
+      map[l.id] = r ? r.status : 'present';
+    });
+    setCalDayAttendance(map);
+  }, [calSelectedDate, labourers]);
 
   useEffect(() => {
     setTractorRentals(dataService.getTractorRentals(tractorDateFilter));
@@ -119,12 +157,12 @@ export const SimpleFarmViewPage: React.FC = () => {
       const units = st === 'present' ? 1.0 : (st === 'half_day' ? 0.5 : 0.0);
       return {
         labourer_id: l.id,
-        work_date: today,
+        work_date: attendanceDate,
         shift_code: 'regular',
         status: st,
         payable_units: units,
         hours_worked: units * 8,
-        task_name: l.work_category,
+        task_name: 'Farm Operations',
       };
     });
 
@@ -136,6 +174,95 @@ export const SimpleFarmViewPage: React.FC = () => {
       origin: { y: 0.8 }
     });
     setTimeout(() => setAttSaved(false), 2500);
+    refreshCalMonthRecords();
+  };
+
+  // Calendar Attendance Handlers
+  const handleCalPrevMonth = () => {
+    if (calMonth === 1) {
+      setCalMonth(12);
+      setCalYear((y) => y - 1);
+    } else {
+      setCalMonth((m) => m - 1);
+    }
+  };
+
+  const handleCalNextMonth = () => {
+    if (calMonth === 12) {
+      setCalMonth(1);
+      setCalYear((y) => y + 1);
+    } else {
+      setCalMonth((m) => m + 1);
+    }
+  };
+
+  const handleCalToday = () => {
+    setCalYear(2026);
+    setCalMonth(10);
+    setCalSelectedDate(today);
+  };
+
+  const handleCalMarkAllPresent = () => {
+    const map: Record<string, AttendanceStatus> = {};
+    labourers.forEach((l) => {
+      map[l.id] = 'present';
+    });
+    setCalDayAttendance(map);
+  };
+
+  const handleSaveCalDayAttendance = () => {
+    const records = labourers.map((l) => {
+      const st = calDayAttendance[l.id] || 'present';
+      const units = st === 'present' ? 1.0 : (st === 'half_day' ? 0.5 : 0.0);
+      return {
+        labourer_id: l.id,
+        work_date: calSelectedDate,
+        shift_code: 'regular',
+        status: st,
+        payable_units: units,
+        hours_worked: units * 8,
+        task_name: 'Farm Operations',
+      };
+    });
+
+    dataService.recordAttendance(records, 'Field Supervisor');
+    setCalSavedMsg(`Attendance saved for ${calSelectedDate}!`);
+    confetti({
+      particleCount: 40,
+      spread: 50,
+      origin: { y: 0.8 }
+    });
+    setTimeout(() => setCalSavedMsg(''), 2500);
+    refreshCalMonthRecords();
+    if (calSelectedDate === attendanceDate) {
+      setAttendance(calDayAttendance);
+    }
+  };
+
+  const handleSwitchToListForDate = (dateStr: string) => {
+    setAttendanceDate(dateStr);
+    setAttendanceViewMode('list');
+    const dayAtt = dataService.getAttendanceForDate(dateStr);
+    const map: Record<string, AttendanceStatus> = {};
+    labourers.forEach((l) => {
+      const rec = dayAtt.find((a) => a.labourer_id === l.id);
+      map[l.id] = rec ? rec.status : 'present';
+    });
+    setAttendance(map);
+  };
+
+  const formatFullDate = (dStr: string) => {
+    try {
+      const [y, m, d] = dStr.split('-').map(Number);
+      return new Date(y, m - 1, d).toLocaleDateString('en-IN', {
+        weekday: 'short',
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric'
+      });
+    } catch {
+      return dStr;
+    }
   };
 
   // Advance Handlers
@@ -246,6 +373,39 @@ export const SimpleFarmViewPage: React.FC = () => {
   const halfDayCount = Object.values(attendance).filter((s) => s === 'half_day').length;
   const absentCount = Object.values(attendance).filter((s) => s === 'absent' || s === 'leave').length;
   const totalPayableUnits = round2(presentCount + halfDayCount * 0.5);
+
+  // Calendar View Derived Calculations
+  const monthName = new Date(calYear, calMonth - 1, 1).toLocaleString('default', { month: 'long' });
+  const daysInMonth = new Date(calYear, calMonth, 0).getDate();
+  const firstDayOfWeek = new Date(calYear, calMonth - 1, 1).getDay(); // 0 = Sun
+  const leadingBlanks = (firstDayOfWeek + 6) % 7; // Monday start index 0..6
+  const monthPrefix = `${calYear}-${String(calMonth).padStart(2, '0')}`;
+
+  const activeDaysCount = new Set(calMonthRecords.map((r) => r.work_date)).size;
+  const monthTotalPresent = calMonthRecords.filter((r) => r.status === 'present').length;
+  const monthTotalHalf = calMonthRecords.filter((r) => r.status === 'half_day').length;
+  const monthTotalAbsent = calMonthRecords.filter((r) => r.status === 'absent' || r.status === 'leave').length;
+  const monthTotalWages = round2(
+    calMonthRecords.reduce((sum, r) => {
+      const l = labourers.find((lab) => lab.id === r.labourer_id);
+      return sum + r.payable_units * (l ? l.base_rate : 450);
+    }, 0)
+  );
+
+  const singleWorkerData = calWorkerId !== 'all' ? dataService.getLabourerMonthlyAttendance(calWorkerId, calYear, calMonth) : null;
+  const singleWorkerSummary = singleWorkerData?.summary || {
+    presentDays: 0,
+    halfDays: 0,
+    absentDays: 0,
+    weeklyOffDays: 0,
+    unmarkedDays: 0,
+    effectiveDays: 0,
+    dailyRate: 450,
+    grossEarned: 0,
+    advanceOutstanding: 0,
+    netPayable: 0
+  };
+  const singleWorkerRecords = singleWorkerData?.records || {};
 
   return (
     <div className="ledger-container">
@@ -397,7 +557,7 @@ export const SimpleFarmViewPage: React.FC = () => {
             </div>
           </div>
 
-          {/* Tactile Action Toolbar */}
+          {/* Tactile Action Toolbar & View Mode Switcher */}
           <div style={{
             display: 'flex',
             alignItems: 'center',
@@ -409,273 +569,863 @@ export const SimpleFarmViewPage: React.FC = () => {
             marginBottom: 16,
             boxShadow: '4px 4px 12px rgba(166, 184, 170, 0.2), inset 1px 1px 2px #ffffff',
             flexWrap: 'wrap',
-            gap: 10
+            gap: 12
           }}>
-            <div style={{ fontSize: '0.85rem', fontWeight: 800, color: '#143823', display: 'flex', alignItems: 'center', gap: 6 }}>
-              <CalendarCheck size={16} color="#16a34a" />
-              <span>Daily Attendance Sheet • {labourers.length} Registered Labourers</span>
+            {/* Left: View Mode Segmented Switcher & Title */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+              <div className="ledger-view-switcher">
+                <button
+                  type="button"
+                  onClick={() => setAttendanceViewMode('list')}
+                  className={`ledger-view-btn ${attendanceViewMode === 'list' ? 'active' : ''}`}
+                >
+                  <List size={16} />
+                  <span>List View</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAttendanceViewMode('calendar')}
+                  className={`ledger-view-btn ${attendanceViewMode === 'calendar' ? 'active' : ''}`}
+                >
+                  <Calendar size={16} />
+                  <span>Calendar View</span>
+                </button>
+              </div>
+
+              <div style={{ fontSize: '0.86rem', fontWeight: 800, color: '#143823', display: 'flex', alignItems: 'center', gap: 6 }}>
+                <CalendarCheck size={16} color="#16a34a" />
+                <span>
+                  {attendanceViewMode === 'list'
+                    ? `Daily Attendance Sheet • ${labourers.length} Registered Labourers`
+                    : `Monthly Operations Calendar (${monthName} ${calYear})`
+                  }
+                </span>
+                {attendanceViewMode === 'list' && attendanceDate !== today && (
+                  <span style={{ fontSize: '0.74rem', background: '#fef3c7', color: '#92400e', padding: '2px 8px', borderRadius: 6, fontWeight: 700, marginLeft: 6 }}>
+                    Date: {attendanceDate}
+                  </span>
+                )}
+              </div>
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <button
-                type="button"
-                onClick={handleMarkAllPresent}
-                className="ledger-action-btn ledger-action-btn-secondary"
-              >
-                ✓ Mark All Present
-              </button>
-              <button
-                type="button"
-                onClick={handleSaveAttendance}
-                className="ledger-action-btn ledger-action-btn-primary"
-              >
-                <CheckCircle2 size={15} />
-                <span>Save Attendance</span>
-              </button>
-            </div>
+            {/* Right: Actions depending on view mode */}
+            {attendanceViewMode === 'list' ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                {attendanceDate !== today && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAttendanceDate(today);
+                      const dayAtt = dataService.getAttendanceForDate(today);
+                      const map: Record<string, AttendanceStatus> = {};
+                      labourers.forEach((l) => {
+                        const rec = dayAtt.find((a) => a.labourer_id === l.id);
+                        map[l.id] = rec ? rec.status : 'present';
+                      });
+                      setAttendance(map);
+                    }}
+                    className="ledger-action-btn ledger-action-btn-secondary"
+                    style={{ fontSize: '0.78rem' }}
+                  >
+                    Reset to Today
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={handleMarkAllPresent}
+                  className="ledger-action-btn ledger-action-btn-secondary"
+                >
+                  ✓ Mark All Present
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveAttendance}
+                  className="ledger-action-btn ledger-action-btn-primary"
+                >
+                  <CheckCircle2 size={15} />
+                  <span>Save Attendance</span>
+                </button>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <button
+                  type="button"
+                  onClick={handleCalToday}
+                  className="ledger-action-btn ledger-action-btn-secondary"
+                  style={{ fontSize: '0.8rem', padding: '6px 14px' }}
+                >
+                  Jump to Today (13 Oct)
+                </button>
+              </div>
+            )}
           </div>
 
-          {/* Desktop Table View */}
-          <div className="ledger-desktop-only">
-            <div className="ledger-table-wrap">
-              <table className="ledger-table">
-                <thead>
-                  <tr>
-                    <th className="ledger-th">Labourer</th>
-                    <th className="ledger-th">Daily Wage Rate</th>
-                    <th className="ledger-th">Advance Khata</th>
-                    <th className="ledger-th" style={{ textAlign: 'center' }}>Today Attendance Status</th>
-                    <th className="ledger-th">Today Earned</th>
-                    <th className="ledger-th" style={{ textAlign: 'right' }}>Monthly Audit</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {labourers.map((lab) => {
-                    const st = attendance[lab.id] || 'present';
-                    const units = st === 'present' ? 1.0 : (st === 'half_day' ? 0.5 : 0.0);
-                    const earned = round2(units * lab.base_rate);
-                    const bal = dataService.getLabourerAdvanceBalance(lab.id);
+          {/* =========================================================================
+              VIEW 1: LIST VIEW (CURRENT DAILY ROSTER)
+              ========================================================================= */}
+          {attendanceViewMode === 'list' && (
+            <>
+              {/* Desktop Table View */}
+              <div className="ledger-desktop-only">
+                <div className="ledger-table-wrap">
+                  <table className="ledger-table">
+                    <thead>
+                      <tr>
+                        <th className="ledger-th">Labourer</th>
+                        <th className="ledger-th">Daily Wage Rate</th>
+                        <th className="ledger-th">Advance Khata</th>
+                        <th className="ledger-th" style={{ textAlign: 'center' }}>Today Attendance Status</th>
+                        <th className="ledger-th">Today Earned</th>
+                        <th className="ledger-th" style={{ textAlign: 'right' }}>Monthly Audit</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {labourers.map((lab) => {
+                        const st = attendance[lab.id] || 'present';
+                        const units = st === 'present' ? 1.0 : (st === 'half_day' ? 0.5 : 0.0);
+                        const earned = round2(units * lab.base_rate);
+                        const bal = dataService.getLabourerAdvanceBalance(lab.id);
 
-                    return (
-                      <tr key={lab.id} className="ledger-tr">
-                        <td className="ledger-td">
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                            <div style={{
-                              width: 38,
-                              height: 38,
-                              borderRadius: 12,
-                              background: 'linear-gradient(135deg, #dcfce7, #bbf7d0)',
-                              color: '#15803d',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              fontWeight: 800,
-                              fontSize: '0.92rem',
-                              boxShadow: '2px 2px 5px rgba(166, 184, 170, 0.25), inset 1px 1px 2px #ffffff',
-                              border: '1.5px solid #86efac',
-                              flexShrink: 0
-                            }}>
-                              {lab.full_name.charAt(0)}
+                        return (
+                          <tr key={lab.id} className="ledger-tr">
+                            <td className="ledger-td">
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                <div style={{
+                                  width: 38,
+                                  height: 38,
+                                  borderRadius: 12,
+                                  background: 'linear-gradient(135deg, #dcfce7, #bbf7d0)',
+                                  color: '#15803d',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  fontWeight: 800,
+                                  fontSize: '0.92rem',
+                                  boxShadow: '2px 2px 5px rgba(166, 184, 170, 0.25), inset 1px 1px 2px #ffffff',
+                                  border: '1.5px solid #86efac',
+                                  flexShrink: 0
+                                }}>
+                                  {lab.full_name.charAt(0)}
+                                </div>
+                                <div>
+                                  <div style={{ fontWeight: 800, color: '#143823', fontSize: '0.92rem' }}>{lab.full_name}</div>
+                                  <div style={{ fontSize: '0.72rem', color: '#64748b' }}>{lab.labour_code}</div>
+                                </div>
+                              </div>
+                            </td>
+                            <td className="ledger-td" style={{ fontWeight: 800, color: '#143823' }}>
+                              ₹{lab.base_rate} <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 500 }}>/day</span>
+                            </td>
+                            <td className="ledger-td">
+                              {bal.outstanding > 0 ? (
+                                <span style={{ fontSize: '0.78rem', fontWeight: 800, color: '#b45309', background: '#fef3c7', padding: '3px 8px', borderRadius: 6, border: '1px solid #fde68a' }}>
+                                  Due: ₹{bal.outstanding}
+                                </span>
+                              ) : (
+                                <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#15803d', background: '#f0fdf4', padding: '3px 8px', borderRadius: 6, border: '1px solid #bbf7d0' }}>
+                                  Clear
+                                </span>
+                              )}
+                            </td>
+                            <td className="ledger-td" style={{ textAlign: 'center' }}>
+                              <div className="ledger-seg-control">
+                                <button
+                                  type="button"
+                                  className={`ledger-seg-btn ${st === 'present' ? 'active-present' : ''}`}
+                                  onClick={() => handleToggleStatus(lab.id, 'present')}
+                                >
+                                  Present
+                                </button>
+                                <button
+                                  type="button"
+                                  className={`ledger-seg-btn ${st === 'half_day' ? 'active-half' : ''}`}
+                                  onClick={() => handleToggleStatus(lab.id, 'half_day')}
+                                >
+                                  Half-Day
+                                </button>
+                                <button
+                                  type="button"
+                                  className={`ledger-seg-btn ${st === 'absent' || st === 'leave' ? 'active-absent' : ''}`}
+                                  onClick={() => handleToggleStatus(lab.id, 'absent')}
+                                >
+                                  Absent
+                                </button>
+                              </div>
+                            </td>
+                            <td className="ledger-td">
+                              <span style={{ fontWeight: 800, fontSize: '0.95rem', color: earned > 0 ? '#15803d' : '#64748b' }}>
+                                ₹{earned}
+                              </span>
+                              <span style={{ fontSize: '0.72rem', color: '#64748b', marginLeft: 4, fontWeight: 600 }}>
+                                ({units} day)
+                              </span>
+                            </td>
+                            <td className="ledger-td" style={{ textAlign: 'right' }}>
+                              <button
+                                type="button"
+                                onClick={() => setSelectedLabourerForCalendar(lab)}
+                                className="ledger-action-btn ledger-action-btn-secondary"
+                                style={{ padding: '5px 10px', fontSize: '0.76rem' }}
+                              >
+                                <Calendar size={13} color="#15803d" />
+                                <span>Monthly Calendar</span>
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Mobile High-Density Rows View */}
+              <div className="ledger-mobile-only">
+                {labourers.map((lab) => {
+                  const st = attendance[lab.id] || 'present';
+                  const units = st === 'present' ? 1.0 : (st === 'half_day' ? 0.5 : 0.0);
+                  const earned = round2(units * lab.base_rate);
+                  const bal = dataService.getLabourerAdvanceBalance(lab.id);
+
+                  return (
+                    <div key={lab.id} className="ledger-mobile-row">
+                      {/* Row Top: Avatar, Name, Rate, Khata */}
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                          <div style={{
+                            width: 38,
+                            height: 38,
+                            borderRadius: 12,
+                            background: 'linear-gradient(135deg, #dcfce7, #bbf7d0)',
+                            color: '#15803d',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontWeight: 800,
+                            fontSize: '0.92rem',
+                            boxShadow: '2px 2px 5px rgba(166, 184, 170, 0.25), inset 1px 1px 2px #ffffff',
+                            border: '1.5px solid #86efac',
+                            flexShrink: 0
+                          }}>
+                            {lab.full_name.charAt(0)}
+                          </div>
+                          <div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <span style={{ fontWeight: 800, fontSize: '0.95rem', color: '#143823' }}>
+                                {lab.full_name}
+                              </span>
+                              <span style={{ fontSize: '0.68rem', color: '#475569', background: '#f1f5f9', padding: '1px 5px', borderRadius: 4, fontWeight: 700 }}>
+                                {lab.labour_code}
+                              </span>
                             </div>
-                            <div>
-                              <div style={{ fontWeight: 800, color: '#143823', fontSize: '0.92rem' }}>{lab.full_name}</div>
-                              <div style={{ fontSize: '0.72rem', color: '#64748b' }}>{lab.labour_code}</div>
+                            <div style={{ fontSize: '0.76rem', color: '#4b6354', fontWeight: 600 }}>
+                              ₹{lab.base_rate}/day
                             </div>
                           </div>
-                        </td>
-                        <td className="ledger-td" style={{ fontWeight: 800, color: '#143823' }}>
-                          ₹{lab.base_rate} <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 500 }}>/day</span>
-                        </td>
-                        <td className="ledger-td">
+                        </div>
+
+                        <div style={{ textAlign: 'right' }}>
                           {bal.outstanding > 0 ? (
-                            <span style={{ fontSize: '0.78rem', fontWeight: 800, color: '#b45309', background: '#fef3c7', padding: '3px 8px', borderRadius: 6, border: '1px solid #fde68a' }}>
+                            <span style={{ fontSize: '0.72rem', fontWeight: 800, color: '#b45309', background: '#fef3c7', padding: '2px 6px', borderRadius: 6, border: '1px solid #fde68a' }}>
                               Due: ₹{bal.outstanding}
                             </span>
                           ) : (
-                            <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#15803d', background: '#f0fdf4', padding: '3px 8px', borderRadius: 6, border: '1px solid #bbf7d0' }}>
+                            <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#15803d', background: '#f0fdf4', padding: '2px 6px', borderRadius: 6, border: '1px solid #bbf7d0' }}>
                               Clear
                             </span>
                           )}
-                        </td>
-                        <td className="ledger-td" style={{ textAlign: 'center' }}>
-                          <div className="ledger-seg-control">
-                            <button
-                              type="button"
-                              className={`ledger-seg-btn ${st === 'present' ? 'active-present' : ''}`}
-                              onClick={() => handleToggleStatus(lab.id, 'present')}
-                            >
-                              Present
-                            </button>
-                            <button
-                              type="button"
-                              className={`ledger-seg-btn ${st === 'half_day' ? 'active-half' : ''}`}
-                              onClick={() => handleToggleStatus(lab.id, 'half_day')}
-                            >
-                              Half-Day
-                            </button>
-                            <button
-                              type="button"
-                              className={`ledger-seg-btn ${st === 'absent' || st === 'leave' ? 'active-absent' : ''}`}
-                              onClick={() => handleToggleStatus(lab.id, 'absent')}
-                            >
-                              Absent
-                            </button>
-                          </div>
-                        </td>
-                        <td className="ledger-td">
-                          <span style={{ fontWeight: 800, fontSize: '0.95rem', color: earned > 0 ? '#15803d' : '#64748b' }}>
-                            ₹{earned}
-                          </span>
-                          <span style={{ fontSize: '0.72rem', color: '#64748b', marginLeft: 4, fontWeight: 600 }}>
-                            ({units} day)
-                          </span>
-                        </td>
-                        <td className="ledger-td" style={{ textAlign: 'right' }}>
-                          <button
-                            type="button"
-                            onClick={() => setSelectedLabourerForCalendar(lab)}
-                            className="ledger-action-btn ledger-action-btn-secondary"
-                            style={{ padding: '5px 10px', fontSize: '0.76rem' }}
-                          >
-                            <Calendar size={13} color="#15803d" />
-                            <span>Monthly Calendar</span>
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          {/* Mobile High-Density Rows View */}
-          <div className="ledger-mobile-only">
-            {labourers.map((lab) => {
-              const st = attendance[lab.id] || 'present';
-              const units = st === 'present' ? 1.0 : (st === 'half_day' ? 0.5 : 0.0);
-              const earned = round2(units * lab.base_rate);
-              const bal = dataService.getLabourerAdvanceBalance(lab.id);
-
-              return (
-                <div key={lab.id} className="ledger-mobile-row">
-                  {/* Row Top: Avatar, Name, Rate, Khata */}
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                      <div style={{
-                        width: 38,
-                        height: 38,
-                        borderRadius: 12,
-                        background: 'linear-gradient(135deg, #dcfce7, #bbf7d0)',
-                        color: '#15803d',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        fontWeight: 800,
-                        fontSize: '0.92rem',
-                        boxShadow: '2px 2px 5px rgba(166, 184, 170, 0.25), inset 1px 1px 2px #ffffff',
-                        border: '1.5px solid #86efac',
-                        flexShrink: 0
-                      }}>
-                        {lab.full_name.charAt(0)}
+                        </div>
                       </div>
-                      <div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                          <span style={{ fontWeight: 800, fontSize: '0.95rem', color: '#143823' }}>
-                            {lab.full_name}
-                          </span>
-                          <span style={{ fontSize: '0.68rem', color: '#475569', background: '#f1f5f9', padding: '1px 5px', borderRadius: 4, fontWeight: 700 }}>
-                            {lab.labour_code}
-                          </span>
+
+                      {/* 1-Tap Segmented Control */}
+                      <div className="ledger-seg-control" style={{ marginBottom: 10 }}>
+                        <button
+                          type="button"
+                          className={`ledger-seg-btn ${st === 'present' ? 'active-present' : ''}`}
+                          onClick={() => handleToggleStatus(lab.id, 'present')}
+                        >
+                          Present
+                        </button>
+                        <button
+                          type="button"
+                          className={`ledger-seg-btn ${st === 'half_day' ? 'active-half' : ''}`}
+                          onClick={() => handleToggleStatus(lab.id, 'half_day')}
+                        >
+                          Half-Day
+                        </button>
+                        <button
+                          type="button"
+                          className={`ledger-seg-btn ${st === 'absent' || st === 'leave' ? 'active-absent' : ''}`}
+                          onClick={() => handleToggleStatus(lab.id, 'absent')}
+                        >
+                          Absent
+                        </button>
+                      </div>
+
+                      {/* Row Bottom: Summary and Calendar */}
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: 8, borderTop: '1px dashed #dcfce7' }}>
+                        <div style={{ fontSize: '0.8rem', color: '#143823' }}>
+                          Today: <strong>{units} Day</strong> • <strong style={{ color: earned > 0 ? '#15803d' : '#64748b' }}>₹{earned}</strong>
                         </div>
-                        <div style={{ fontSize: '0.76rem', color: '#4b6354', fontWeight: 600 }}>
-                          ₹{lab.base_rate}/day
-                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => setSelectedLabourerForCalendar(lab)}
+                          style={{
+                            background: '#f0fdf4',
+                            border: '1px solid #86efac',
+                            color: '#15803d',
+                            fontWeight: 800,
+                            fontSize: '0.74rem',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 4,
+                            cursor: 'pointer',
+                            padding: '4px 8px',
+                            borderRadius: 8,
+                          }}
+                        >
+                          <Calendar size={13} />
+                          <span>Monthly Calendar</span>
+                        </button>
                       </div>
                     </div>
+                  );
+                })}
 
-                    <div style={{ textAlign: 'right' }}>
-                      {bal.outstanding > 0 ? (
-                        <span style={{ fontSize: '0.72rem', fontWeight: 800, color: '#b45309', background: '#fef3c7', padding: '2px 6px', borderRadius: 6, border: '1px solid #fde68a' }}>
-                          Due: ₹{bal.outstanding}
-                        </span>
-                      ) : (
-                        <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#15803d', background: '#f0fdf4', padding: '2px 6px', borderRadius: 6, border: '1px solid #bbf7d0' }}>
-                          Clear
+                {/* Mobile Save Button */}
+                <div style={{ marginTop: 14 }}>
+                  <button
+                    type="button"
+                    onClick={handleSaveAttendance}
+                    className="ledger-action-btn ledger-action-btn-primary"
+                    style={{ width: '100%', padding: '14px', fontSize: '0.92rem', borderRadius: 16 }}
+                  >
+                    <CheckCircle2 size={18} />
+                    <span>Save Today's Attendance ({totalPayableUnits} Days)</span>
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* =========================================================================
+              VIEW 2: CALENDAR VIEW (MONTHLY OPERATIONS CALENDAR)
+              ========================================================================= */}
+          {attendanceViewMode === 'calendar' && (
+            <div>
+              {/* Monthly Calendar View Card */}
+              <div className="cal-view-card">
+                {/* Calendar Toolbar: Month Nav & Labourer Filter */}
+                <div className="cal-view-toolbar">
+                  {/* Month Navigation */}
+                  <div className="cal-view-nav">
+                    <button
+                      type="button"
+                      onClick={handleCalPrevMonth}
+                      className="cal-nav-btn"
+                      title="Previous Month"
+                    >
+                      <ChevronLeft size={18} />
+                    </button>
+                    <div className="cal-month-title">
+                      {monthName} {calYear}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleCalNextMonth}
+                      className="cal-nav-btn"
+                      title="Next Month"
+                    >
+                      <ChevronRight size={18} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleCalToday}
+                      style={{
+                        background: '#f0fdf4',
+                        border: '1.5px solid #86efac',
+                        color: '#15803d',
+                        fontWeight: 800,
+                        fontSize: '0.78rem',
+                        padding: '6px 12px',
+                        borderRadius: 10,
+                        cursor: 'pointer',
+                        marginLeft: 6
+                      }}
+                    >
+                      Today
+                    </button>
+                  </div>
+
+                  {/* Worker Filter Dropdown */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <label style={{ fontSize: '0.8rem', fontWeight: 800, color: '#4b6354' }}>Filter View:</label>
+                    <select
+                      value={calWorkerId}
+                      onChange={(e) => setCalWorkerId(e.target.value)}
+                      className="cal-worker-select"
+                    >
+                      <option value="all">👥 All Crew (Combined Farm Turnout)</option>
+                      {labourers.map((lab) => (
+                        <option key={lab.id} value={lab.id}>
+                          👤 {lab.full_name} (₹{lab.base_rate}/day)
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {/* Monthly Metrics KPI Strip */}
+                {calWorkerId === 'all' ? (
+                  <div className="ledger-kpi-grid" style={{ marginBottom: 18 }}>
+                    <div className="ledger-kpi-box" style={{ background: 'linear-gradient(135deg, #ffffff 60%, #f0fdf4 100%)', borderColor: '#86efac' }}>
+                      <div className="ledger-kpi-title" style={{ color: '#16a34a' }}>Recorded Days</div>
+                      <div className="ledger-kpi-value" style={{ color: '#15803d' }}>{activeDaysCount}</div>
+                      <div className="ledger-kpi-sub">Active field work days</div>
+                    </div>
+
+                    <div className="ledger-kpi-box" style={{ background: 'linear-gradient(135deg, #ffffff 60%, #f0fdf4 100%)', borderColor: '#86efac' }}>
+                      <div className="ledger-kpi-title" style={{ color: '#16a34a' }}>Present Shifts</div>
+                      <div className="ledger-kpi-value" style={{ color: '#15803d' }}>{monthTotalPresent}</div>
+                      <div className="ledger-kpi-sub">Full 8-hour crew shifts</div>
+                    </div>
+
+                    <div className="ledger-kpi-box" style={{ background: 'linear-gradient(135deg, #ffffff 60%, #fffbeb 100%)', borderColor: '#fde68a' }}>
+                      <div className="ledger-kpi-title" style={{ color: '#d97706' }}>Half-Day Shifts</div>
+                      <div className="ledger-kpi-value" style={{ color: '#b45309' }}>{monthTotalHalf}</div>
+                      <div className="ledger-kpi-sub">4-hour half shifts</div>
+                    </div>
+
+                    <div className="ledger-kpi-box" style={{ background: 'linear-gradient(135deg, #ffffff 60%, #f0f9ff 100%)', borderColor: '#bae6fd' }}>
+                      <div className="ledger-kpi-title" style={{ color: '#0284c7' }}>Monthly Wages</div>
+                      <div className="ledger-kpi-value" style={{ color: '#0369a1' }}>₹{monthTotalWages}</div>
+                      <div className="ledger-kpi-sub">Total crew earnings in {monthName}</div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="ledger-kpi-grid" style={{ marginBottom: 18 }}>
+                    <div className="ledger-kpi-box" style={{ background: 'linear-gradient(135deg, #ffffff 60%, #f0fdf4 100%)', borderColor: '#86efac' }}>
+                      <div className="ledger-kpi-title" style={{ color: '#16a34a' }}>Present Days</div>
+                      <div className="ledger-kpi-value" style={{ color: '#15803d' }}>{singleWorkerSummary.presentDays}</div>
+                      <div className="ledger-kpi-sub">Full shift days</div>
+                    </div>
+
+                    <div className="ledger-kpi-box" style={{ background: 'linear-gradient(135deg, #ffffff 60%, #fffbeb 100%)', borderColor: '#fde68a' }}>
+                      <div className="ledger-kpi-title" style={{ color: '#d97706' }}>Half / Absent</div>
+                      <div className="ledger-kpi-value" style={{ color: '#b45309' }}>
+                        {singleWorkerSummary.halfDays} <span style={{ fontSize: '0.82rem', color: '#64748b' }}>H</span> / {singleWorkerSummary.absentDays} <span style={{ fontSize: '0.82rem', color: '#64748b' }}>A</span>
+                      </div>
+                      <div className="ledger-kpi-sub">{singleWorkerSummary.effectiveDays} effective days</div>
+                    </div>
+
+                    <div className="ledger-kpi-box" style={{ background: 'linear-gradient(135deg, #ffffff 60%, #fef3c7 100%)', borderColor: '#fcd34d' }}>
+                      <div className="ledger-kpi-title" style={{ color: '#b45309' }}>Advance Due</div>
+                      <div className="ledger-kpi-value" style={{ color: '#92400e' }}>₹{singleWorkerSummary.advanceOutstanding}</div>
+                      <div className="ledger-kpi-sub">Khata advance balance</div>
+                    </div>
+
+                    <div className="ledger-kpi-box" style={{ background: 'linear-gradient(135deg, #ffffff 60%, #f0f9ff 100%)', borderColor: '#bae6fd' }}>
+                      <div className="ledger-kpi-title" style={{ color: '#0284c7' }}>Net Payable</div>
+                      <div className="ledger-kpi-value" style={{ color: '#0369a1' }}>₹{singleWorkerSummary.netPayable}</div>
+                      <div className="ledger-kpi-sub">Gross: ₹{singleWorkerSummary.grossEarned}</div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Calendar Weekdays Label */}
+                <div className="cal-weekdays-grid">
+                  {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day, idx) => (
+                    <div
+                      key={day}
+                      className="cal-weekday-label"
+                      style={{ color: idx === 6 ? '#e11d48' : undefined }}
+                    >
+                      {day}
+                    </div>
+                  ))}
+                </div>
+
+                {/* Calendar Days Grid */}
+                <div className="cal-days-grid">
+                  {/* Leading blanks */}
+                  {Array.from({ length: leadingBlanks }).map((_, idx) => (
+                    <div
+                      key={`blank-${idx}`}
+                      className="cal-day-cell"
+                      style={{ opacity: 0.25, cursor: 'default', background: '#f8fafc', borderStyle: 'dashed' }}
+                    />
+                  ))}
+
+                  {/* Month day cells */}
+                  {Array.from({ length: daysInMonth }).map((_, idx) => {
+                    const dayNum = idx + 1;
+                    const dateStr = `${monthPrefix}-${String(dayNum).padStart(2, '0')}`;
+                    const isSelected = dateStr === calSelectedDate;
+                    const isTodayDate = dateStr === today;
+                    const dayOfWeek = new Date(calYear, calMonth - 1, dayNum).getDay();
+                    const isSunday = dayOfWeek === 0;
+                    const isFuture = dateStr > today;
+
+                    if (calWorkerId === 'all') {
+                      const dayRecs = calMonthRecords.filter((r) => r.work_date === dateStr);
+                      const pCount = dayRecs.filter((r) => r.status === 'present').length;
+                      const hCount = dayRecs.filter((r) => r.status === 'half_day').length;
+                      const aCount = dayRecs.filter((r) => r.status === 'absent' || r.status === 'leave').length;
+                      const dayWages = round2(
+                        dayRecs.reduce((sum, r) => {
+                          const l = labourers.find((lab) => lab.id === r.labourer_id);
+                          return sum + r.payable_units * (l ? l.base_rate : 450);
+                        }, 0)
+                      );
+
+                      let statusClass = '';
+                      if (dayRecs.length > 0) {
+                        if (aCount === dayRecs.length) statusClass = 'status-absent';
+                        else if (hCount > 0 || aCount > 0) statusClass = 'status-half_day';
+                        else statusClass = 'status-present';
+                      } else if (isSunday) {
+                        statusClass = 'status-sunday';
+                      } else if (isFuture) {
+                        statusClass = 'future';
+                      }
+
+                      return (
+                        <div
+                          key={dateStr}
+                          onClick={() => setCalSelectedDate(dateStr)}
+                          className={`cal-day-cell ${statusClass} ${isSelected ? 'selected' : ''} ${isTodayDate ? 'today' : ''}`}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+                            <span className="cal-day-num">{dayNum}</span>
+                            {isTodayDate && (
+                              <span style={{ fontSize: '0.6rem', background: '#16a34a', color: '#ffffff', padding: '1px 4px', borderRadius: 4, fontWeight: 900 }}>
+                                TODAY
+                              </span>
+                            )}
+                          </div>
+
+                          <div style={{ width: '100%', textAlign: 'center', marginTop: 2 }}>
+                            {dayRecs.length > 0 ? (
+                              <div>
+                                <span className={`cal-day-status-badge ${aCount === dayRecs.length ? 'cal-status-a' : (hCount > 0 || aCount > 0 ? 'cal-status-hd' : 'cal-status-p')}`}>
+                                  <span className="cal-badge-desktop">
+                                    {pCount > 0 ? `${pCount} Present` : `${aCount} Absent`}
+                                  </span>
+                                  <span className="cal-badge-mobile">
+                                    {pCount}P{hCount > 0 ? ` ${hCount}H` : ''}
+                                  </span>
+                                </span>
+                                <div style={{ fontSize: '0.68rem', fontWeight: 800, color: '#166534', marginTop: 2 }}>
+                                  ₹{dayWages}
+                                </div>
+                              </div>
+                            ) : isSunday ? (
+                              <span className="cal-day-status-badge cal-status-off">Off</span>
+                            ) : isFuture ? (
+                              <span style={{ fontSize: '0.7rem', color: '#cbd5e1' }}>—</span>
+                            ) : (
+                              <span style={{ fontSize: '0.64rem', color: '#94a3b8' }}>Unmarked</span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    } else {
+                      // Single worker cell
+                      const wRec = singleWorkerRecords[dateStr];
+                      const labObj = labourers.find((l) => l.id === calWorkerId);
+                      const rate = labObj ? labObj.base_rate : 450;
+
+                      let statusClass = '';
+                      let label = '';
+                      let wage = 0;
+
+                      if (wRec) {
+                        if (wRec.status === 'present') {
+                          statusClass = 'status-present';
+                          label = 'Present';
+                          wage = rate;
+                        } else if (wRec.status === 'half_day') {
+                          statusClass = 'status-half_day';
+                          label = 'Half-Day';
+                          wage = round2(rate * 0.5);
+                        } else {
+                          statusClass = 'status-absent';
+                          label = 'Absent';
+                          wage = 0;
+                        }
+                      } else if (isSunday) {
+                        statusClass = 'status-sunday';
+                        label = 'Off';
+                      } else if (isFuture) {
+                        statusClass = 'future';
+                        label = '—';
+                      } else {
+                        label = 'Unmarked';
+                      }
+
+                      return (
+                        <div
+                          key={dateStr}
+                          onClick={() => setCalSelectedDate(dateStr)}
+                          className={`cal-day-cell ${statusClass} ${isSelected ? 'selected' : ''} ${isTodayDate ? 'today' : ''}`}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+                            <span className="cal-day-num">{dayNum}</span>
+                            {isTodayDate && (
+                              <span style={{ fontSize: '0.6rem', background: '#16a34a', color: '#ffffff', padding: '1px 4px', borderRadius: 4, fontWeight: 900 }}>
+                                TODAY
+                              </span>
+                            )}
+                          </div>
+
+                          <div style={{ width: '100%', textAlign: 'center', marginTop: 2 }}>
+                            {wRec ? (
+                              <div>
+                                <span className={`cal-day-status-badge ${wRec.status === 'present' ? 'cal-status-p' : wRec.status === 'half_day' ? 'cal-status-hd' : 'cal-status-a'}`}>
+                                  {label}
+                                </span>
+                                <div style={{ fontSize: '0.68rem', fontWeight: 800, color: '#166534', marginTop: 2 }}>
+                                  ₹{wage}
+                                </div>
+                              </div>
+                            ) : isSunday ? (
+                              <span className="cal-day-status-badge cal-status-off">Off</span>
+                            ) : isFuture ? (
+                              <span style={{ fontSize: '0.7rem', color: '#cbd5e1' }}>—</span>
+                            ) : (
+                              <span style={{ fontSize: '0.64rem', color: '#94a3b8' }}>Unmarked</span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    }
+                  })}
+                </div>
+
+                {/* Color Legend Bar */}
+                <div className="cal-legend-bar">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ width: 12, height: 12, borderRadius: 4, background: '#86efac', border: '1px solid #16a34a', display: 'inline-block' }} />
+                    <span>Present (Full Day)</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ width: 12, height: 12, borderRadius: 4, background: '#fde047', border: '1px solid #ca8a04', display: 'inline-block' }} />
+                    <span>Half-Day (0.5 Day)</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ width: 12, height: 12, borderRadius: 4, background: '#fca5a5', border: '1px solid #dc2626', display: 'inline-block' }} />
+                    <span>Absent</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ width: 12, height: 12, borderRadius: 4, background: '#e2e8f0', border: '1px dashed #94a3b8', display: 'inline-block' }} />
+                    <span>Weekly Off (Sunday)</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Selected Date Quick Attendance Editor Panel */}
+              <div className="cal-day-detail-panel">
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10, marginBottom: 14 }}>
+                  <div>
+                    <div style={{ fontSize: '1.05rem', fontWeight: 800, color: '#143823', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      <CalendarCheck size={18} color="#15803d" />
+                      <span>Daily Attendance: {formatFullDate(calSelectedDate)}</span>
+                      {calSelectedDate === today && (
+                        <span style={{ background: '#16a34a', color: '#ffffff', fontSize: '0.7rem', padding: '2px 8px', borderRadius: 9999, fontWeight: 800 }}>
+                          Today
                         </span>
                       )}
                     </div>
-                  </div>
-
-                  {/* 1-Tap Segmented Control */}
-                  <div className="ledger-seg-control" style={{ marginBottom: 10 }}>
-                    <button
-                      type="button"
-                      className={`ledger-seg-btn ${st === 'present' ? 'active-present' : ''}`}
-                      onClick={() => handleToggleStatus(lab.id, 'present')}
-                    >
-                      Present
-                    </button>
-                    <button
-                      type="button"
-                      className={`ledger-seg-btn ${st === 'half_day' ? 'active-half' : ''}`}
-                      onClick={() => handleToggleStatus(lab.id, 'half_day')}
-                    >
-                      Half-Day
-                    </button>
-                    <button
-                      type="button"
-                      className={`ledger-seg-btn ${st === 'absent' || st === 'leave' ? 'active-absent' : ''}`}
-                      onClick={() => handleToggleStatus(lab.id, 'absent')}
-                    >
-                      Absent
-                    </button>
-                  </div>
-
-                  {/* Row Bottom: Summary and Calendar */}
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: 8, borderTop: '1px dashed #dcfce7' }}>
-                    <div style={{ fontSize: '0.8rem', color: '#143823' }}>
-                      Today: <strong>{units} Day</strong> • <strong style={{ color: earned > 0 ? '#15803d' : '#64748b' }}>₹{earned}</strong>
+                    <div style={{ fontSize: '0.8rem', color: '#475569', marginTop: 2 }}>
+                      Inspect and update crew attendance for this specific date.
                     </div>
+                  </div>
 
+                  {/* Right Action buttons */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                     <button
                       type="button"
-                      onClick={() => setSelectedLabourerForCalendar(lab)}
+                      onClick={handleCalMarkAllPresent}
+                      className="ledger-action-btn ledger-action-btn-secondary"
+                      style={{ fontSize: '0.8rem', padding: '6px 12px' }}
+                    >
+                      ✓ Mark All Present
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSaveCalDayAttendance}
+                      className="ledger-action-btn ledger-action-btn-primary"
+                      style={{ fontSize: '0.8rem', padding: '6px 14px' }}
+                    >
+                      <CheckCircle2 size={15} />
+                      <span>Save for {calSelectedDate}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleSwitchToListForDate(calSelectedDate)}
                       style={{
-                        background: '#f0fdf4',
-                        border: '1px solid #86efac',
-                        color: '#15803d',
+                        background: '#f8fafc',
+                        border: '1.5px solid #cbd5e1',
+                        color: '#334155',
                         fontWeight: 800,
-                        fontSize: '0.74rem',
+                        fontSize: '0.8rem',
+                        padding: '6px 12px',
+                        borderRadius: 10,
                         display: 'inline-flex',
                         alignItems: 'center',
                         gap: 4,
-                        cursor: 'pointer',
-                        padding: '4px 8px',
-                        borderRadius: 8,
+                        cursor: 'pointer'
                       }}
                     >
-                      <Calendar size={13} />
-                      <span>Monthly Calendar</span>
+                      <List size={14} />
+                      <span>Open in Daily List View</span>
                     </button>
                   </div>
                 </div>
-              );
-            })}
 
-            {/* Mobile Save Button */}
-            <div style={{ marginTop: 14 }}>
-              <button
-                type="button"
-                onClick={handleSaveAttendance}
-                className="ledger-action-btn ledger-action-btn-primary"
-                style={{ width: '100%', padding: '14px', fontSize: '0.92rem', borderRadius: 16 }}
-              >
-                <CheckCircle2 size={18} />
-                <span>Save Today's Attendance ({totalPayableUnits} Days)</span>
-              </button>
+                {calSavedMsg && (
+                  <div style={{ background: '#dcfce7', border: '1.5px solid #86efac', color: '#14532d', padding: '8px 14px', borderRadius: 10, marginBottom: 12, fontSize: '0.84rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <CheckCircle2 size={16} color="#16a34a" />
+                    <span>{calSavedMsg}</span>
+                  </div>
+                )}
+
+                {/* Desktop Crew Table for Selected Date */}
+                <div className="ledger-desktop-only" style={{ background: '#ffffff', borderRadius: 16, border: '1.5px solid #dcebe0', overflow: 'hidden' }}>
+                  <table className="ledger-table" style={{ margin: 0 }}>
+                    <thead>
+                      <tr>
+                        <th className="ledger-th">Labourer</th>
+                        <th className="ledger-th">Wage Rate</th>
+                        <th className="ledger-th" style={{ textAlign: 'center' }}>Attendance Status</th>
+                        <th className="ledger-th">Earned</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {labourers.map((lab) => {
+                        const st = calDayAttendance[lab.id] || 'present';
+                        const units = st === 'present' ? 1.0 : (st === 'half_day' ? 0.5 : 0.0);
+                        const earned = round2(units * lab.base_rate);
+
+                        return (
+                          <tr key={lab.id} className="ledger-tr">
+                            <td className="ledger-td">
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <div style={{
+                                  width: 32,
+                                  height: 32,
+                                  borderRadius: 8,
+                                  background: '#dcfce7',
+                                  color: '#15803d',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  fontWeight: 800,
+                                  fontSize: '0.85rem'
+                                }}>
+                                  {lab.full_name.charAt(0)}
+                                </div>
+                                <div>
+                                  <div style={{ fontWeight: 800, color: '#143823', fontSize: '0.88rem' }}>{lab.full_name}</div>
+                                  <div style={{ fontSize: '0.7rem', color: '#64748b' }}>{lab.labour_code}</div>
+                                </div>
+                              </div>
+                            </td>
+                            <td className="ledger-td" style={{ fontWeight: 700, color: '#143823' }}>
+                              ₹{lab.base_rate}/day
+                            </td>
+                            <td className="ledger-td" style={{ textAlign: 'center' }}>
+                              <div className="ledger-seg-control" style={{ display: 'inline-flex' }}>
+                                <button
+                                  type="button"
+                                  className={`ledger-seg-btn ${st === 'present' ? 'active-present' : ''}`}
+                                  onClick={() => setCalDayAttendance((prev) => ({ ...prev, [lab.id]: 'present' }))}
+                                >
+                                  Present
+                                </button>
+                                <button
+                                  type="button"
+                                  className={`ledger-seg-btn ${st === 'half_day' ? 'active-half' : ''}`}
+                                  onClick={() => setCalDayAttendance((prev) => ({ ...prev, [lab.id]: 'half_day' }))}
+                                >
+                                  Half-Day
+                                </button>
+                                <button
+                                  type="button"
+                                  className={`ledger-seg-btn ${st === 'absent' || st === 'leave' ? 'active-absent' : ''}`}
+                                  onClick={() => setCalDayAttendance((prev) => ({ ...prev, [lab.id]: 'absent' }))}
+                                >
+                                  Absent
+                                </button>
+                              </div>
+                            </td>
+                            <td className="ledger-td">
+                              <span style={{ fontWeight: 800, fontSize: '0.92rem', color: earned > 0 ? '#15803d' : '#64748b' }}>
+                                ₹{earned}
+                              </span>
+                              <span style={{ fontSize: '0.72rem', color: '#64748b', marginLeft: 4 }}>
+                                ({units} day)
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Mobile Crew Cards for Selected Date */}
+                <div className="ledger-mobile-only">
+                  {labourers.map((lab) => {
+                    const st = calDayAttendance[lab.id] || 'present';
+                    const units = st === 'present' ? 1.0 : (st === 'half_day' ? 0.5 : 0.0);
+                    const earned = round2(units * lab.base_rate);
+
+                    return (
+                      <div key={lab.id} style={{ background: '#ffffff', borderRadius: 14, padding: '10px 12px', border: '1.5px solid #dcebe0', marginBottom: 8 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <div style={{ width: 28, height: 28, borderRadius: 6, background: '#dcfce7', color: '#15803d', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: '0.8rem' }}>
+                              {lab.full_name.charAt(0)}
+                            </div>
+                            <div style={{ fontWeight: 800, fontSize: '0.88rem', color: '#143823' }}>{lab.full_name}</div>
+                          </div>
+                          <div style={{ fontSize: '0.76rem', color: '#15803d', fontWeight: 800 }}>
+                            ₹{earned} ({units}d)
+                          </div>
+                        </div>
+
+                        <div className="ledger-seg-control">
+                          <button
+                            type="button"
+                            className={`ledger-seg-btn ${st === 'present' ? 'active-present' : ''}`}
+                            onClick={() => setCalDayAttendance((prev) => ({ ...prev, [lab.id]: 'present' }))}
+                          >
+                            Present
+                          </button>
+                          <button
+                            type="button"
+                            className={`ledger-seg-btn ${st === 'half_day' ? 'active-half' : ''}`}
+                            onClick={() => setCalDayAttendance((prev) => ({ ...prev, [lab.id]: 'half_day' }))}
+                          >
+                            Half-Day
+                          </button>
+                          <button
+                            type="button"
+                            className={`ledger-seg-btn ${st === 'absent' || st === 'leave' ? 'active-absent' : ''}`}
+                            onClick={() => setCalDayAttendance((prev) => ({ ...prev, [lab.id]: 'absent' }))}
+                          >
+                            Absent
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
-          </div>
+          )}
         </div>
       )}
 
