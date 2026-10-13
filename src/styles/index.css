@@ -70,21 +70,29 @@
   .grid-cols-4, .grid-cols-3, .grid-cols-2 { grid-template-columns: repeat(1, minmax(0, 1fr)); }
 }
 
-/* Modern clean scrollbar */
+/* Modern sleek floating scrollbar (Zero ugly tracks, rounded pill thumb) */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(20, 56, 35, 0.22) transparent;
+}
+
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #f1f5f2;
+  background: transparent !important;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #cbdcd0;
-  border-radius: 4px;
+  background: rgba(20, 56, 35, 0.2);
+  border-radius: 9999px;
+  border: 1px solid transparent;
+  background-clip: padding-box;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #9ab4a1;
+  background: rgba(21, 128, 61, 0.45);
 }
+

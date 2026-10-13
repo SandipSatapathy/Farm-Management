@@ -111,33 +111,24 @@ export const LabourAttendanceCalendarModal: React.FC<LabourAttendanceCalendarMod
         role="dialog"
         aria-modal="true"
       >
-        {/* Header Profile Ribbon */}
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: 12,
-            marginBottom: 18,
-            paddingBottom: 14,
-            borderBottom: '2px solid rgba(226, 232, 240, 0.8)'
-          }}
-        >
+        {/* Pinned Header Profile Ribbon */}
+        <div className="clay-modal-header">
           <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
             <div
               style={{
-                width: 52,
-                height: 52,
+                width: 48,
+                height: 48,
                 borderRadius: '50%',
                 background: 'linear-gradient(135deg, #dcfce7 0%, #bbf7d0 100%)',
                 color: '#15803d',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                fontSize: '1.25rem',
+                fontSize: '1.2rem',
                 fontWeight: 800,
-                boxShadow: '3px 3px 8px rgba(166, 184, 170, 0.3)',
-                border: '2px solid #86efac'
+                boxShadow: '2px 2px 6px rgba(166, 184, 170, 0.3)',
+                border: '2px solid #86efac',
+                flexShrink: 0
               }}
             >
               {labourer.full_name
@@ -148,7 +139,7 @@ export const LabourAttendanceCalendarModal: React.FC<LabourAttendanceCalendarMod
             </div>
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                <h2 style={{ margin: 0, fontSize: '1.35rem', color: '#143823' }}>
+                <h2 style={{ margin: 0, fontSize: '1.25rem', color: '#143823', fontWeight: 800 }}>
                   {labourer.full_name}
                 </h2>
                 <span
@@ -181,8 +172,8 @@ export const LabourAttendanceCalendarModal: React.FC<LabourAttendanceCalendarMod
                   display: 'flex',
                   alignItems: 'center',
                   gap: 12,
-                  marginTop: 4,
-                  fontSize: '0.85rem',
+                  marginTop: 3,
+                  fontSize: '0.82rem',
                   color: '#4b6354',
                   flexWrap: 'wrap'
                 }}
@@ -210,13 +201,15 @@ export const LabourAttendanceCalendarModal: React.FC<LabourAttendanceCalendarMod
           <button
             onClick={onClose}
             className="clay-btn clay-btn-secondary clay-btn-sm clay-btn-icon"
-            style={{ width: 38, height: 38, flexShrink: 0 }}
+            style={{ width: 36, height: 36, flexShrink: 0 }}
             aria-label="Close modal"
           >
             <X size={18} />
           </button>
         </div>
 
+        {/* Scrollable Body Container */}
+        <div className="clay-modal-scroll-body">
         {/* Month Navigation Bar */}
         <div className="cal-header-bar">
           <button
@@ -751,19 +744,11 @@ export const LabourAttendanceCalendarModal: React.FC<LabourAttendanceCalendarMod
           </div>
         </div>
 
-        {/* Modal Action Footer */}
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: 12,
-            marginTop: 20,
-            paddingTop: 14,
-            borderTop: '1.5px solid rgba(226, 232, 240, 0.8)',
-            flexWrap: 'wrap'
-          }}
-        >
+        </div>
+        {/* End of Scrollable Body Container */}
+
+        {/* Pinned Modal Action Footer */}
+        <div className="clay-modal-footer">
           <div style={{ display: 'flex', gap: 10 }}>
             {onAdvanceClick && (
               <button

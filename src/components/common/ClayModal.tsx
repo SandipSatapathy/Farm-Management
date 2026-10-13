@@ -24,8 +24,8 @@ export const ClayModal: React.FC<ClayModalProps> = ({
         role="dialog"
         aria-modal="true"
       >
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
-          <h2 style={{ margin: 0, fontSize: '1.35rem' }}>{title}</h2>
+        <div className="clay-modal-header">
+          <h2 style={{ margin: 0, fontSize: '1.25rem', color: '#143823', fontWeight: 800 }}>{title}</h2>
           <button
             onClick={onClose}
             className="clay-btn clay-btn-secondary clay-btn-sm clay-btn-icon"
@@ -35,7 +35,7 @@ export const ClayModal: React.FC<ClayModalProps> = ({
             <X size={18} />
           </button>
         </div>
-        <div>{children}</div>
+        <div className="clay-modal-scroll-body">{children}</div>
       </div>
     </div>
   );
