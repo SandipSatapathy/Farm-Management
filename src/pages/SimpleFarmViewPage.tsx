@@ -483,25 +483,20 @@ export const SimpleFarmViewPage: React.FC = () => {
   return (
     <>
       <div className="ledger-container">
-        {/* Mobile Compact Top Bar with Date, Farm & + Add Worker Button */}
+        {/* Mobile Compact Top Bar with Date & + Add Worker Button */}
         <div className="mobile-ledger-topbar">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ fontSize: '0.74rem', fontWeight: 800, color: '#15803d', background: '#dcfce7', border: '1px solid #86efac', padding: '3px 8px', borderRadius: 8 }}>
-              Today • 13 Oct 2026
-            </span>
-            <span style={{ fontSize: '0.74rem', fontWeight: 700, color: '#475569' }}>
-              {farm.name}
-            </span>
-          </div>
+          <span style={{ fontSize: '0.78rem', fontWeight: 800, color: '#15803d', background: '#dcfce7', border: '1.5px solid #86efac', padding: '5px 10px', borderRadius: 10 }}>
+            Today • 13 Oct 2026
+          </span>
 
           <button
             type="button"
             onClick={() => setIsAddModalOpen(true)}
             className="ledger-action-btn ledger-action-btn-primary"
-            style={{ padding: '6px 12px', fontSize: '0.78rem', borderRadius: 10, display: 'inline-flex', alignItems: 'center', gap: 5 }}
+            style={{ padding: '6px 14px', fontSize: '0.82rem', borderRadius: 10, display: 'inline-flex', alignItems: 'center', gap: 6 }}
             title="Register new worker in farm crew"
           >
-            <UserPlus size={14} />
+            <UserPlus size={15} />
             <span>+ Add Worker</span>
           </button>
         </div>
@@ -701,16 +696,6 @@ export const SimpleFarmViewPage: React.FC = () => {
                   className="ledger-action-btn ledger-action-btn-secondary"
                 >
                   ✓ Mark All Present
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setIsAddModalOpen(true)}
-                  className="ledger-action-btn ledger-action-btn-secondary"
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}
-                  title="Add new worker to farm roster"
-                >
-                  <UserPlus size={15} />
-                  <span>+ Add Worker</span>
                 </button>
                 <button
                   type="button"
@@ -2772,9 +2757,9 @@ export const SimpleFarmViewPage: React.FC = () => {
         bottom: 0,
         left: 0,
         right: 0,
-        width: '100vw',
+        width: '100%',
         maxWidth: '100%',
-        zIndex: 99999,
+        zIndex: 999999,
         margin: 0,
       }}
     >

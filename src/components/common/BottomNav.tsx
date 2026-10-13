@@ -129,9 +129,9 @@ export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, onSelectTab }) 
           bottom: 0,
           left: 0,
           right: 0,
-          width: '100vw',
+          width: '100%',
           maxWidth: '100%',
-          zIndex: 99999,
+          zIndex: 999999,
           margin: 0,
         }}
       >
