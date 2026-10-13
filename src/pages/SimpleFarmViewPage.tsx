@@ -481,65 +481,106 @@ export const SimpleFarmViewPage: React.FC = () => {
   const totalNetTakeHome = round2(salaryRows.reduce((sum, r) => sum + r.netTakeHome, 0));
 
   return (
-    <div className="ledger-container">
-      {/* Desktop Enterprise Tab Strip */}
-      <div className="desktop-ledger-tabs">
-        <button
-          type="button"
-          className={`desktop-ledger-tab-btn ${activeSection === 'attendance' ? 'active' : ''}`}
-          onClick={() => setActiveSection('attendance')}
-        >
-          <CalendarCheck size={16} />
-          <span>Attendance</span>
-          <span style={{ fontSize: '0.7rem', background: activeSection === 'attendance' ? 'rgba(255,255,255,0.25)' : '#dcfce7', color: activeSection === 'attendance' ? '#ffffff' : '#15803d', padding: '1px 6px', borderRadius: 9999, fontWeight: 800 }}>
-            {presentCount}/{labourers.length}
-          </span>
-        </button>
-
-        <button
-          type="button"
-          className={`desktop-ledger-tab-btn ${activeSection === 'advance' ? 'active' : ''}`}
-          onClick={() => setActiveSection('advance')}
-        >
-          <Wallet size={16} />
-          <span>Advance</span>
-        </button>
-
-        <button
-          type="button"
-          className={`desktop-ledger-tab-btn ${activeSection === 'payday' ? 'active' : ''}`}
-          onClick={() => setActiveSection('payday')}
-        >
-          <CreditCard size={16} />
-          <span>Salary</span>
-        </button>
-
-        <button
-          type="button"
-          className={`desktop-ledger-tab-btn ${activeSection === 'tractor' ? 'active' : ''}`}
-          onClick={() => setActiveSection('tractor')}
-        >
-          <Tractor size={16} />
-          <span>Tractors</span>
-          {tractorRentals.filter(r => r.rest_amount > 0).length > 0 && (
-            <span style={{ fontSize: '0.7rem', background: activeSection === 'tractor' ? 'rgba(255,255,255,0.25)' : '#fef3c7', color: activeSection === 'tractor' ? '#ffffff' : '#92400e', padding: '1px 6px', borderRadius: 9999, fontWeight: 800 }}>
-              {tractorRentals.filter(r => r.rest_amount > 0).length} Due
+    <>
+      <div className="ledger-container">
+        {/* Mobile Compact Top Bar with Date, Farm & + Add Worker Button */}
+        <div className="mobile-ledger-topbar">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ fontSize: '0.74rem', fontWeight: 800, color: '#15803d', background: '#dcfce7', border: '1px solid #86efac', padding: '3px 8px', borderRadius: 8 }}>
+              Today • 13 Oct 2026
             </span>
-          )}
-        </button>
+            <span style={{ fontSize: '0.74rem', fontWeight: 700, color: '#475569' }}>
+              {farm.name}
+            </span>
+          </div>
 
-        <button
-          type="button"
-          className={`desktop-ledger-tab-btn ${activeSection === 'labours' ? 'active' : ''}`}
-          onClick={() => setActiveSection('labours')}
-        >
-          <Users size={16} />
-          <span>Workers</span>
-          <span style={{ fontSize: '0.7rem', background: activeSection === 'labours' ? 'rgba(255,255,255,0.25)' : '#f1f5f9', color: activeSection === 'labours' ? '#ffffff' : '#475569', padding: '1px 6px', borderRadius: 9999, fontWeight: 800 }}>
-            {labourers.length}
-          </span>
-        </button>
-      </div>
+          <button
+            type="button"
+            onClick={() => setIsAddModalOpen(true)}
+            className="ledger-action-btn ledger-action-btn-primary"
+            style={{ padding: '6px 12px', fontSize: '0.78rem', borderRadius: 10, display: 'inline-flex', alignItems: 'center', gap: 5 }}
+            title="Register new worker in farm crew"
+          >
+            <UserPlus size={14} />
+            <span>+ Add Worker</span>
+          </button>
+        </div>
+
+        {/* Desktop Enterprise Tab Strip */}
+        <div className="desktop-ledger-tabs">
+          <button
+            type="button"
+            className={`desktop-ledger-tab-btn ${activeSection === 'attendance' ? 'active' : ''}`}
+            onClick={() => setActiveSection('attendance')}
+          >
+            <CalendarCheck size={16} />
+            <span>Attendance</span>
+            <span style={{ fontSize: '0.7rem', background: activeSection === 'attendance' ? 'rgba(255,255,255,0.25)' : '#dcfce7', color: activeSection === 'attendance' ? '#ffffff' : '#15803d', padding: '1px 6px', borderRadius: 9999, fontWeight: 800 }}>
+              {presentCount}/{labourers.length}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            className={`desktop-ledger-tab-btn ${activeSection === 'advance' ? 'active' : ''}`}
+            onClick={() => setActiveSection('advance')}
+          >
+            <Wallet size={16} />
+            <span>Advance</span>
+          </button>
+
+          <button
+            type="button"
+            className={`desktop-ledger-tab-btn ${activeSection === 'payday' ? 'active' : ''}`}
+            onClick={() => setActiveSection('payday')}
+          >
+            <CreditCard size={16} />
+            <span>Salary</span>
+          </button>
+
+          <button
+            type="button"
+            className={`desktop-ledger-tab-btn ${activeSection === 'tractor' ? 'active' : ''}`}
+            onClick={() => setActiveSection('tractor')}
+          >
+            <Tractor size={16} />
+            <span>Tractors</span>
+            {tractorRentals.filter(r => r.rest_amount > 0).length > 0 && (
+              <span style={{ fontSize: '0.7rem', background: activeSection === 'tractor' ? 'rgba(255,255,255,0.25)' : '#fef3c7', color: activeSection === 'tractor' ? '#ffffff' : '#92400e', padding: '1px 6px', borderRadius: 9999, fontWeight: 800 }}>
+                {tractorRentals.filter(r => r.rest_amount > 0).length} Due
+              </span>
+            )}
+          </button>
+
+          <button
+            type="button"
+            className={`desktop-ledger-tab-btn ${activeSection === 'labours' ? 'active' : ''}`}
+            onClick={() => setActiveSection('labours')}
+          >
+            <Users size={16} />
+            <span>Workers</span>
+            <span style={{ fontSize: '0.7rem', background: activeSection === 'labours' ? 'rgba(255,255,255,0.25)' : '#f1f5f9', color: activeSection === 'labours' ? '#ffffff' : '#475569', padding: '1px 6px', borderRadius: 9999, fontWeight: 800 }}>
+              {labourers.length}
+            </span>
+          </button>
+
+          {/* Desktop Right Quick Actions */}
+          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={{ fontSize: '0.78rem', fontWeight: 800, color: '#15803d', background: '#dcfce7', border: '1.5px solid #86efac', padding: '5px 10px', borderRadius: 10 }}>
+              Today • 13 Oct 2026
+            </span>
+            <button
+              type="button"
+              onClick={() => setIsAddModalOpen(true)}
+              className="ledger-action-btn ledger-action-btn-primary"
+              style={{ padding: '7px 14px', fontSize: '0.82rem', borderRadius: 10, display: 'inline-flex', alignItems: 'center', gap: 6 }}
+              title="Register new worker in farm crew"
+            >
+              <UserPlus size={15} />
+              <span>+ Add Worker</span>
+            </button>
+          </div>
+        </div>
 
       {/* Global Success Banner */}
       {attSaved && (
@@ -660,6 +701,16 @@ export const SimpleFarmViewPage: React.FC = () => {
                   className="ledger-action-btn ledger-action-btn-secondary"
                 >
                   ✓ Mark All Present
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsAddModalOpen(true)}
+                  className="ledger-action-btn ledger-action-btn-secondary"
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}
+                  title="Add new worker to farm roster"
+                >
+                  <UserPlus size={15} />
+                  <span>+ Add Worker</span>
                 </button>
                 <button
                   type="button"
@@ -2709,71 +2760,84 @@ export const SimpleFarmViewPage: React.FC = () => {
           </div>
         </div>
       )}
+    </div>
 
-      {/* =========================================================================
-          NATIVE MOBILE FIXED BOTTOM NAVIGATION BAR
-          ========================================================================= */}
-      <nav className="mobile-bottom-nav">
-        <button
-          type="button"
-          className={`mobile-bottom-nav-item ${activeSection === 'attendance' ? 'active' : ''}`}
-          onClick={() => {
-            setActiveSection('attendance');
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-          }}
-        >
-          <CalendarCheck size={18} />
-          <span>Attendance</span>
-        </button>
+    {/* =========================================================================
+        NATIVE MOBILE FIXED / STICKY BOTTOM NAVIGATION BAR
+        ========================================================================= */}
+    <nav
+      className="mobile-bottom-nav"
+      style={{
+        position: 'fixed',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        width: '100vw',
+        maxWidth: '100%',
+        zIndex: 99999,
+        margin: 0,
+      }}
+    >
+      <button
+        type="button"
+        className={`mobile-bottom-nav-item ${activeSection === 'attendance' ? 'active' : ''}`}
+        onClick={() => {
+          setActiveSection('attendance');
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }}
+      >
+        <CalendarCheck size={18} />
+        <span>Attendance</span>
+      </button>
 
-        <button
-          type="button"
-          className={`mobile-bottom-nav-item ${activeSection === 'advance' ? 'active' : ''}`}
-          onClick={() => {
-            setActiveSection('advance');
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-          }}
-        >
-          <Wallet size={18} />
-          <span>Advance</span>
-        </button>
+      <button
+        type="button"
+        className={`mobile-bottom-nav-item ${activeSection === 'advance' ? 'active' : ''}`}
+        onClick={() => {
+          setActiveSection('advance');
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }}
+      >
+        <Wallet size={18} />
+        <span>Advance</span>
+      </button>
 
-        <button
-          type="button"
-          className={`mobile-bottom-nav-item ${activeSection === 'payday' ? 'active' : ''}`}
-          onClick={() => {
-            setActiveSection('payday');
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-          }}
-        >
-          <CreditCard size={18} />
-          <span>Salary</span>
-        </button>
+      <button
+        type="button"
+        className={`mobile-bottom-nav-item ${activeSection === 'payday' ? 'active' : ''}`}
+        onClick={() => {
+          setActiveSection('payday');
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }}
+      >
+        <CreditCard size={18} />
+        <span>Salary</span>
+      </button>
 
-        <button
-          type="button"
-          className={`mobile-bottom-nav-item ${activeSection === 'tractor' ? 'active' : ''}`}
-          onClick={() => {
-            setActiveSection('tractor');
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-          }}
-        >
-          <Tractor size={18} />
-          <span>Tractors</span>
-        </button>
+      <button
+        type="button"
+        className={`mobile-bottom-nav-item ${activeSection === 'tractor' ? 'active' : ''}`}
+        onClick={() => {
+          setActiveSection('tractor');
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }}
+      >
+        <Tractor size={18} />
+        <span>Tractors</span>
+      </button>
 
-        <button
-          type="button"
-          className={`mobile-bottom-nav-item ${activeSection === 'labours' ? 'active' : ''}`}
-          onClick={() => {
-            setActiveSection('labours');
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-          }}
-        >
-          <Users size={18} />
-          <span>Workers</span>
-        </button>
-      </nav>
+      <button
+        type="button"
+        className={`mobile-bottom-nav-item ${activeSection === 'labours' ? 'active' : ''}`}
+        onClick={() => {
+          setActiveSection('labours');
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }}
+      >
+        <Users size={18} />
+        <span>Workers</span>
+      </button>
+    </nav>
 
       {/* =========================================================================
           ADD LABOUR MODAL
@@ -2949,7 +3013,7 @@ export const SimpleFarmViewPage: React.FC = () => {
           loadData();
         }}
       />
-    </div>
+    </>
   );
 };
 

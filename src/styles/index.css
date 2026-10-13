@@ -16,6 +16,7 @@ html, body {
 /* App Layout Grid */
 .app-container {
   display: flex;
+  flex-direction: column;
   min-height: 100vh;
   background-color: var(--color-bg);
   overflow-x: hidden;

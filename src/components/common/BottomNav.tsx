@@ -122,7 +122,19 @@ export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, onSelectTab }) 
       )}
 
       {/* Fixed Mobile Bottom Nav Matching Farm Operations */}
-      <nav className="mobile-bottom-nav">
+      <nav
+        className="mobile-bottom-nav"
+        style={{
+          position: 'fixed',
+          bottom: 0,
+          left: 0,
+          right: 0,
+          width: '100vw',
+          maxWidth: '100%',
+          zIndex: 99999,
+          margin: 0,
+        }}
+      >
         <button
           type="button"
           onClick={() => handleSelect('attendance')}

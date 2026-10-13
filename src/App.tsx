@@ -33,7 +33,7 @@ export const AppContent: React.FC = () => {
     return (
       <div className="app-container" style={{ display: 'block', minHeight: '100vh', background: 'var(--color-bg)' }}>
         <Navbar />
-        <main>
+        <main style={{ paddingBottom: 'calc(80px + env(safe-area-inset-bottom))' }}>
           <SimpleFarmViewPage />
         </main>
       </div>
