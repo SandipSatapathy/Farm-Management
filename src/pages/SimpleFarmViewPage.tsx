@@ -252,33 +252,50 @@ export const SimpleFarmViewPage: React.FC = () => {
   return (
     <div className="ledger-container">
       {/* Top Application Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14, flexWrap: 'wrap', gap: 10 }}>
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
-            <h1 style={{ margin: 0, fontSize: '1.4rem', fontWeight: 800, color: '#0f172a', letterSpacing: '-0.02em' }}>
-              Farm Ledger & Operations
-            </h1>
-            <span style={{ fontSize: '0.72rem', fontWeight: 800, background: '#f1f5f9', color: '#475569', padding: '2px 8px', borderRadius: 6, border: '1px solid #cbd5e1' }}>
-              {farm.name}
-            </span>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18, flexWrap: 'wrap', gap: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{
+            width: 48,
+            height: 48,
+            borderRadius: 16,
+            background: 'linear-gradient(135deg, #16a34a, #15803d)',
+            color: '#ffffff',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            boxShadow: '4px 4px 12px rgba(21, 128, 61, 0.35), inset 1px 1px 2px rgba(255, 255, 255, 0.5)',
+            border: '2px solid rgba(255, 255, 255, 0.7)',
+            flexShrink: 0
+          }}>
+            <CalendarCheck size={24} />
           </div>
-          <div style={{ fontSize: '0.8rem', color: '#64748b' }}>
-            Daily attendance, cash advances, salary settlements & hired tractor accounts
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <h1 style={{ margin: 0, fontSize: '1.45rem', fontWeight: 800, color: '#143823', letterSpacing: '-0.02em', fontFamily: 'Outfit, Plus Jakarta Sans, sans-serif' }}>
+                Farm Operations & Daily Khata
+              </h1>
+              <span style={{ fontSize: '0.72rem', fontWeight: 800, background: '#dcfce7', color: '#15803d', padding: '3px 8px', borderRadius: 8, border: '1px solid #86efac' }}>
+                {farm.name}
+              </span>
+            </div>
+            <div style={{ fontSize: '0.82rem', color: '#4b6354', fontWeight: 600 }}>
+              Daily attendance, cash advances, salary settlements & hired tractor accounts
+            </div>
           </div>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: '0.76rem', fontWeight: 700, color: '#16a34a', background: '#dcfce7', border: '1px solid #86efac', padding: '5px 10px', borderRadius: 6 }}>
-            13 Oct 2026
+          <span style={{ fontSize: '0.78rem', fontWeight: 800, color: '#15803d', background: '#dcfce7', border: '1.5px solid #86efac', padding: '6px 12px', borderRadius: 12, boxShadow: '2px 2px 6px rgba(22, 163, 74, 0.15)' }}>
+            Today • 13 Oct 2026
           </span>
           <button
             type="button"
             onClick={() => setIsAddModalOpen(true)}
             className="ledger-action-btn ledger-action-btn-primary"
-            style={{ padding: '6px 12px', fontSize: '0.8rem' }}
+            style={{ padding: '8px 14px', fontSize: '0.82rem' }}
           >
-            <UserPlus size={14} />
-            <span>Add Labour</span>
+            <UserPlus size={15} />
+            <span>+ Add Labour</span>
           </button>
         </div>
       </div>
@@ -292,7 +309,7 @@ export const SimpleFarmViewPage: React.FC = () => {
         >
           <CalendarCheck size={16} />
           <span>Attendance</span>
-          <span style={{ fontSize: '0.7rem', background: '#dcfce7', color: '#15803d', padding: '1px 6px', borderRadius: 9999, fontWeight: 800 }}>
+          <span style={{ fontSize: '0.7rem', background: activeSection === 'attendance' ? 'rgba(255,255,255,0.25)' : '#dcfce7', color: activeSection === 'attendance' ? '#ffffff' : '#15803d', padding: '1px 6px', borderRadius: 9999, fontWeight: 800 }}>
             {presentCount}/{labourers.length}
           </span>
         </button>
@@ -323,7 +340,7 @@ export const SimpleFarmViewPage: React.FC = () => {
           <Tractor size={16} />
           <span>Hired Tractors</span>
           {tractorRentals.filter(r => r.rest_amount > 0).length > 0 && (
-            <span style={{ fontSize: '0.7rem', background: '#fef3c7', color: '#92400e', padding: '1px 6px', borderRadius: 9999, fontWeight: 800 }}>
+            <span style={{ fontSize: '0.7rem', background: activeSection === 'tractor' ? 'rgba(255,255,255,0.25)' : '#fef3c7', color: activeSection === 'tractor' ? '#ffffff' : '#92400e', padding: '1px 6px', borderRadius: 9999, fontWeight: 800 }}>
               {tractorRentals.filter(r => r.rest_amount > 0).length} Due
             </span>
           )}
@@ -336,7 +353,7 @@ export const SimpleFarmViewPage: React.FC = () => {
         >
           <Users size={16} />
           <span>Worker Roster</span>
-          <span style={{ fontSize: '0.7rem', background: '#f1f5f9', color: '#475569', padding: '1px 6px', borderRadius: 9999, fontWeight: 800 }}>
+          <span style={{ fontSize: '0.7rem', background: activeSection === 'labours' ? 'rgba(255,255,255,0.25)' : '#f1f5f9', color: activeSection === 'labours' ? '#ffffff' : '#475569', padding: '1px 6px', borderRadius: 9999, fontWeight: 800 }}>
             {labourers.length}
           </span>
         </button>
@@ -344,8 +361,8 @@ export const SimpleFarmViewPage: React.FC = () => {
 
       {/* Global Success Banner */}
       {attSaved && (
-        <div style={{ background: '#dcfce7', border: '1px solid #86efac', color: '#14532d', padding: '10px 14px', borderRadius: 8, marginBottom: 14, fontSize: '0.84rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8 }}>
-          <CheckCircle2 size={16} color="#16a34a" />
+        <div style={{ background: '#dcfce7', border: '2px solid #86efac', color: '#14532d', padding: '12px 16px', borderRadius: 14, marginBottom: 16, fontSize: '0.86rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: 8, boxShadow: '3px 3px 10px rgba(22, 163, 74, 0.15)' }}>
+          <CheckCircle2 size={18} color="#16a34a" />
           <span>Attendance saved successfully for today (13 Oct 2026).</span>
         </div>
       )}
@@ -355,53 +372,66 @@ export const SimpleFarmViewPage: React.FC = () => {
           ========================================================================= */}
       {activeSection === 'attendance' && (
         <div>
-          {/* KPI Metrics Strip */}
+          {/* Tactile Clay KPI Metrics Strip */}
           <div className="ledger-kpi-grid">
-            <div className="ledger-kpi-box" style={{ borderLeft: '3px solid #16a34a' }}>
-              <div className="ledger-kpi-title">Present Crew</div>
-              <div className="ledger-kpi-value" style={{ color: '#16a34a' }}>{presentCount}</div>
+            <div className="ledger-kpi-box" style={{ background: 'linear-gradient(135deg, #ffffff 60%, #f0fdf4 100%)', borderColor: '#86efac' }}>
+              <div className="ledger-kpi-title" style={{ color: '#16a34a' }}>Present Crew</div>
+              <div className="ledger-kpi-value" style={{ color: '#15803d' }}>{presentCount}</div>
               <div className="ledger-kpi-sub">Full shift (8 hrs)</div>
             </div>
 
-            <div className="ledger-kpi-box" style={{ borderLeft: '3px solid #d97706' }}>
-              <div className="ledger-kpi-title">Half-Day Crew</div>
-              <div className="ledger-kpi-value" style={{ color: '#d97706' }}>{halfDayCount}</div>
+            <div className="ledger-kpi-box" style={{ background: 'linear-gradient(135deg, #ffffff 60%, #fffbeb 100%)', borderColor: '#fde68a' }}>
+              <div className="ledger-kpi-title" style={{ color: '#d97706' }}>Half-Day Crew</div>
+              <div className="ledger-kpi-value" style={{ color: '#b45309' }}>{halfDayCount}</div>
               <div className="ledger-kpi-sub">Half shift (4 hrs)</div>
             </div>
 
-            <div className="ledger-kpi-box" style={{ borderLeft: '3px solid #dc2626' }}>
-              <div className="ledger-kpi-title">Absent Crew</div>
-              <div className="ledger-kpi-value" style={{ color: '#dc2626' }}>{absentCount}</div>
+            <div className="ledger-kpi-box" style={{ background: 'linear-gradient(135deg, #ffffff 60%, #fef2f2 100%)', borderColor: '#fecaca' }}>
+              <div className="ledger-kpi-title" style={{ color: '#dc2626' }}>Absent Crew</div>
+              <div className="ledger-kpi-value" style={{ color: '#b91c1c' }}>{absentCount}</div>
               <div className="ledger-kpi-sub">Unpaid leave</div>
             </div>
 
-            <div className="ledger-kpi-box" style={{ borderLeft: '3px solid #0284c7' }}>
-              <div className="ledger-kpi-title">Effective Paid Days</div>
-              <div className="ledger-kpi-value" style={{ color: '#0284c7' }}>{totalPayableUnits}</div>
+            <div className="ledger-kpi-box" style={{ background: 'linear-gradient(135deg, #ffffff 60%, #f0f9ff 100%)', borderColor: '#bae6fd' }}>
+              <div className="ledger-kpi-title" style={{ color: '#0284c7' }}>Effective Paid Days</div>
+              <div className="ledger-kpi-value" style={{ color: '#0369a1' }}>{totalPayableUnits}</div>
               <div className="ledger-kpi-sub">Total crew days payable</div>
             </div>
           </div>
 
-          {/* Action Toolbar */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: '8px 12px', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
-            <div style={{ fontSize: '0.82rem', fontWeight: 700, color: '#334155' }}>
-              Daily Attendance Sheet • {labourers.length} Registered Labourers
+          {/* Tactile Action Toolbar */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            background: '#ffffff',
+            border: '2px solid rgba(220, 235, 224, 0.85)',
+            borderRadius: 16,
+            padding: '10px 16px',
+            marginBottom: 16,
+            boxShadow: '4px 4px 12px rgba(166, 184, 170, 0.2), inset 1px 1px 2px #ffffff',
+            flexWrap: 'wrap',
+            gap: 10
+          }}>
+            <div style={{ fontSize: '0.85rem', fontWeight: 800, color: '#143823', display: 'flex', alignItems: 'center', gap: 6 }}>
+              <CalendarCheck size={16} color="#16a34a" />
+              <span>Daily Attendance Sheet • {labourers.length} Registered Labourers</span>
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <button
                 type="button"
                 onClick={handleMarkAllPresent}
                 className="ledger-action-btn ledger-action-btn-secondary"
               >
-                Mark All Present
+                ✓ Mark All Present
               </button>
               <button
                 type="button"
                 onClick={handleSaveAttendance}
                 className="ledger-action-btn ledger-action-btn-primary"
               >
-                <CheckCircle2 size={14} />
+                <CheckCircle2 size={15} />
                 <span>Save Attendance</span>
               </button>
             </div>
@@ -432,22 +462,43 @@ export const SimpleFarmViewPage: React.FC = () => {
                     return (
                       <tr key={lab.id} className="ledger-tr">
                         <td className="ledger-td">
-                          <div style={{ fontWeight: 800, color: '#0f172a' }}>{lab.full_name}</div>
-                          <div style={{ fontSize: '0.72rem', color: '#64748b' }}>{lab.labour_code}</div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                            <div style={{
+                              width: 38,
+                              height: 38,
+                              borderRadius: 12,
+                              background: 'linear-gradient(135deg, #dcfce7, #bbf7d0)',
+                              color: '#15803d',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              fontWeight: 800,
+                              fontSize: '0.92rem',
+                              boxShadow: '2px 2px 5px rgba(166, 184, 170, 0.25), inset 1px 1px 2px #ffffff',
+                              border: '1.5px solid #86efac',
+                              flexShrink: 0
+                            }}>
+                              {lab.full_name.charAt(0)}
+                            </div>
+                            <div>
+                              <div style={{ fontWeight: 800, color: '#143823', fontSize: '0.92rem' }}>{lab.full_name}</div>
+                              <div style={{ fontSize: '0.72rem', color: '#64748b' }}>{lab.labour_code}</div>
+                            </div>
+                          </div>
                         </td>
-                        <td className="ledger-td" style={{ fontSize: '0.82rem', color: '#475569' }}>
+                        <td className="ledger-td" style={{ fontSize: '0.82rem', color: '#475569', fontWeight: 600 }}>
                           {lab.work_category}
                         </td>
-                        <td className="ledger-td" style={{ fontWeight: 700, color: '#0f172a' }}>
+                        <td className="ledger-td" style={{ fontWeight: 800, color: '#143823' }}>
                           ₹{lab.base_rate} <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 500 }}>/day</span>
                         </td>
                         <td className="ledger-td">
                           {bal.outstanding > 0 ? (
-                            <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#b45309', background: '#fef3c7', padding: '2px 8px', borderRadius: 4, border: '1px solid #fde68a' }}>
+                            <span style={{ fontSize: '0.78rem', fontWeight: 800, color: '#b45309', background: '#fef3c7', padding: '3px 8px', borderRadius: 6, border: '1px solid #fde68a' }}>
                               Due: ₹{bal.outstanding}
                             </span>
                           ) : (
-                            <span style={{ fontSize: '0.78rem', fontWeight: 600, color: '#16a34a' }}>
+                            <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#15803d', background: '#f0fdf4', padding: '3px 8px', borderRadius: 6, border: '1px solid #bbf7d0' }}>
                               Clear
                             </span>
                           )}
@@ -478,10 +529,10 @@ export const SimpleFarmViewPage: React.FC = () => {
                           </div>
                         </td>
                         <td className="ledger-td">
-                          <span style={{ fontWeight: 800, color: earned > 0 ? '#16a34a' : '#64748b' }}>
+                          <span style={{ fontWeight: 800, fontSize: '0.95rem', color: earned > 0 ? '#15803d' : '#64748b' }}>
                             ₹{earned}
                           </span>
-                          <span style={{ fontSize: '0.72rem', color: '#64748b', marginLeft: 4 }}>
+                          <span style={{ fontSize: '0.72rem', color: '#64748b', marginLeft: 4, fontWeight: 600 }}>
                             ({units} day)
                           </span>
                         </td>
@@ -490,10 +541,10 @@ export const SimpleFarmViewPage: React.FC = () => {
                             type="button"
                             onClick={() => setSelectedLabourerForCalendar(lab)}
                             className="ledger-action-btn ledger-action-btn-secondary"
-                            style={{ padding: '4px 8px', fontSize: '0.75rem' }}
+                            style={{ padding: '5px 10px', fontSize: '0.76rem' }}
                           >
-                            <Calendar size={13} />
-                            <span>View Calendar</span>
+                            <Calendar size={13} color="#15803d" />
+                            <span>Monthly Calendar</span>
                           </button>
                         </td>
                       </tr>
@@ -514,37 +565,56 @@ export const SimpleFarmViewPage: React.FC = () => {
 
               return (
                 <div key={lab.id} className="ledger-mobile-row">
-                  {/* Row Top: Name, Rate, Khata */}
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                    <div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <span style={{ fontWeight: 800, fontSize: '0.95rem', color: '#0f172a' }}>
-                          {lab.full_name}
-                        </span>
-                        <span style={{ fontSize: '0.68rem', color: '#64748b', background: '#f1f5f9', padding: '1px 5px', borderRadius: 4 }}>
-                          {lab.labour_code}
-                        </span>
+                  {/* Row Top: Avatar, Name, Rate, Khata */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <div style={{
+                        width: 38,
+                        height: 38,
+                        borderRadius: 12,
+                        background: 'linear-gradient(135deg, #dcfce7, #bbf7d0)',
+                        color: '#15803d',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontWeight: 800,
+                        fontSize: '0.92rem',
+                        boxShadow: '2px 2px 5px rgba(166, 184, 170, 0.25), inset 1px 1px 2px #ffffff',
+                        border: '1.5px solid #86efac',
+                        flexShrink: 0
+                      }}>
+                        {lab.full_name.charAt(0)}
                       </div>
-                      <div style={{ fontSize: '0.76rem', color: '#64748b' }}>
-                        ₹{lab.base_rate}/day • {lab.work_category}
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <span style={{ fontWeight: 800, fontSize: '0.95rem', color: '#143823' }}>
+                            {lab.full_name}
+                          </span>
+                          <span style={{ fontSize: '0.68rem', color: '#475569', background: '#f1f5f9', padding: '1px 5px', borderRadius: 4, fontWeight: 700 }}>
+                            {lab.labour_code}
+                          </span>
+                        </div>
+                        <div style={{ fontSize: '0.76rem', color: '#4b6354', fontWeight: 600 }}>
+                          ₹{lab.base_rate}/day • {lab.work_category}
+                        </div>
                       </div>
                     </div>
 
                     <div style={{ textAlign: 'right' }}>
                       {bal.outstanding > 0 ? (
-                        <span style={{ fontSize: '0.72rem', fontWeight: 800, color: '#b45309', background: '#fef3c7', padding: '2px 6px', borderRadius: 4, border: '1px solid #fde68a' }}>
+                        <span style={{ fontSize: '0.72rem', fontWeight: 800, color: '#b45309', background: '#fef3c7', padding: '2px 6px', borderRadius: 6, border: '1px solid #fde68a' }}>
                           Due: ₹{bal.outstanding}
                         </span>
                       ) : (
-                        <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#16a34a' }}>
-                          Khata Clear
+                        <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#15803d', background: '#f0fdf4', padding: '2px 6px', borderRadius: 6, border: '1px solid #bbf7d0' }}>
+                          Clear
                         </span>
                       )}
                     </div>
                   </div>
 
                   {/* 1-Tap Segmented Control */}
-                  <div className="ledger-seg-control" style={{ marginBottom: 8 }}>
+                  <div className="ledger-seg-control" style={{ marginBottom: 10 }}>
                     <button
                       type="button"
                       className={`ledger-seg-btn ${st === 'present' ? 'active-present' : ''}`}
@@ -569,25 +639,26 @@ export const SimpleFarmViewPage: React.FC = () => {
                   </div>
 
                   {/* Row Bottom: Summary and Calendar */}
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: 6, borderTop: '1px dashed #e2e8f0' }}>
-                    <div style={{ fontSize: '0.78rem', color: '#334155' }}>
-                      Today: <strong>{units} Day</strong> • <strong style={{ color: earned > 0 ? '#16a34a' : '#64748b' }}>₹{earned}</strong>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: 8, borderTop: '1px dashed #dcfce7' }}>
+                    <div style={{ fontSize: '0.8rem', color: '#143823' }}>
+                      Today: <strong>{units} Day</strong> • <strong style={{ color: earned > 0 ? '#15803d' : '#64748b' }}>₹{earned}</strong>
                     </div>
 
                     <button
                       type="button"
                       onClick={() => setSelectedLabourerForCalendar(lab)}
                       style={{
-                        background: 'transparent',
-                        border: 'none',
-                        color: '#16a34a',
-                        fontWeight: 700,
-                        fontSize: '0.75rem',
+                        background: '#f0fdf4',
+                        border: '1px solid #86efac',
+                        color: '#15803d',
+                        fontWeight: 800,
+                        fontSize: '0.74rem',
                         display: 'inline-flex',
                         alignItems: 'center',
                         gap: 4,
                         cursor: 'pointer',
-                        padding: '2px 4px',
+                        padding: '4px 8px',
+                        borderRadius: 8,
                       }}
                     >
                       <Calendar size={13} />
@@ -598,15 +669,15 @@ export const SimpleFarmViewPage: React.FC = () => {
               );
             })}
 
-            {/* Mobile Fixed Save Button at top or bottom */}
-            <div style={{ marginTop: 12 }}>
+            {/* Mobile Save Button */}
+            <div style={{ marginTop: 14 }}>
               <button
                 type="button"
                 onClick={handleSaveAttendance}
                 className="ledger-action-btn ledger-action-btn-primary"
-                style={{ width: '100%', padding: '12px', fontSize: '0.9rem' }}
+                style={{ width: '100%', padding: '14px', fontSize: '0.92rem', borderRadius: 16 }}
               >
-                <CheckCircle2 size={16} />
+                <CheckCircle2 size={18} />
                 <span>Save Today's Attendance ({totalPayableUnits} Days)</span>
               </button>
             </div>
@@ -669,22 +740,24 @@ export const SimpleFarmViewPage: React.FC = () => {
               </div>
 
               {/* Quick Presets */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6, marginBottom: 16 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, marginBottom: 16 }}>
                 {[200, 500, 1000, 2000].map((amt) => (
                   <button
                     key={amt}
                     type="button"
                     onClick={() => setAdvAmount(amt)}
                     style={{
-                      padding: '6px 0',
-                      borderRadius: 6,
-                      border: '1px solid',
+                      padding: '8px 0',
+                      borderRadius: 10,
+                      border: '2px solid',
                       borderColor: advAmount === amt ? '#16a34a' : '#cbd5e1',
-                      background: advAmount === amt ? '#f0fdf4' : '#ffffff',
-                      color: advAmount === amt ? '#16a34a' : '#334155',
-                      fontWeight: 700,
-                      fontSize: '0.8rem',
+                      background: advAmount === amt ? 'linear-gradient(135deg, #dcfce7, #bbf7d0)' : '#ffffff',
+                      color: advAmount === amt ? '#15803d' : '#334155',
+                      fontWeight: 800,
+                      fontSize: '0.82rem',
                       cursor: 'pointer',
+                      boxShadow: advAmount === amt ? '2px 2px 6px rgba(22, 163, 74, 0.25), inset 1px 1px 2px #ffffff' : 'none',
+                      transition: 'all 0.15s ease'
                     }}
                   >
                     +₹{amt}
@@ -695,7 +768,7 @@ export const SimpleFarmViewPage: React.FC = () => {
               <button
                 type="submit"
                 className="ledger-action-btn ledger-action-btn-primary"
-                style={{ width: '100%', padding: '10px', fontSize: '0.88rem' }}
+                style={{ width: '100%', padding: '12px', fontSize: '0.9rem', borderRadius: 14 }}
               >
                 Record Cash Advance
               </button>
@@ -704,12 +777,12 @@ export const SimpleFarmViewPage: React.FC = () => {
 
           {/* Running Khata Balances Table */}
           <div className="ledger-card">
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
               <div>
-                <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800, color: '#0f172a' }}>
+                <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 800, color: '#143823' }}>
                   Worker Advance Balances (Khata)
                 </h3>
-                <div style={{ fontSize: '0.78rem', color: '#64748b' }}>
+                <div style={{ fontSize: '0.8rem', color: '#4b6354', fontWeight: 600 }}>
                   Cumulative advances issued, recovered, and currently outstanding
                 </div>
               </div>
@@ -736,26 +809,47 @@ export const SimpleFarmViewPage: React.FC = () => {
                       return (
                         <tr key={l.id} className="ledger-tr">
                           <td className="ledger-td">
-                            <span style={{ fontWeight: 800, color: '#0f172a' }}>{l.full_name}</span>
-                            <span style={{ fontSize: '0.72rem', color: '#64748b', marginLeft: 6 }}>{l.labour_code}</span>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                              <div style={{
+                                width: 36,
+                                height: 36,
+                                borderRadius: 12,
+                                background: 'linear-gradient(135deg, #dcfce7, #bbf7d0)',
+                                color: '#15803d',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                fontWeight: 800,
+                                fontSize: '0.9rem',
+                                boxShadow: '2px 2px 5px rgba(166, 184, 170, 0.25)',
+                                border: '1.5px solid #86efac',
+                                flexShrink: 0
+                              }}>
+                                {l.full_name.charAt(0)}
+                              </div>
+                              <div>
+                                <span style={{ fontWeight: 800, color: '#143823' }}>{l.full_name}</span>
+                                <div style={{ fontSize: '0.72rem', color: '#64748b' }}>{l.labour_code}</div>
+                              </div>
+                            </div>
                           </td>
-                          <td className="ledger-td" style={{ fontSize: '0.8rem', color: '#475569' }}>
+                          <td className="ledger-td" style={{ fontSize: '0.82rem', color: '#475569', fontWeight: 600 }}>
                             {l.work_category}
                           </td>
-                          <td className="ledger-td" style={{ color: '#475569' }}>
+                          <td className="ledger-td" style={{ color: '#475569', fontWeight: 600 }}>
                             ₹{bal.totalIssued}
                           </td>
-                          <td className="ledger-td" style={{ color: '#16a34a' }}>
+                          <td className="ledger-td" style={{ color: '#15803d', fontWeight: 700 }}>
                             ₹{bal.totalRecovered}
                           </td>
                           <td className="ledger-td">
                             <span style={{
                               fontWeight: 800,
                               fontSize: '0.85rem',
-                              padding: '2px 8px',
-                              borderRadius: 4,
+                              padding: '3px 8px',
+                              borderRadius: 6,
                               background: bal.outstanding > 0 ? '#fef3c7' : '#f0fdf4',
-                              color: bal.outstanding > 0 ? '#b45309' : '#16a34a',
+                              color: bal.outstanding > 0 ? '#b45309' : '#15803d',
                               border: `1px solid ${bal.outstanding > 0 ? '#fde68a' : '#bbf7d0'}`,
                             }}>
                               {bal.outstanding > 0 ? `Due: ₹${bal.outstanding}` : 'Clear'}
@@ -766,9 +860,9 @@ export const SimpleFarmViewPage: React.FC = () => {
                               type="button"
                               onClick={() => setSelectedLabourerForCalendar(l)}
                               className="ledger-action-btn ledger-action-btn-secondary"
-                              style={{ padding: '4px 8px', fontSize: '0.75rem' }}
+                              style={{ padding: '5px 10px', fontSize: '0.76rem' }}
                             >
-                              <Calendar size={13} />
+                              <Calendar size={13} color="#15803d" />
                               <span>Calendar</span>
                             </button>
                           </td>
@@ -787,37 +881,57 @@ export const SimpleFarmViewPage: React.FC = () => {
 
                 return (
                   <div key={l.id} className="ledger-mobile-row">
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-                      <div>
-                        <div style={{ fontWeight: 800, fontSize: '0.92rem', color: '#0f172a' }}>{l.full_name}</div>
-                        <div style={{ fontSize: '0.74rem', color: '#64748b' }}>{l.work_category}</div>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <div style={{
+                          width: 36,
+                          height: 36,
+                          borderRadius: 12,
+                          background: 'linear-gradient(135deg, #dcfce7, #bbf7d0)',
+                          color: '#15803d',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontWeight: 800,
+                          fontSize: '0.9rem',
+                          border: '1.5px solid #86efac',
+                          flexShrink: 0
+                        }}>
+                          {l.full_name.charAt(0)}
+                        </div>
+                        <div>
+                          <div style={{ fontWeight: 800, fontSize: '0.94rem', color: '#143823' }}>{l.full_name}</div>
+                          <div style={{ fontSize: '0.74rem', color: '#4b6354', fontWeight: 600 }}>{l.work_category}</div>
+                        </div>
                       </div>
 
                       <span style={{
                         fontWeight: 800,
-                        fontSize: '0.82rem',
-                        padding: '2px 8px',
-                        borderRadius: 4,
+                        fontSize: '0.8rem',
+                        padding: '3px 8px',
+                        borderRadius: 6,
                         background: bal.outstanding > 0 ? '#fef3c7' : '#f0fdf4',
-                        color: bal.outstanding > 0 ? '#b45309' : '#16a34a',
+                        color: bal.outstanding > 0 ? '#b45309' : '#15803d',
                         border: `1px solid ${bal.outstanding > 0 ? '#fde68a' : '#bbf7d0'}`,
                       }}>
                         {bal.outstanding > 0 ? `Due: ₹${bal.outstanding}` : 'Clear'}
                       </span>
                     </div>
 
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.78rem', color: '#475569', paddingTop: 6, borderTop: '1px dashed #e2e8f0' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.78rem', color: '#475569', paddingTop: 8, borderTop: '1px dashed #dcfce7' }}>
                       <span>Given: ₹{bal.totalIssued} • Repaid: ₹{bal.totalRecovered}</span>
                       <button
                         type="button"
                         onClick={() => setSelectedLabourerForCalendar(l)}
                         style={{
-                          background: 'transparent',
-                          border: 'none',
-                          color: '#16a34a',
-                          fontWeight: 700,
+                          background: '#f0fdf4',
+                          border: '1px solid #86efac',
+                          color: '#15803d',
+                          fontWeight: 800,
                           fontSize: '0.74rem',
                           cursor: 'pointer',
+                          padding: '3px 8px',
+                          borderRadius: 6
                         }}
                       >
                         Calendar
@@ -836,11 +950,11 @@ export const SimpleFarmViewPage: React.FC = () => {
           ========================================================================= */}
       {activeSection === 'payday' && (
         <div>
-          <div style={{ marginBottom: 12 }}>
-            <h2 style={{ fontSize: '1.2rem', margin: '0 0 2px 0', color: '#0f172a', fontWeight: 800 }}>
+          <div style={{ marginBottom: 14 }}>
+            <h2 style={{ fontSize: '1.3rem', margin: '0 0 4px 0', color: '#143823', fontWeight: 800 }}>
               Daily Payday Slips & Settlements
             </h2>
-            <div style={{ fontSize: '0.8rem', color: '#64748b' }}>
+            <div style={{ fontSize: '0.82rem', color: '#4b6354', fontWeight: 600 }}>
               Formula: <strong>Gross Wage (Days × Rate) − Khata Advance Deducted = Take-Home Pay</strong>
             </div>
           </div>
@@ -873,23 +987,43 @@ export const SimpleFarmViewPage: React.FC = () => {
                     return (
                       <tr key={lab.id} className="ledger-tr">
                         <td className="ledger-td">
-                          <span style={{ fontWeight: 800, color: '#0f172a' }}>{lab.full_name}</span>
-                          <span style={{ fontSize: '0.72rem', color: '#64748b', marginLeft: 6 }}>{lab.labour_code}</span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                            <div style={{
+                              width: 36,
+                              height: 36,
+                              borderRadius: 12,
+                              background: 'linear-gradient(135deg, #dcfce7, #bbf7d0)',
+                              color: '#15803d',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              fontWeight: 800,
+                              fontSize: '0.9rem',
+                              border: '1.5px solid #86efac',
+                              flexShrink: 0
+                            }}>
+                              {lab.full_name.charAt(0)}
+                            </div>
+                            <div>
+                              <span style={{ fontWeight: 800, color: '#143823' }}>{lab.full_name}</span>
+                              <div style={{ fontSize: '0.72rem', color: '#64748b' }}>{lab.labour_code}</div>
+                            </div>
+                          </div>
                         </td>
-                        <td className="ledger-td" style={{ color: '#475569' }}>
+                        <td className="ledger-td" style={{ color: '#475569', fontWeight: 600 }}>
                           ₹{lab.base_rate}/day
                         </td>
-                        <td className="ledger-td" style={{ fontWeight: 700, color: '#0f172a' }}>
+                        <td className="ledger-td" style={{ fontWeight: 800, color: '#143823' }}>
                           {daysWorked} Day
                         </td>
-                        <td className="ledger-td" style={{ fontWeight: 800, color: '#0f172a' }}>
+                        <td className="ledger-td" style={{ fontWeight: 800, color: '#143823' }}>
                           ₹{gross}
                         </td>
-                        <td className="ledger-td" style={{ color: advanceDeducted > 0 ? '#b45309' : '#64748b', fontWeight: advanceDeducted > 0 ? 700 : 400 }}>
+                        <td className="ledger-td" style={{ color: advanceDeducted > 0 ? '#b45309' : '#64748b', fontWeight: advanceDeducted > 0 ? 800 : 500 }}>
                           {advanceDeducted > 0 ? `− ₹${advanceDeducted}` : '₹0'}
                         </td>
                         <td className="ledger-td">
-                          <span style={{ fontSize: '1.05rem', fontWeight: 900, color: '#16a34a' }}>
+                          <span style={{ fontSize: '1.15rem', fontWeight: 900, color: '#15803d', fontFamily: 'Outfit, Plus Jakarta Sans, sans-serif' }}>
                             ₹{netPay.toLocaleString('en-IN')}
                           </span>
                         </td>
@@ -899,7 +1033,7 @@ export const SimpleFarmViewPage: React.FC = () => {
                             disabled={isSettled}
                             onClick={() => handleSettleSalary(lab, netPay)}
                             className={`ledger-action-btn ${isSettled ? 'ledger-action-btn-secondary' : 'ledger-action-btn-primary'}`}
-                            style={{ padding: '5px 12px', fontSize: '0.78rem' }}
+                            style={{ padding: '6px 14px', fontSize: '0.8rem' }}
                           >
                             {isSettled ? '✓ Paid / Settled' : 'Pay Cash / UPI'}
                           </button>
@@ -925,23 +1059,41 @@ export const SimpleFarmViewPage: React.FC = () => {
 
               return (
                 <div key={lab.id} className="ledger-mobile-row">
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-                    <div>
-                      <div style={{ fontWeight: 800, fontSize: '0.95rem', color: '#0f172a' }}>{lab.full_name}</div>
-                      <div style={{ fontSize: '0.74rem', color: '#64748b' }}>₹{lab.base_rate}/day • {daysWorked} Day Worked</div>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <div style={{
+                        width: 36,
+                        height: 36,
+                        borderRadius: 12,
+                        background: 'linear-gradient(135deg, #dcfce7, #bbf7d0)',
+                        color: '#15803d',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontWeight: 800,
+                        fontSize: '0.9rem',
+                        border: '1.5px solid #86efac',
+                        flexShrink: 0
+                      }}>
+                        {lab.full_name.charAt(0)}
+                      </div>
+                      <div>
+                        <div style={{ fontWeight: 800, fontSize: '0.95rem', color: '#143823' }}>{lab.full_name}</div>
+                        <div style={{ fontSize: '0.74rem', color: '#4b6354', fontWeight: 600 }}>₹{lab.base_rate}/day • {daysWorked} Day Worked</div>
+                      </div>
                     </div>
 
                     <div style={{ textAlign: 'right' }}>
-                      <div style={{ fontSize: '0.68rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 700 }}>Take-Home</div>
-                      <div style={{ fontSize: '1.2rem', fontWeight: 900, color: '#16a34a' }}>
+                      <div style={{ fontSize: '0.68rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 800 }}>Take-Home</div>
+                      <div style={{ fontSize: '1.25rem', fontWeight: 900, color: '#15803d', fontFamily: 'Outfit, sans-serif' }}>
                         ₹{netPay.toLocaleString('en-IN')}
                       </div>
                     </div>
                   </div>
 
-                  <div style={{ background: '#f8fafc', padding: '6px 10px', borderRadius: 6, fontSize: '0.76rem', color: '#475569', marginBottom: 8 }}>
-                    <span>Gross: ₹{gross}</span>
-                    {advanceDeducted > 0 && <span style={{ color: '#b45309', marginLeft: 8 }}>Less Advance: −₹{advanceDeducted}</span>}
+                  <div style={{ background: '#f8faf8', border: '1px solid rgba(220, 235, 224, 0.8)', padding: '8px 12px', borderRadius: 10, fontSize: '0.78rem', color: '#334e3e', marginBottom: 10 }}>
+                    <span>Gross: <strong>₹{gross}</strong></span>
+                    {advanceDeducted > 0 && <span style={{ color: '#b45309', marginLeft: 10 }}>Less Advance: <strong>−₹{advanceDeducted}</strong></span>}
                   </div>
 
                   <button
@@ -949,7 +1101,7 @@ export const SimpleFarmViewPage: React.FC = () => {
                     disabled={isSettled}
                     onClick={() => handleSettleSalary(lab, netPay)}
                     className={`ledger-action-btn ${isSettled ? 'ledger-action-btn-secondary' : 'ledger-action-btn-primary'}`}
-                    style={{ width: '100%', padding: '9px', fontSize: '0.82rem' }}
+                    style={{ width: '100%', padding: '10px', fontSize: '0.85rem', borderRadius: 12 }}
                   >
                     {isSettled ? '✓ Paid & Settled' : `Pay Cash / UPI (₹${netPay})`}
                   </button>
@@ -969,12 +1121,12 @@ export const SimpleFarmViewPage: React.FC = () => {
         return (
           <div>
             {/* Header Strip */}
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14, flexWrap: 'wrap', gap: 10 }}>
               <div>
-                <h2 style={{ fontSize: '1.2rem', margin: '0 0 2px 0', color: '#0f172a', fontWeight: 800 }}>
+                <h2 style={{ fontSize: '1.3rem', margin: '0 0 3px 0', color: '#143823', fontWeight: 800 }}>
                   Hired Tractor Rental Logs & Balance Khata
                 </h2>
-                <div style={{ fontSize: '0.8rem', color: '#64748b' }}>
+                <div style={{ fontSize: '0.82rem', color: '#4b6354', fontWeight: 600 }}>
                   Track hired tractor hours, rental rates, advance paid & balance due (Zero owned tractors)
                 </div>
               </div>
@@ -983,43 +1135,43 @@ export const SimpleFarmViewPage: React.FC = () => {
                 type="button"
                 onClick={() => setIsNewRentalOpen(!isNewRentalOpen)}
                 className="ledger-action-btn ledger-action-btn-primary"
-                style={{ padding: '6px 12px' }}
+                style={{ padding: '8px 14px' }}
               >
-                <Plus size={14} />
-                <span>{isNewRentalOpen ? 'Close Form' : 'Log Hired Tractor'}</span>
+                <Plus size={15} />
+                <span>{isNewRentalOpen ? 'Close Form' : '+ Log Hired Tractor'}</span>
               </button>
             </div>
 
             {tractorSuccessMsg && (
-              <div style={{ background: '#dcfce7', border: '1px solid #86efac', color: '#14532d', padding: '8px 12px', borderRadius: 6, marginBottom: 12, fontSize: '0.82rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
-                <CheckCircle2 size={15} color="#16a34a" />
+              <div style={{ background: '#dcfce7', border: '2px solid #86efac', color: '#14532d', padding: '10px 14px', borderRadius: 12, marginBottom: 14, fontSize: '0.84rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <CheckCircle2 size={16} color="#16a34a" />
                 <span>{tractorSuccessMsg}</span>
               </div>
             )}
 
-            {/* KPI Boxes */}
+            {/* Tactile Clay KPI Boxes */}
             <div className="ledger-kpi-grid">
-              <div className="ledger-kpi-box" style={{ borderLeft: '3px solid #0284c7' }}>
-                <div className="ledger-kpi-title">Hired Hours Worked</div>
-                <div className="ledger-kpi-value" style={{ color: '#0284c7' }}>{totals.totalHours} hrs</div>
+              <div className="ledger-kpi-box" style={{ background: 'linear-gradient(135deg, #ffffff 60%, #f0f9ff 100%)', borderColor: '#bae6fd' }}>
+                <div className="ledger-kpi-title" style={{ color: '#0284c7' }}>Hired Hours Worked</div>
+                <div className="ledger-kpi-value" style={{ color: '#0369a1' }}>{totals.totalHours} hrs</div>
                 <div className="ledger-kpi-sub">{totals.count} tractor runs recorded</div>
               </div>
 
-              <div className="ledger-kpi-box" style={{ borderLeft: '3px solid #0f172a' }}>
+              <div className="ledger-kpi-box" style={{ background: 'linear-gradient(135deg, #ffffff 60%, #f8fafc 100%)', borderColor: '#cbd5e1' }}>
                 <div className="ledger-kpi-title">Gross Rental Bill</div>
                 <div className="ledger-kpi-value">₹{totals.totalGross.toLocaleString('en-IN')}</div>
                 <div className="ledger-kpi-sub">Hours × Hourly rate</div>
               </div>
 
-              <div className="ledger-kpi-box" style={{ borderLeft: '3px solid #2563eb' }}>
-                <div className="ledger-kpi-title">Advance Paid</div>
+              <div className="ledger-kpi-box" style={{ background: 'linear-gradient(135deg, #ffffff 60%, #eff6ff 100%)', borderColor: '#bfdbfe' }}>
+                <div className="ledger-kpi-title" style={{ color: '#2563eb' }}>Advance Paid</div>
                 <div className="ledger-kpi-value" style={{ color: '#2563eb' }}>₹{totals.totalAdvance.toLocaleString('en-IN')}</div>
                 <div className="ledger-kpi-sub">Prepaid to vendor</div>
               </div>
 
-              <div className="ledger-kpi-box" style={{ borderLeft: totals.totalRest > 0 ? '3px solid #d97706' : '3px solid #16a34a' }}>
-                <div className="ledger-kpi-title">Rest Balance Due</div>
-                <div className="ledger-kpi-value" style={{ color: totals.totalRest > 0 ? '#b45309' : '#16a34a' }}>
+              <div className="ledger-kpi-box" style={{ background: totals.totalRest > 0 ? 'linear-gradient(135deg, #ffffff 60%, #fffbeb 100%)' : 'linear-gradient(135deg, #ffffff 60%, #f0fdf4 100%)', borderColor: totals.totalRest > 0 ? '#fde68a' : '#86efac' }}>
+                <div className="ledger-kpi-title" style={{ color: totals.totalRest > 0 ? '#b45309' : '#15803d' }}>Rest Balance Due</div>
+                <div className="ledger-kpi-value" style={{ color: totals.totalRest > 0 ? '#b45309' : '#15803d' }}>
                   ₹{totals.totalRest.toLocaleString('en-IN')}
                 </div>
                 <div className="ledger-kpi-sub">{totals.totalRest > 0 ? 'Pending payment' : 'Fully settled'}</div>
@@ -1361,12 +1513,12 @@ export const SimpleFarmViewPage: React.FC = () => {
           ========================================================================= */}
       {activeSection === 'labours' && (
         <div>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
             <div>
-              <h2 style={{ fontSize: '1.2rem', margin: '0 0 2px 0', color: '#0f172a', fontWeight: 800 }}>
+              <h2 style={{ fontSize: '1.3rem', margin: '0 0 3px 0', color: '#143823', fontWeight: 800 }}>
                 Farm Crew Directory ({labourers.length} Labourers)
               </h2>
-              <div style={{ fontSize: '0.8rem', color: '#64748b' }}>
+              <div style={{ fontSize: '0.82rem', color: '#4b6354', fontWeight: 600 }}>
                 Manage registered labourers, wage rates & view monthly attendance records
               </div>
             </div>
@@ -1375,15 +1527,16 @@ export const SimpleFarmViewPage: React.FC = () => {
               type="button"
               onClick={() => setIsAddModalOpen(true)}
               className="ledger-action-btn ledger-action-btn-primary"
+              style={{ padding: '8px 14px' }}
             >
-              <UserPlus size={14} />
-              <span>Add New Labour</span>
+              <UserPlus size={15} />
+              <span>+ Add New Labour</span>
             </button>
           </div>
 
           {labSuccessMsg && (
-            <div style={{ background: '#dcfce7', border: '1px solid #86efac', color: '#14532d', padding: '8px 12px', borderRadius: 6, marginBottom: 12, fontSize: '0.82rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
-              <CheckCircle2 size={15} color="#16a34a" />
+            <div style={{ background: '#dcfce7', border: '2px solid #86efac', color: '#14532d', padding: '10px 14px', borderRadius: 12, marginBottom: 14, fontSize: '0.84rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <CheckCircle2 size={16} color="#16a34a" />
               <span>{labSuccessMsg}</span>
             </div>
           )}
@@ -1409,29 +1562,50 @@ export const SimpleFarmViewPage: React.FC = () => {
 
                     return (
                       <tr key={lab.id} className="ledger-tr">
-                        <td className="ledger-td" style={{ fontSize: '0.78rem', color: '#64748b', fontWeight: 700 }}>
-                          {lab.labour_code}
+                        <td className="ledger-td" style={{ fontSize: '0.78rem', color: '#64748b', fontWeight: 800 }}>
+                          <span style={{ background: '#f1f5f9', padding: '2px 6px', borderRadius: 6, border: '1px solid #cbd5e1' }}>
+                            {lab.labour_code}
+                          </span>
                         </td>
-                        <td className="ledger-td" style={{ fontWeight: 800, color: '#0f172a' }}>
-                          {lab.full_name}
+                        <td className="ledger-td">
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                            <div style={{
+                              width: 36,
+                              height: 36,
+                              borderRadius: 12,
+                              background: 'linear-gradient(135deg, #dcfce7, #bbf7d0)',
+                              color: '#15803d',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              fontWeight: 800,
+                              fontSize: '0.9rem',
+                              border: '1.5px solid #86efac',
+                              flexShrink: 0
+                            }}>
+                              {lab.full_name.charAt(0)}
+                            </div>
+                            <span style={{ fontWeight: 800, color: '#143823' }}>{lab.full_name}</span>
+                          </div>
                         </td>
-                        <td className="ledger-td" style={{ fontSize: '0.82rem', color: '#475569' }}>
+                        <td className="ledger-td" style={{ fontSize: '0.82rem', color: '#475569', fontWeight: 600 }}>
                           {lab.work_category}
                         </td>
-                        <td className="ledger-td" style={{ fontWeight: 800, color: '#16a34a' }}>
+                        <td className="ledger-td" style={{ fontWeight: 800, color: '#15803d' }}>
                           ₹{lab.base_rate}/day
                         </td>
-                        <td className="ledger-td" style={{ fontSize: '0.82rem', color: '#475569' }}>
+                        <td className="ledger-td" style={{ fontSize: '0.82rem', color: '#475569', fontWeight: 600 }}>
                           {lab.phone || '—'}
                         </td>
                         <td className="ledger-td">
                           <span style={{
-                            fontWeight: 700,
-                            fontSize: '0.78rem',
-                            padding: '2px 6px',
-                            borderRadius: 4,
+                            fontWeight: 800,
+                            fontSize: '0.8rem',
+                            padding: '3px 8px',
+                            borderRadius: 6,
                             background: bal.outstanding > 0 ? '#fef3c7' : '#f0fdf4',
-                            color: bal.outstanding > 0 ? '#b45309' : '#16a34a',
+                            color: bal.outstanding > 0 ? '#b45309' : '#15803d',
+                            border: `1px solid ${bal.outstanding > 0 ? '#fde68a' : '#bbf7d0'}`
                           }}>
                             {bal.outstanding > 0 ? `₹${bal.outstanding}` : 'Clear'}
                           </span>
@@ -1442,16 +1616,16 @@ export const SimpleFarmViewPage: React.FC = () => {
                               type="button"
                               onClick={() => setSelectedLabourerForCalendar(lab)}
                               className="ledger-action-btn ledger-action-btn-secondary"
-                              style={{ padding: '4px 8px', fontSize: '0.75rem' }}
+                              style={{ padding: '5px 10px', fontSize: '0.76rem' }}
                             >
-                              <Calendar size={13} />
+                              <Calendar size={13} color="#15803d" />
                               <span>Monthly Calendar</span>
                             </button>
                             <button
                               type="button"
                               onClick={() => setDeleteConfirmLab(lab)}
                               className="ledger-action-btn ledger-action-btn-danger"
-                              style={{ padding: '4px 6px' }}
+                              style={{ padding: '5px 8px' }}
                               title="Remove Worker"
                             >
                               <Trash2 size={13} />
@@ -1473,34 +1647,53 @@ export const SimpleFarmViewPage: React.FC = () => {
 
               return (
                 <div key={lab.id} className="ledger-mobile-row">
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-                    <div>
-                      <div style={{ fontWeight: 800, fontSize: '0.95rem', color: '#0f172a' }}>{lab.full_name}</div>
-                      <div style={{ fontSize: '0.74rem', color: '#64748b' }}>
-                        {lab.labour_code} • ₹{lab.base_rate}/day • {lab.work_category}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <div style={{
+                        width: 38,
+                        height: 38,
+                        borderRadius: 12,
+                        background: 'linear-gradient(135deg, #dcfce7, #bbf7d0)',
+                        color: '#15803d',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontWeight: 800,
+                        fontSize: '0.92rem',
+                        border: '1.5px solid #86efac',
+                        flexShrink: 0
+                      }}>
+                        {lab.full_name.charAt(0)}
+                      </div>
+                      <div>
+                        <div style={{ fontWeight: 800, fontSize: '0.95rem', color: '#143823' }}>{lab.full_name}</div>
+                        <div style={{ fontSize: '0.74rem', color: '#4b6354', fontWeight: 600 }}>
+                          {lab.labour_code} • ₹{lab.base_rate}/day • {lab.work_category}
+                        </div>
                       </div>
                     </div>
 
                     <span style={{
                       fontWeight: 800,
                       fontSize: '0.76rem',
-                      padding: '2px 6px',
-                      borderRadius: 4,
+                      padding: '3px 8px',
+                      borderRadius: 6,
                       background: bal.outstanding > 0 ? '#fef3c7' : '#f0fdf4',
-                      color: bal.outstanding > 0 ? '#b45309' : '#16a34a',
+                      color: bal.outstanding > 0 ? '#b45309' : '#15803d',
+                      border: `1px solid ${bal.outstanding > 0 ? '#fde68a' : '#bbf7d0'}`
                     }}>
-                      {bal.outstanding > 0 ? `Due: ₹${bal.outstanding}` : 'Khata Clear'}
+                      {bal.outstanding > 0 ? `Due: ₹${bal.outstanding}` : 'Clear'}
                     </span>
                   </div>
 
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: 6, borderTop: '1px dashed #e2e8f0' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: 8, borderTop: '1px dashed #dcfce7' }}>
                     <button
                       type="button"
                       onClick={() => setSelectedLabourerForCalendar(lab)}
                       className="ledger-action-btn ledger-action-btn-secondary"
-                      style={{ padding: '5px 10px', fontSize: '0.76rem' }}
+                      style={{ padding: '6px 12px', fontSize: '0.76rem' }}
                     >
-                      <Calendar size={13} />
+                      <Calendar size={13} color="#15803d" />
                       <span>Monthly Calendar & Numbers</span>
                     </button>
 
@@ -1508,7 +1701,7 @@ export const SimpleFarmViewPage: React.FC = () => {
                       type="button"
                       onClick={() => setDeleteConfirmLab(lab)}
                       className="ledger-action-btn ledger-action-btn-danger"
-                      style={{ padding: '5px 8px', fontSize: '0.76rem' }}
+                      style={{ padding: '6px 10px', fontSize: '0.76rem' }}
                     >
                       <Trash2 size={13} />
                     </button>
