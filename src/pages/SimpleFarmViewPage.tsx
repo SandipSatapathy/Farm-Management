@@ -2651,7 +2651,7 @@ export const SimpleFarmViewPage: React.FC = () => {
 
                       return (
                         <div style={{ background: '#f1f5f9', padding: '8px 12px', borderRadius: 6, fontSize: '0.82rem', marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <span>Gross Bill: <strong>₹{gross}</strong> • Advance: <strong>−₹{rentalAdvance}</strong></span>
+                          <span>Gross Bill: <strong>₹{gross}</strong><br></br> • Advance: <strong>−₹{rentalAdvance}</strong></span>
                           <span style={{ fontWeight: 800, color: rest > 0 ? '#b45309' : '#16a34a' }}>
                             Rest Balance Due: ₹{rest}
                           </span>
