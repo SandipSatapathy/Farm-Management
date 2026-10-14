@@ -217,6 +217,7 @@ export const dataService = {
       store.labourers.push(newLabourer);
       dataService.logAudit('CREATE_LABOURER', 'labourers', newLabourer.id, `Created labourer ${newLabourer.full_name}`);
       saveStore(store);
+      dataService.queueBackgroundSync();
       return newLabourer;
     }
   },
@@ -306,6 +307,7 @@ export const dataService = {
 
     dataService.logAudit('RECORD_ATTENDANCE', 'attendance', records[0]?.work_date, `Recorded attendance for ${records.length} labourers on ${records[0]?.work_date}`);
     saveStore(store);
+    dataService.queueBackgroundSync();
   },
 
   getLabourerMonthlyAttendance: (
@@ -430,7 +432,16 @@ export const dataService = {
     const outstanding = round2(Math.max(0, totalIssued - totalRecovered));
     return { totalIssued, totalRecovered, outstanding };
   },
-  issueAdvance: (data: { labourer_id: string; amount: number; purpose?: string; payment_method: PaymentMethod; payment_reference?: string; notes?: string; issued_by?: string }): Advance => {
+  issueAdvance: (data: {
+    labourer_id: string;
+    amount: number;
+    purpose?: string;
+    payment_method: PaymentMethod;
+    payment_reference?: string;
+    notes?: string;
+    issued_by?: string;
+    issued_at?: string;
+  }): Advance => {
     const store = getStore();
     const lab = store.labourers.find(l => l.id === data.labourer_id);
     if (!lab) throw new Error('Labourer not found');
@@ -442,7 +453,7 @@ export const dataService = {
       labourer_id: data.labourer_id,
       labourer_name: lab.full_name,
       labour_code: lab.labour_code,
-      issued_at: new Date().toISOString(),
+      issued_at: data.issued_at || new Date().toISOString(),
       amount: round2(data.amount),
       purpose: data.purpose || 'Personal advance',
       payment_method: data.payment_method,
@@ -457,6 +468,7 @@ export const dataService = {
     store.advances.push(newAdvance);
     dataService.logAudit('ISSUE_ADVANCE', 'advances', newAdvance.id, `Issued advance ₹${newAdvance.amount} to ${lab.full_name} (Given by: ${newAdvance.issued_by})`);
     saveStore(store);
+    dataService.queueBackgroundSync();
     return newAdvance;
   },
   recordDirectAdvanceRepayment: (advanceId: string, amount: number, notes?: string): AdvanceAllocation => {
@@ -797,9 +809,64 @@ export const dataService = {
 
   // Sync Jobs (Google Sheets Mirror)
   getSyncJobs: (): SyncJob[] => getStore().syncJobs,
-  triggerSync: async (): Promise<{ succeeded: number; failed: number }> => {
+  queueBackgroundSync: () => {
+    if (typeof window !== 'undefined') {
+      setTimeout(() => {
+        dataService.triggerSync().catch(() => {});
+      }, 600);
+    }
+  },
+  triggerSync: async (customWebhookUrl?: string): Promise<{ succeeded: number; failed: number; message?: string }> => {
     const store = getStore();
     const now = new Date().toISOString();
+    const defaultUrl =
+      import.meta.env.VITE_GOOGLE_SHEETS_WEBHOOK_URL ||
+      'https://script.google.com/macros/s/AKfycbwzPHk9cX19SgD04boxnAJ5AsHQF9ahZvpFP5WovBtGjmN74Pz0H1IhVXFCKUL-0Czh/exec';
+    const webhookUrl =
+      customWebhookUrl ||
+      (typeof window !== 'undefined' ? localStorage.getItem('kisanops_google_sheets_webhook_url') : '') ||
+      defaultUrl;
+
+    let syncStatus: 'succeeded' | 'failed' = 'succeeded';
+    let responseMsg = 'Local mirror snapshot updated';
+
+    if (webhookUrl) {
+      try {
+        const labourerMap = new Map(store.labourers.map(l => [l.id, l.full_name]));
+        const enrichedAttendance = store.attendance.map(a => ({
+          ...a,
+          worker_name: labourerMap.get(a.labourer_id) || a.labourer_id
+        }));
+        const enrichedAdvances = store.advances.map(adv => ({
+          ...adv,
+          worker_name: labourerMap.get(adv.labourer_id) || adv.labourer_id,
+          given_by: (adv as any).given_by || adv.issued_by || 'Supervisor'
+        }));
+
+        const payload = {
+          farm: store.farm,
+          labourers: store.labourers,
+          attendance: enrichedAttendance,
+          advances: enrichedAdvances,
+          machinery: store.machinery,
+          tractorRentals: store.tractorRentals,
+          payrollLines: store.payrollLines,
+          syncedAt: now
+        };
+
+        // Send to Google Apps Script Webhook
+        await fetch(webhookUrl, {
+          method: 'POST',
+          mode: 'no-cors',
+          headers: { 'Content-Type': 'text/plain' },
+          body: JSON.stringify(payload)
+        });
+        responseMsg = 'Data successfully mirrored to live Google Sheet!';
+      } catch (err: any) {
+        syncStatus = 'failed';
+        responseMsg = 'Google Sheets sync request failed: ' + (err.message || 'Network error');
+      }
+    }
 
     const newJob: SyncJob = {
       id: 'sync-' + Date.now(),
@@ -807,17 +874,21 @@ export const dataService = {
       entity_type: 'full_manifest',
       entity_id: 'sheet-all',
       operation: 'update',
-      status: 'succeeded',
+      status: syncStatus,
       attempt_count: 1,
       last_attempt_at: now,
-      completed_at: now,
+      completed_at: syncStatus === 'succeeded' ? now : undefined,
       created_at: now
     };
 
     store.syncJobs.unshift(newJob);
-    dataService.logAudit('GOOGLE_SHEETS_SYNC', 'integrations', newJob.id, 'Executed mirror sync to Google Sheets');
+    dataService.logAudit('GOOGLE_SHEETS_SYNC', 'integrations', newJob.id, responseMsg);
     saveStore(store);
-    return { succeeded: 1, failed: 0 };
+
+    if (syncStatus === 'failed') {
+      throw new Error(responseMsg);
+    }
+    return { succeeded: 1, failed: 0, message: responseMsg };
   },
 
   // Financial Year Close (1 April to 31 March)
@@ -969,6 +1040,7 @@ export const dataService = {
       `Recorded rental ${newLog.tractor_name} (${newLog.hours_worked} hrs @ ₹${newLog.hourly_rate}/hr, Advance ₹${newLog.advance_amount}, Rest ₹${newLog.rest_amount})`
     );
     saveStore(store);
+    dataService.queueBackgroundSync();
     return newLog;
   },
 

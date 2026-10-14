@@ -56,7 +56,7 @@ export const Navbar: React.FC = () => {
                   letterSpacing: '-0.02em',
                 }}
               >
-                KisanOps
+                FarmLog
               </span>
               <span
                 style={{
@@ -81,7 +81,7 @@ export const Navbar: React.FC = () => {
         {/* User Identity & Logout Button */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           {/* Active User Chip */}
-          <div
+          {/* <div
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -113,7 +113,7 @@ export const Navbar: React.FC = () => {
                 boxShadow: `0 0 6px ${currentUser.viewAccess === 'advanced' ? '#22c55e' : '#3b82f6'}`,
               }}
             />
-          </div>
+          </div> */}
 
           {/* Secure Sign Out Button */}
           <button
@@ -139,7 +139,6 @@ export const Navbar: React.FC = () => {
             title="Sign out from farm session"
           >
             <LogOut size={15} />
-            <span>Sign Out</span>
           </button>
         </div>
       </div>

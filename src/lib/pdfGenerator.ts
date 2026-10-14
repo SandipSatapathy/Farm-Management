@@ -21,7 +21,7 @@ export const generateReportPDF = (data: PDFReportData): { filename: string; blob
   });
 
   const pageWidth = doc.internal.pageSize.getWidth();
-  
+
   // Primary Biophilic Farm Theme Colors
   const primaryColor = [21, 128, 61]; // #15803d
   const textDark = [20, 56, 35];
@@ -122,8 +122,8 @@ export const generateReportPDF = (data: PDFReportData): { filename: string; blob
 
   // Footer & Tamper-Evident SHA-256 Checksum simulation
   const checksum = Math.random().toString(36).substring(2, 10).toUpperCase() +
-                   Math.random().toString(36).substring(2, 10).toUpperCase() +
-                   Date.now().toString(16).toUpperCase();
+    Math.random().toString(36).substring(2, 10).toUpperCase() +
+    Date.now().toString(16).toUpperCase();
 
   const pageCount = doc.getNumberOfPages();
   for (let i = 1; i <= pageCount; i++) {
@@ -134,7 +134,7 @@ export const generateReportPDF = (data: PDFReportData): { filename: string; blob
     doc.setFontSize(7.5);
     doc.setTextColor(120, 140, 125);
 
-    doc.text(`KisanOps Farm Operations Management  •  Manifest Hash: SHA256-${checksum}`, 40, footerY);
+    doc.text(`FarmLog Farm Operations Management  •  Manifest Hash: SHA256-${checksum}`, 40, footerY);
     doc.text(`Page ${i} of ${pageCount}`, pageWidth - 40, footerY, { align: 'right' });
   }
 

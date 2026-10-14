@@ -68,7 +68,7 @@ export const LoginPage: React.FC = () => {
           </div>
 
           <h1 style={{ fontSize: '1.9rem', margin: '0 0 6px 0', color: '#143823' }}>
-            KisanOps Farm Portal
+            FarmLog Farm Portal
           </h1>
           <p style={{ margin: 0, color: 'var(--color-text-muted)', fontSize: '0.92rem' }}>
             {farm.name} • Authorized Farm Access

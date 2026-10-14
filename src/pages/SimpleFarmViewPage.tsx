@@ -24,7 +24,8 @@ import {
   IndianRupee,
   List,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  RefreshCw
 } from 'lucide-react';
 
 type RoutineSection = 'attendance' | 'advance' | 'payday' | 'tractor' | 'labours';
@@ -60,9 +61,12 @@ export const SimpleFarmViewPage: React.FC = () => {
   // Advance state
   const [advLabId, setAdvLabId] = useState('');
   const [advAmount, setAdvAmount] = useState<number>(500);
+  const [advDate, setAdvDate] = useState<string>('2026-10-13');
   const [advGivenBy, setAdvGivenBy] = useState<string>(currentUser?.name || 'Sandip');
   const [advSuccess, setAdvSuccess] = useState(false);
   const [recentAdvances, setRecentAdvances] = useState<Advance[]>([]);
+  const [advFilterYear, setAdvFilterYear] = useState<number>(2026);
+  const [advFilterMonth, setAdvFilterMonth] = useState<number | 'all'>(10);
 
   // Settlement state
   const [settledLabId, setSettledLabId] = useState<string | null>(null);
@@ -93,6 +97,21 @@ export const SimpleFarmViewPage: React.FC = () => {
   const [newLabPhone, setNewLabPhone] = useState('');
   const [newLabNotes, setNewLabNotes] = useState('');
   const [labSuccessMsg, setLabSuccessMsg] = useState('');
+  const [isSyncingSheets, setIsSyncingSheets] = useState(false);
+  const [sheetsSyncMsg, setSheetsSyncMsg] = useState('');
+
+  const handleManualSyncSheets = async () => {
+    setIsSyncingSheets(true);
+    try {
+      const res = await dataService.triggerSync();
+      setSheetsSyncMsg(res.message || 'Synced to Google Sheets!');
+      setTimeout(() => setSheetsSyncMsg(''), 3500);
+    } catch (err: any) {
+      alert(err.message || 'Google Sheets sync failed');
+    } finally {
+      setIsSyncingSheets(false);
+    }
+  };
 
   const refreshCalMonthRecords = () => {
     const monthStr = `${calYear}-${String(calMonth).padStart(2, '0')}`;
@@ -274,6 +293,37 @@ export const SimpleFarmViewPage: React.FC = () => {
   };
 
   // Advance Handlers
+  const advMonthNames = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'
+  ];
+
+  const handleAdvPrevMonth = () => {
+    if (advFilterMonth === 'all') {
+      setAdvFilterMonth(10);
+      return;
+    }
+    if (advFilterMonth === 1) {
+      setAdvFilterMonth(12);
+      setAdvFilterYear((y) => y - 1);
+    } else {
+      setAdvFilterMonth((m) => (m as number) - 1);
+    }
+  };
+
+  const handleAdvNextMonth = () => {
+    if (advFilterMonth === 'all') {
+      setAdvFilterMonth(10);
+      return;
+    }
+    if (advFilterMonth === 12) {
+      setAdvFilterMonth(1);
+      setAdvFilterYear((y) => y + 1);
+    } else {
+      setAdvFilterMonth((m) => (m as number) + 1);
+    }
+  };
+
   const handleGiveAdvance = (e: React.FormEvent) => {
     e.preventDefault();
     if (advAmount <= 0) return;
@@ -286,6 +336,7 @@ export const SimpleFarmViewPage: React.FC = () => {
       payment_method: 'cash',
       purpose: 'Field work cash advance',
       issued_by: person,
+      issued_at: advDate ? `${advDate}T12:00:00.000Z` : new Date().toISOString()
     });
 
     setAdvSuccess(true);
@@ -481,6 +532,37 @@ export const SimpleFarmViewPage: React.FC = () => {
   const totalAdvancesDeducted = round2(salaryRows.reduce((sum, r) => sum + r.advanceDeducted, 0));
   const totalNetTakeHome = round2(salaryRows.reduce((sum, r) => sum + r.netTakeHome, 0));
 
+  // Advance Month Calculations
+  const advMonthPrefix = advFilterMonth !== 'all' ? `${advFilterYear}-${String(advFilterMonth).padStart(2, '0')}` : null;
+  const filteredAdvances = recentAdvances.filter((a) => {
+    if (!a.issued_at) return false;
+    if (advFilterMonth === 'all') {
+      return a.issued_at.startsWith(`${advFilterYear}`);
+    }
+    return a.issued_at.startsWith(advMonthPrefix!);
+  });
+
+  const totalAdvanceInFilteredPeriod = round2(
+    filteredAdvances.reduce((sum, a) => sum + (Number(a.amount) || 0), 0)
+  );
+
+  const uniqueWorkersWithAdvance = new Set(filteredAdvances.map((a) => a.labourer_id)).size;
+
+  const totalOverallDue = round2(
+    labourers.reduce((sum, l) => sum + dataService.getLabourerAdvanceBalance(l.id).outstanding, 0)
+  );
+
+  // Map each worker's advance total in the selected month
+  const workerMonthAdvanceMap = new Map<string, number>();
+  filteredAdvances.forEach((a) => {
+    const prev = workerMonthAdvanceMap.get(a.labourer_id) || 0;
+    workerMonthAdvanceMap.set(a.labourer_id, round2(prev + (Number(a.amount) || 0)));
+  });
+
+  const currentAdvMonthLabel = advFilterMonth === 'all'
+    ? `All Months (${advFilterYear})`
+    : `${advMonthNames[(advFilterMonth as number) - 1]} ${advFilterYear}`;
+
   return (
     <>
       <div className="ledger-container">
@@ -490,17 +572,48 @@ export const SimpleFarmViewPage: React.FC = () => {
             Today • 13 Oct 2026
           </span>
 
-          <button
-            type="button"
-            onClick={() => setIsAddModalOpen(true)}
-            className="ledger-action-btn ledger-action-btn-primary"
-            style={{ padding: '6px 14px', fontSize: '0.82rem', borderRadius: 10, display: 'inline-flex', alignItems: 'center', gap: 6 }}
-            title="Register new worker in farm crew"
-          >
-            <UserPlus size={15} />
-            <span>+ Add Worker</span>
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <button
+              type="button"
+              onClick={handleManualSyncSheets}
+              disabled={isSyncingSheets}
+              style={{
+                padding: '6px 10px',
+                fontSize: '0.78rem',
+                fontWeight: 700,
+                borderRadius: 10,
+                border: '1.5px solid #86efac',
+                background: '#ffffff',
+                color: '#15803d',
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 5
+              }}
+              title="Sync latest farm data to Google Sheets"
+            >
+              <RefreshCw size={13} className={isSyncingSheets ? 'spin' : ''} />
+              <span>{isSyncingSheets ? 'Syncing...' : 'Sheets Sync'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setIsAddModalOpen(true)}
+              className="ledger-action-btn ledger-action-btn-primary"
+              style={{ padding: '6px 14px', fontSize: '0.82rem', borderRadius: 10, display: 'inline-flex', alignItems: 'center', gap: 6 }}
+              title="Register new worker in farm crew"
+            >
+              <UserPlus size={15} />
+            </button>
+          </div>
         </div>
+
+        {sheetsSyncMsg && (
+          <div style={{ background: '#dcfce7', border: '1.5px solid #86efac', borderRadius: 10, padding: '8px 14px', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8, color: '#14532d', fontSize: '0.84rem', fontWeight: 700 }}>
+            <CheckCircle2 size={16} color="#15803d" />
+            <span>{sheetsSyncMsg}</span>
+          </div>
+        )}
 
         {/* Desktop Enterprise Tab Strip */}
         <div className="desktop-ledger-tabs">
@@ -562,6 +675,29 @@ export const SimpleFarmViewPage: React.FC = () => {
 
           {/* Desktop Right Quick Actions */}
           <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
+            <button
+              type="button"
+              onClick={handleManualSyncSheets}
+              disabled={isSyncingSheets}
+              style={{
+                padding: '6px 12px',
+                fontSize: '0.82rem',
+                fontWeight: 700,
+                borderRadius: 10,
+                border: '1.5px solid #86efac',
+                background: '#ffffff',
+                color: '#15803d',
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6
+              }}
+              title="Sync latest farm data to Google Sheets"
+            >
+              <RefreshCw size={14} className={isSyncingSheets ? 'spin' : ''} />
+              <span>{isSyncingSheets ? 'Syncing...' : 'Sync to Sheets'}</span>
+            </button>
+
             <span style={{ fontSize: '0.78rem', fontWeight: 800, color: '#15803d', background: '#dcfce7', border: '1.5px solid #86efac', padding: '5px 10px', borderRadius: 10 }}>
               Today • 13 Oct 2026
             </span>
@@ -573,7 +709,6 @@ export const SimpleFarmViewPage: React.FC = () => {
               title="Register new worker in farm crew"
             >
               <UserPlus size={15} />
-              <span>+ Add Worker</span>
             </button>
           </div>
         </div>
@@ -734,7 +869,7 @@ export const SimpleFarmViewPage: React.FC = () => {
                         <tr>
                           <th className="ledger-th">Labourer</th>
                           <th className="ledger-th">Daily Wage Rate</th>
-                          <th className="ledger-th">Advance Khata</th>
+                          <th className="ledger-th">Advance</th>
                           <th className="ledger-th" style={{ textAlign: 'center' }}>Today Attendance Status</th>
                           <th className="ledger-th">Today Earned</th>
                           <th className="ledger-th" style={{ textAlign: 'right' }}>Monthly Audit</th>
@@ -1083,7 +1218,7 @@ export const SimpleFarmViewPage: React.FC = () => {
                       <div className="ledger-kpi-box" style={{ background: 'linear-gradient(135deg, #ffffff 60%, #fef3c7 100%)', borderColor: '#fcd34d' }}>
                         <div className="ledger-kpi-title" style={{ color: '#b45309' }}>Advance Due</div>
                         <div className="ledger-kpi-value" style={{ color: '#92400e' }}>₹{singleWorkerSummary.advanceOutstanding}</div>
-                        <div className="ledger-kpi-sub">Khata advance balance</div>
+                        <div className="ledger-kpi-sub">advance balance</div>
                       </div>
 
                       <div className="ledger-kpi-box" style={{ background: 'linear-gradient(135deg, #ffffff 60%, #f0f9ff 100%)', borderColor: '#bae6fd' }}>
@@ -1507,389 +1642,545 @@ export const SimpleFarmViewPage: React.FC = () => {
           SECTION 2: CASH ADVANCE KHATA
           ========================================================================= */}
         {activeSection === 'advance' && (
-          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 360px) 1fr', gap: 16 }} className="farm-desktop-split">
-            {/* Issue Advance Form */}
-            <div className="ledger-card">
-              <h2 style={{ fontSize: '1.1rem', margin: '0 0 4px 0', color: '#0f172a', fontWeight: 800 }}>
-                Issue Cash Advance
-              </h2>
-              <p style={{ fontSize: '0.78rem', color: '#64748b', margin: '0 0 14px 0' }}>
-                Cash advance issued is added to worker's balance and deducted on settlement.
-              </p>
-
-              {advSuccess && (
-                <div style={{ background: '#dcfce7', border: '1px solid #86efac', color: '#14532d', padding: '8px 12px', borderRadius: 6, marginBottom: 12, fontSize: '0.8rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <CheckCircle2 size={15} color="#16a34a" />
-                  <span>Advance recorded and updated in Khata.</span>
-                </div>
-              )}
-
-              <form onSubmit={handleGiveAdvance}>
-                <div style={{ marginBottom: 12 }}>
-                  <label className="ledger-label">Select Worker</label>
-                  <select
-                    value={advLabId}
-                    onChange={(e) => setAdvLabId(e.target.value)}
-                    className="ledger-input"
-                  >
-                    {labourers.map((l) => {
-                      const bal = dataService.getLabourerAdvanceBalance(l.id);
-                      return (
-                        <option key={l.id} value={l.id}>
-                          {l.full_name} ({bal.outstanding > 0 ? `Due: ₹${bal.outstanding}` : 'Clear'})
-                        </option>
-                      );
-                    })}
-                  </select>
-                </div>
-
-                <div style={{ marginBottom: 12 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-                    <label className="ledger-label" style={{ margin: 0 }}>Given By</label>
-                    <span style={{ fontSize: '0.72rem', color: '#64748b' }}>Who gave cash advance</span>
+          <div>
+            {/* Top Month Filter Bar & KPI Summary Strip */}
+            <div className="ledger-card" style={{ marginBottom: 16, padding: '14px 18px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <Wallet size={20} color="#15803d" />
+                    <h2 style={{ fontSize: '1.25rem', margin: 0, color: '#143823', fontWeight: 800 }}>
+                      Advance Register ({currentAdvMonthLabel})
+                    </h2>
                   </div>
-                  <input
-                    type="text"
-                    value={advGivenBy}
-                    onChange={(e) => setAdvGivenBy(e.target.value)}
-                    placeholder="Enter name (e.g. Sandip, Manager, Munshi)"
-                    className="ledger-input"
-                    style={{ fontWeight: 700 }}
-                    required
-                  />
-                  <div style={{ display: 'flex', gap: 6, marginTop: 5, flexWrap: 'wrap' }}>
-                    {['Sandip', 'Manager', 'Munshi'].map((presetName) => (
+                  <div style={{ fontSize: '0.8rem', color: '#4b6354', fontWeight: 600, marginTop: 2 }}>
+                    Monthly breakdown of cash advances disbursed and outstanding balances
+                  </div>
+                </div>
+
+                {/* Month Navigation Controls */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    onClick={handleAdvPrevMonth}
+                    className="cal-nav-btn"
+                    title="Previous Month"
+                  >
+                    <ChevronLeft size={18} />
+                  </button>
+
+                  <div style={{ fontWeight: 800, fontSize: '0.98rem', color: '#143823', minWidth: 130, textAlign: 'center' }}>
+                    {currentAdvMonthLabel}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleAdvNextMonth}
+                    className="cal-nav-btn"
+                    title="Next Month"
+                  >
+                    <ChevronRight size={18} />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => { setAdvFilterYear(2026); setAdvFilterMonth(10); }}
+                    style={{
+                      background: advFilterMonth === 10 && advFilterYear === 2026 ? '#15803d' : '#f0fdf4',
+                      border: '1.5px solid #86efac',
+                      color: advFilterMonth === 10 && advFilterYear === 2026 ? '#ffffff' : '#15803d',
+                      fontWeight: 800,
+                      fontSize: '0.78rem',
+                      padding: '6px 12px',
+                      borderRadius: 10,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Current Month
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setAdvFilterMonth(advFilterMonth === 'all' ? 10 : 'all')}
+                    style={{
+                      background: advFilterMonth === 'all' ? '#15803d' : '#f8fafc',
+                      border: '1.5px solid #cbd5e1',
+                      color: advFilterMonth === 'all' ? '#ffffff' : '#475569',
+                      fontWeight: 800,
+                      fontSize: '0.78rem',
+                      padding: '6px 12px',
+                      borderRadius: 10,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    {advFilterMonth === 'all' ? 'All Months (Active)' : 'View All'}
+                  </button>
+                </div>
+              </div>
+
+              {/* Monthly KPI Summary Cards */}
+              <div className="ledger-kpi-grid" style={{ marginTop: 14, marginBottom: 0 }}>
+                <div className="ledger-kpi-box" style={{ background: 'linear-gradient(135deg, #ffffff 60%, #fef3c7 100%)', borderColor: '#fcd34d' }}>
+                  <div className="ledger-kpi-title" style={{ color: '#b45309' }}>
+                    {advFilterMonth === 'all' ? `Advances (${advFilterYear})` : `Advances in ${advMonthNames[(advFilterMonth as number) - 1]}`}
+                  </div>
+                  <div className="ledger-kpi-value" style={{ color: '#92400e' }}>
+                    ₹{totalAdvanceInFilteredPeriod.toLocaleString('en-IN')}
+                  </div>
+                  <div className="ledger-kpi-sub">{filteredAdvances.length} transactions issued</div>
+                </div>
+
+                <div className="ledger-kpi-box" style={{ background: 'linear-gradient(135deg, #ffffff 60%, #f0fdf4 100%)', borderColor: '#86efac' }}>
+                  <div className="ledger-kpi-title" style={{ color: '#16a34a' }}>Workers Funded</div>
+                  <div className="ledger-kpi-value" style={{ color: '#15803d' }}>
+                    {uniqueWorkersWithAdvance}
+                  </div>
+                  <div className="ledger-kpi-sub">Took advance in this period</div>
+                </div>
+
+                <div className="ledger-kpi-box" style={{ background: 'linear-gradient(135deg, #ffffff 60%, #eff6ff 100%)', borderColor: '#bfdbfe' }}>
+                  <div className="ledger-kpi-title" style={{ color: '#2563eb' }}>Average Advance</div>
+                  <div className="ledger-kpi-value" style={{ color: '#1d4ed8' }}>
+                    ₹{filteredAdvances.length > 0 ? Math.round(totalAdvanceInFilteredPeriod / filteredAdvances.length).toLocaleString('en-IN') : '0'}
+                  </div>
+                  <div className="ledger-kpi-sub">Per transaction in selected month</div>
+                </div>
+
+                <div className="ledger-kpi-box" style={{ background: 'linear-gradient(135deg, #ffffff 60%, #fff7ed 100%)', borderColor: '#fed7aa' }}>
+                  <div className="ledger-kpi-title" style={{ color: '#ea580c' }}>Total Outstanding Due</div>
+                  <div className="ledger-kpi-value" style={{ color: '#c2410c' }}>
+                    ₹{totalOverallDue.toLocaleString('en-IN')}
+                  </div>
+                  <div className="ledger-kpi-sub">All-time cumulative balance</div>
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 360px) 1fr', gap: 16 }} className="farm-desktop-split">
+              {/* Issue Advance Form */}
+              <div className="ledger-card">
+                <h2 style={{ fontSize: '1.1rem', margin: '0 0 4px 0', color: '#0f172a', fontWeight: 800 }}>
+                  Issue Cash Advance
+                </h2>
+                <p style={{ fontSize: '0.78rem', color: '#64748b', margin: '0 0 14px 0' }}>
+                  Cash advance issued is added to worker's balance and deducted on settlement.
+                </p>
+
+                {advSuccess && (
+                  <div style={{ background: '#dcfce7', border: '1px solid #86efac', color: '#14532d', padding: '8px 12px', borderRadius: 6, marginBottom: 12, fontSize: '0.8rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <CheckCircle2 size={15} color="#16a34a" />
+                    <span>Advance recorded</span>
+                  </div>
+                )}
+
+                <form onSubmit={handleGiveAdvance}>
+                  <div style={{ marginBottom: 12 }}>
+                    <label className="ledger-label">Advance Date</label>
+                    <input
+                      type="date"
+                      value={advDate}
+                      onChange={(e) => setAdvDate(e.target.value)}
+                      className="ledger-input"
+                      required
+                    />
+                  </div>
+
+                  <div style={{ marginBottom: 12 }}>
+                    <label className="ledger-label">Select Worker</label>
+                    <select
+                      value={advLabId}
+                      onChange={(e) => setAdvLabId(e.target.value)}
+                      className="ledger-input"
+                    >
+                      {labourers.map((l) => {
+                        const bal = dataService.getLabourerAdvanceBalance(l.id);
+                        return (
+                          <option key={l.id} value={l.id}>
+                            {l.full_name} ({bal.outstanding > 0 ? `Due: ₹${bal.outstanding}` : 'Clear'})
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </div>
+
+                  <div style={{ marginBottom: 12 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                      <label className="ledger-label" style={{ margin: 0 }}>Given By</label>
+                      <span style={{ fontSize: '0.72rem', color: '#64748b' }}>Who gave cash advance</span>
+                    </div>
+                    <input
+                      type="text"
+                      value={advGivenBy}
+                      onChange={(e) => setAdvGivenBy(e.target.value)}
+                      placeholder="Enter name (e.g. Sandip, Manager, Munshi)"
+                      className="ledger-input"
+                      style={{ fontWeight: 700 }}
+                      required
+                    />
+                    <div style={{ display: 'flex', gap: 6, marginTop: 5, flexWrap: 'wrap' }}>
+                      {['Sandip', 'Manager', 'Munshi'].map((presetName) => (
+                        <button
+                          key={presetName}
+                          type="button"
+                          onClick={() => setAdvGivenBy(presetName)}
+                          style={{
+                            padding: '2px 8px',
+                            borderRadius: 6,
+                            border: advGivenBy === presetName ? '1.5px solid #16a34a' : '1px solid #dcebe0',
+                            background: advGivenBy === presetName ? '#dcfce7' : '#f8fafc',
+                            color: advGivenBy === presetName ? '#15803d' : '#475569',
+                            fontSize: '0.72rem',
+                            fontWeight: 700,
+                            cursor: 'pointer'
+                          }}
+                        >
+                          {presetName}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div style={{ marginBottom: 12 }}>
+                    <label className="ledger-label">Cash Amount (₹)</label>
+                    <input
+                      type="number"
+                      min="50"
+                      step="50"
+                      value={advAmount}
+                      onChange={(e) => setAdvAmount(Number(e.target.value))}
+                      className="ledger-input"
+                      style={{ fontSize: '1.15rem', fontWeight: 800, textAlign: 'center' }}
+                      required
+                    />
+                  </div>
+
+                  {/* Quick Presets */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, marginBottom: 16 }}>
+                    {[200, 500, 1000, 2000].map((amt) => (
                       <button
-                        key={presetName}
+                        key={amt}
                         type="button"
-                        onClick={() => setAdvGivenBy(presetName)}
+                        onClick={() => setAdvAmount(amt)}
                         style={{
-                          padding: '2px 8px',
-                          borderRadius: 6,
-                          border: advGivenBy === presetName ? '1.5px solid #16a34a' : '1px solid #dcebe0',
-                          background: advGivenBy === presetName ? '#dcfce7' : '#f8fafc',
-                          color: advGivenBy === presetName ? '#15803d' : '#475569',
-                          fontSize: '0.72rem',
-                          fontWeight: 700,
-                          cursor: 'pointer'
+                          padding: '8px 0',
+                          borderRadius: 10,
+                          border: '2px solid',
+                          borderColor: advAmount === amt ? '#16a34a' : '#cbd5e1',
+                          background: advAmount === amt ? 'linear-gradient(135deg, #dcfce7, #bbf7d0)' : '#ffffff',
+                          color: advAmount === amt ? '#15803d' : '#334155',
+                          fontWeight: 800,
+                          fontSize: '0.82rem',
+                          cursor: 'pointer',
+                          boxShadow: advAmount === amt ? '2px 2px 6px rgba(22, 163, 74, 0.25), inset 1px 1px 2px #ffffff' : 'none',
+                          transition: 'all 0.15s ease'
                         }}
                       >
-                        {presetName}
+                        +₹{amt}
                       </button>
                     ))}
                   </div>
-                </div>
 
-                <div style={{ marginBottom: 12 }}>
-                  <label className="ledger-label">Cash Amount (₹)</label>
-                  <input
-                    type="number"
-                    min="50"
-                    step="50"
-                    value={advAmount}
-                    onChange={(e) => setAdvAmount(Number(e.target.value))}
-                    className="ledger-input"
-                    style={{ fontSize: '1.15rem', fontWeight: 800, textAlign: 'center' }}
-                    required
-                  />
-                </div>
-
-                {/* Quick Presets */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, marginBottom: 16 }}>
-                  {[200, 500, 1000, 2000].map((amt) => (
-                    <button
-                      key={amt}
-                      type="button"
-                      onClick={() => setAdvAmount(amt)}
-                      style={{
-                        padding: '8px 0',
-                        borderRadius: 10,
-                        border: '2px solid',
-                        borderColor: advAmount === amt ? '#16a34a' : '#cbd5e1',
-                        background: advAmount === amt ? 'linear-gradient(135deg, #dcfce7, #bbf7d0)' : '#ffffff',
-                        color: advAmount === amt ? '#15803d' : '#334155',
-                        fontWeight: 800,
-                        fontSize: '0.82rem',
-                        cursor: 'pointer',
-                        boxShadow: advAmount === amt ? '2px 2px 6px rgba(22, 163, 74, 0.25), inset 1px 1px 2px #ffffff' : 'none',
-                        transition: 'all 0.15s ease'
-                      }}
-                    >
-                      +₹{amt}
-                    </button>
-                  ))}
-                </div>
-
-                <button
-                  type="submit"
-                  className="ledger-action-btn ledger-action-btn-primary"
-                  style={{ width: '100%', padding: '12px', fontSize: '0.9rem', borderRadius: 14 }}
-                >
-                  Record Cash Advance
-                </button>
-              </form>
-            </div>
-
-            {/* Running Khata Balances Table */}
-            <div className="ledger-card">
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-                <div>
-                  <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 800, color: '#143823' }}>
-                    Worker Advance Balances (Khata)
-                  </h3>
-                  <div style={{ fontSize: '0.8rem', color: '#4b6354', fontWeight: 600 }}>
-                    Cumulative advances issued, recovered, and currently outstanding
-                  </div>
-                </div>
+                  <button
+                    type="submit"
+                    className="ledger-action-btn ledger-action-btn-primary"
+                    style={{ width: '100%', padding: '12px', fontSize: '0.9rem', borderRadius: 14 }}
+                  >
+                    Record Cash Advance
+                  </button>
+                </form>
               </div>
 
-              {/* Desktop Khata Table */}
-              <div className="ledger-desktop-only">
-                <div className="ledger-table-wrap">
-                  <table className="ledger-table">
-                    <thead>
-                      <tr>
-                        <th className="ledger-th">Worker</th>
-                        <th className="ledger-th">Total Given</th>
-                        <th className="ledger-th">Total Repaid</th>
-                        <th className="ledger-th">Current Due</th>
-                        <th className="ledger-th" style={{ textAlign: 'right' }}>Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {labourers.map((l) => {
-                        const bal = dataService.getLabourerAdvanceBalance(l.id);
-
-                        return (
-                          <tr key={l.id} className="ledger-tr">
-                            <td className="ledger-td">
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                                <div style={{
-                                  width: 36,
-                                  height: 36,
-                                  borderRadius: 12,
-                                  background: 'linear-gradient(135deg, #dcfce7, #bbf7d0)',
-                                  color: '#15803d',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                  fontWeight: 800,
-                                  fontSize: '0.9rem',
-                                  boxShadow: '2px 2px 5px rgba(166, 184, 170, 0.25)',
-                                  border: '1.5px solid #86efac',
-                                  flexShrink: 0
-                                }}>
-                                  {l.full_name.charAt(0)}
-                                </div>
-                                <div>
-                                  <span style={{ fontWeight: 800, color: '#143823' }}>{l.full_name}</span>
-                                  <div style={{ fontSize: '0.72rem', color: '#64748b' }}>{l.labour_code}</div>
-                                </div>
-                              </div>
-                            </td>
-                            <td className="ledger-td" style={{ color: '#475569', fontWeight: 600 }}>
-                              ₹{bal.totalIssued}
-                            </td>
-                            <td className="ledger-td" style={{ color: '#15803d', fontWeight: 700 }}>
-                              ₹{bal.totalRecovered}
-                            </td>
-                            <td className="ledger-td">
-                              <span style={{
-                                fontWeight: 800,
-                                fontSize: '0.85rem',
-                                padding: '3px 8px',
-                                borderRadius: 6,
-                                background: bal.outstanding > 0 ? '#fef3c7' : '#f0fdf4',
-                                color: bal.outstanding > 0 ? '#b45309' : '#15803d',
-                                border: `1px solid ${bal.outstanding > 0 ? '#fde68a' : '#bbf7d0'}`,
-                              }}>
-                                {bal.outstanding > 0 ? `Due: ₹${bal.outstanding}` : 'Clear'}
-                              </span>
-                            </td>
-                            <td className="ledger-td" style={{ textAlign: 'right' }}>
-                              <button
-                                type="button"
-                                onClick={() => setSelectedLabourerForCalendar(l)}
-                                className="ledger-action-btn ledger-action-btn-secondary"
-                                style={{ padding: '5px 10px', fontSize: '0.76rem' }}
-                              >
-                                <Calendar size={13} color="#15803d" />
-                                <span>Calendar</span>
-                              </button>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              {/* Mobile Khata Rows */}
-              <div className="ledger-mobile-only">
-                {labourers.map((l) => {
-                  const bal = dataService.getLabourerAdvanceBalance(l.id);
-
-                  return (
-                    <div key={l.id} className="ledger-mobile-row">
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                          <div style={{
-                            width: 36,
-                            height: 36,
-                            borderRadius: 12,
-                            background: 'linear-gradient(135deg, #dcfce7, #bbf7d0)',
-                            color: '#15803d',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            fontWeight: 800,
-                            fontSize: '0.9rem',
-                            border: '1.5px solid #86efac',
-                            flexShrink: 0
-                          }}>
-                            {l.full_name.charAt(0)}
-                          </div>
-                          <div>
-                            <div style={{ fontWeight: 800, fontSize: '0.94rem', color: '#143823' }}>{l.full_name}</div>
-                          </div>
-                        </div>
-
-                        <span style={{
-                          fontWeight: 800,
-                          fontSize: '0.8rem',
-                          padding: '3px 8px',
-                          borderRadius: 6,
-                          background: bal.outstanding > 0 ? '#fef3c7' : '#f0fdf4',
-                          color: bal.outstanding > 0 ? '#b45309' : '#15803d',
-                          border: `1px solid ${bal.outstanding > 0 ? '#fde68a' : '#bbf7d0'}`,
-                        }}>
-                          {bal.outstanding > 0 ? `Due: ₹${bal.outstanding}` : 'Clear'}
-                        </span>
-                      </div>
-
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.78rem', color: '#475569', paddingTop: 8, borderTop: '1px dashed #dcfce7' }}>
-                        <span>Given: ₹{bal.totalIssued} • Repaid: ₹{bal.totalRecovered}</span>
-                        <button
-                          type="button"
-                          onClick={() => setSelectedLabourerForCalendar(l)}
-                          style={{
-                            background: '#f0fdf4',
-                            border: '1px solid #86efac',
-                            color: '#15803d',
-                            fontWeight: 800,
-                            fontSize: '0.74rem',
-                            cursor: 'pointer',
-                            padding: '3px 8px',
-                            borderRadius: 6
-                          }}
-                        >
-                          Calendar
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* Recent Cash Advances Disbursed History */}
-              <div style={{ marginTop: 24, paddingTop: 18, borderTop: '2px solid rgba(220, 235, 224, 0.7)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+              {/* Running Balances Table */}
+              <div className="ledger-card">
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
                   <div>
-                    <h4 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800, color: '#143823' }}>
-                      Recent Cash Advances Issued
-                    </h4>
-                    <div style={{ fontSize: '0.78rem', color: '#4b6354', fontWeight: 600 }}>
-                      History of cash advances handed to crew members with person who disbursed it
+                    <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 800, color: '#143823' }}>
+                      Worker Advance Balances
+                    </h3>
+                    <div style={{ fontSize: '0.8rem', color: '#4b6354', fontWeight: 600 }}>
+                      Advances in {currentAdvMonthLabel} and overall balances
                     </div>
                   </div>
-                  <span style={{ fontSize: '0.75rem', fontWeight: 800, background: '#f0fdf4', color: '#15803d', padding: '3px 8px', borderRadius: 8, border: '1px solid #bbf7d0' }}>
-                    {recentAdvances.length} Records
-                  </span>
                 </div>
 
-                {recentAdvances.length === 0 ? (
-                  <div style={{ padding: '20px', textAlign: 'center', color: '#64748b', fontSize: '0.82rem' }}>
-                    No cash advances issued yet.
-                  </div>
-                ) : (
-                  <>
-                    <div className="ledger-desktop-only">
-                      <div className="ledger-table-wrap">
-                        <table className="ledger-table">
-                          <thead>
-                            <tr>
-                              <th className="ledger-th">Date</th>
-                              <th className="ledger-th">Worker</th>
-                              <th className="ledger-th">Amount</th>
-                              <th className="ledger-th">Given By</th>
-                              <th className="ledger-th">Purpose</th>
-                              <th className="ledger-th">Status</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {recentAdvances.slice(0, 10).map((adv) => (
-                              <tr key={adv.id} className="ledger-tr">
-                                <td className="ledger-td" style={{ fontSize: '0.82rem', color: '#475569' }}>
-                                  {new Date(adv.issued_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-                                </td>
-                                <td className="ledger-td" style={{ fontWeight: 800, color: '#143823' }}>
-                                  {adv.labourer_name}
-                                </td>
-                                <td className="ledger-td" style={{ fontWeight: 800, color: '#b45309', fontSize: '0.95rem' }}>
-                                  ₹{adv.amount}
-                                </td>
-                                <td className="ledger-td">
-                                  <span style={{
-                                    background: '#f0fdf4',
+                {/* Desktop Table */}
+                <div className="ledger-desktop-only">
+                  <div className="ledger-table-wrap">
+                    <table className="ledger-table">
+                      <thead>
+                        <tr>
+                          <th className="ledger-th">Worker</th>
+                          <th className="ledger-th">In {advFilterMonth === 'all' ? advFilterYear : advMonthNames[(advFilterMonth as number) - 1]}</th>
+                          <th className="ledger-th">Total Given</th>
+                          <th className="ledger-th">Total Repaid</th>
+                          <th className="ledger-th">Current Due</th>
+                          <th className="ledger-th" style={{ textAlign: 'right' }}>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {labourers.map((l) => {
+                          const bal = dataService.getLabourerAdvanceBalance(l.id);
+                          const monthAmt = workerMonthAdvanceMap.get(l.id) || 0;
+
+                          return (
+                            <tr key={l.id} className="ledger-tr">
+                              <td className="ledger-td">
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                  <div style={{
+                                    width: 36,
+                                    height: 36,
+                                    borderRadius: 12,
+                                    background: 'linear-gradient(135deg, #dcfce7, #bbf7d0)',
                                     color: '#15803d',
-                                    border: '1px solid #86efac',
-                                    padding: '3px 8px',
-                                    borderRadius: 8,
-                                    fontWeight: 800,
-                                    fontSize: '0.78rem',
-                                    display: 'inline-flex',
+                                    display: 'flex',
                                     alignItems: 'center',
-                                    gap: 4
+                                    justifyContent: 'center',
+                                    fontWeight: 800,
+                                    fontSize: '0.9rem',
+                                    boxShadow: '2px 2px 5px rgba(166, 184, 170, 0.25)',
+                                    border: '1.5px solid #86efac',
+                                    flexShrink: 0
                                   }}>
-                                    👤 {adv.issued_by || 'Owner/Manager'}
+                                    {l.full_name.charAt(0)}
+                                  </div>
+                                  <div>
+                                    <span style={{ fontWeight: 800, color: '#143823' }}>{l.full_name}</span>
+                                    <div style={{ fontSize: '0.72rem', color: '#64748b' }}>{l.labour_code}</div>
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="ledger-td">
+                                {monthAmt > 0 ? (
+                                  <span style={{
+                                    fontWeight: 800,
+                                    color: '#b45309',
+                                    background: '#fef3c7',
+                                    border: '1.5px solid #fde68a',
+                                    padding: '3px 9px',
+                                    borderRadius: 8,
+                                    fontSize: '0.86rem'
+                                  }}>
+                                    ₹{monthAmt.toLocaleString('en-IN')}
                                   </span>
-                                </td>
-                                <td className="ledger-td" style={{ fontSize: '0.8rem', color: '#64748b' }}>
-                                  {adv.purpose || 'Cash advance'}
-                                </td>
-                                <td className="ledger-td">
-                                  <span style={{ background: '#dcfce7', color: '#15803d', padding: '2px 7px', borderRadius: 6, fontSize: '0.72rem', fontWeight: 800 }}>
-                                    Posted
-                                  </span>
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
+                                ) : (
+                                  <span style={{ color: '#94a3b8', fontSize: '0.82rem' }}>₹0</span>
+                                )}
+                              </td>
+                              <td className="ledger-td" style={{ color: '#475569', fontWeight: 600 }}>
+                                ₹{bal.totalIssued.toLocaleString('en-IN')}
+                              </td>
+                              <td className="ledger-td" style={{ color: '#15803d', fontWeight: 700 }}>
+                                ₹{bal.totalRecovered.toLocaleString('en-IN')}
+                              </td>
+                              <td className="ledger-td">
+                                <span style={{
+                                  fontWeight: 800,
+                                  fontSize: '0.85rem',
+                                  padding: '3px 8px',
+                                  borderRadius: 6,
+                                  background: bal.outstanding > 0 ? '#fef3c7' : '#f0fdf4',
+                                  color: bal.outstanding > 0 ? '#b45309' : '#15803d',
+                                  border: `1px solid ${bal.outstanding > 0 ? '#fde68a' : '#bbf7d0'}`,
+                                }}>
+                                  {bal.outstanding > 0 ? `Due: ₹${bal.outstanding.toLocaleString('en-IN')}` : 'Clear'}
+                                </span>
+                              </td>
+                              <td className="ledger-td" style={{ textAlign: 'right' }}>
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedLabourerForCalendar(l)}
+                                  className="ledger-action-btn ledger-action-btn-secondary"
+                                  style={{ padding: '5px 10px', fontSize: '0.76rem' }}
+                                >
+                                  <Calendar size={13} color="#15803d" />
+                                  <span>Calendar</span>
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* Mobile Rows */}
+                <div className="ledger-mobile-only">
+                  {labourers.map((l) => {
+                    const bal = dataService.getLabourerAdvanceBalance(l.id);
+                    const monthAmt = workerMonthAdvanceMap.get(l.id) || 0;
+
+                    return (
+                      <div key={l.id} className="ledger-mobile-row">
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                            <div style={{
+                              width: 36,
+                              height: 36,
+                              borderRadius: 12,
+                              background: 'linear-gradient(135deg, #dcfce7, #bbf7d0)',
+                              color: '#15803d',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              fontWeight: 800,
+                              fontSize: '0.9rem',
+                              border: '1.5px solid #86efac',
+                              flexShrink: 0
+                            }}>
+                              {l.full_name.charAt(0)}
+                            </div>
+                            <div>
+                              <div style={{ fontWeight: 800, fontSize: '0.94rem', color: '#143823' }}>{l.full_name}</div>
+                              {monthAmt > 0 && (
+                                <div style={{ fontSize: '0.74rem', color: '#b45309', fontWeight: 800 }}>
+                                  In {advFilterMonth === 'all' ? advFilterYear : advMonthNames[(advFilterMonth as number) - 1]}: ₹{monthAmt.toLocaleString('en-IN')}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                          <span style={{
+                            fontWeight: 800,
+                            fontSize: '0.8rem',
+                            padding: '3px 8px',
+                            borderRadius: 6,
+                            background: bal.outstanding > 0 ? '#fef3c7' : '#f0fdf4',
+                            color: bal.outstanding > 0 ? '#b45309' : '#15803d',
+                            border: `1px solid ${bal.outstanding > 0 ? '#fde68a' : '#bbf7d0'}`,
+                          }}>
+                            {bal.outstanding > 0 ? `Due: ₹${bal.outstanding}` : 'Clear'}
+                          </span>
+                        </div>
+
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.78rem', color: '#475569', paddingTop: 8, borderTop: '1px dashed #dcfce7' }}>
+                          <span>Given: ₹{bal.totalIssued} • Repaid: ₹{bal.totalRecovered}</span>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedLabourerForCalendar(l)}
+                            style={{
+                              background: '#f0fdf4',
+                              border: '1px solid #86efac',
+                              color: '#15803d',
+                              fontWeight: 800,
+                              fontSize: '0.74rem',
+                              cursor: 'pointer',
+                              padding: '3px 8px',
+                              borderRadius: 6
+                            }}
+                          >
+                            Calendar
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Cash Advances Filtered History */}
+                <div style={{ marginTop: 24, paddingTop: 18, borderTop: '2px solid rgba(220, 235, 224, 0.7)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
+                    <div>
+                      <h4 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800, color: '#143823' }}>
+                        Advances Issued ({currentAdvMonthLabel})
+                      </h4>
+                      <div style={{ fontSize: '0.78rem', color: '#4b6354', fontWeight: 600 }}>
+                        History of advances disbursed in {currentAdvMonthLabel}
                       </div>
                     </div>
-
-                    <div className="ledger-mobile-only">
-                      {recentAdvances.slice(0, 10).map((adv) => (
-                        <div key={adv.id} className="ledger-mobile-row" style={{ padding: '10px 12px', marginBottom: 8 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-                            <span style={{ fontWeight: 800, fontSize: '0.9rem', color: '#143823' }}>
-                              {adv.labourer_name}
-                            </span>
-                            <span style={{ fontWeight: 800, color: '#b45309', fontSize: '0.92rem' }}>
-                              ₹{adv.amount}
-                            </span>
-                          </div>
-                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.74rem', color: '#64748b' }}>
-                            <span>Given By: <strong style={{ color: '#15803d' }}>{adv.issued_by || 'Owner/Manager'}</strong></span>
-                            <span>{new Date(adv.issued_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</span>
-                          </div>
-                        </div>
-                      ))}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ fontSize: '0.78rem', fontWeight: 800, background: '#fef3c7', color: '#92400e', padding: '3px 10px', borderRadius: 8, border: '1px solid #fde68a' }}>
+                        Total: ₹{totalAdvanceInFilteredPeriod.toLocaleString('en-IN')}
+                      </span>
+                      <span style={{ fontSize: '0.75rem', fontWeight: 800, background: '#f0fdf4', color: '#15803d', padding: '3px 8px', borderRadius: 8, border: '1px solid #bbf7d0' }}>
+                        {filteredAdvances.length} Records
+                      </span>
                     </div>
-                  </>
-                )}
+                  </div>
+
+                  {filteredAdvances.length === 0 ? (
+                    <div style={{ padding: '24px', textAlign: 'center', color: '#64748b', fontSize: '0.86rem', background: '#f8fafc', borderRadius: 10, border: '1px dashed #cbd5e1' }}>
+                      No cash advances recorded in {currentAdvMonthLabel}.
+                    </div>
+                  ) : (
+                    <>
+                      <div className="ledger-desktop-only">
+                        <div className="ledger-table-wrap">
+                          <table className="ledger-table">
+                            <thead>
+                              <tr>
+                                <th className="ledger-th">Date</th>
+                                <th className="ledger-th">Worker</th>
+                                <th className="ledger-th">Amount</th>
+                                <th className="ledger-th">Given By</th>
+                                <th className="ledger-th">Purpose</th>
+                                <th className="ledger-th">Status</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {filteredAdvances.map((adv) => (
+                                <tr key={adv.id} className="ledger-tr">
+                                  <td className="ledger-td" style={{ fontSize: '0.82rem', color: '#475569' }}>
+                                    {new Date(adv.issued_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                  </td>
+                                  <td className="ledger-td" style={{ fontWeight: 800, color: '#143823' }}>
+                                    {adv.labourer_name}
+                                  </td>
+                                  <td className="ledger-td" style={{ fontWeight: 800, color: '#b45309', fontSize: '0.95rem' }}>
+                                    ₹{adv.amount.toLocaleString('en-IN')}
+                                  </td>
+                                  <td className="ledger-td">
+                                    <span style={{
+                                      background: '#f0fdf4',
+                                      color: '#15803d',
+                                      border: '1px solid #86efac',
+                                      padding: '3px 8px',
+                                      borderRadius: 8,
+                                      fontWeight: 800,
+                                      fontSize: '0.78rem',
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: 4
+                                    }}>
+                                      👤 {adv.issued_by || 'Owner/Manager'}
+                                    </span>
+                                  </td>
+                                  <td className="ledger-td" style={{ fontSize: '0.8rem', color: '#64748b' }}>
+                                    {adv.purpose || 'Cash advance'}
+                                  </td>
+                                  <td className="ledger-td">
+                                    <span style={{ background: '#dcfce7', color: '#15803d', padding: '2px 7px', borderRadius: 6, fontSize: '0.72rem', fontWeight: 800 }}>
+                                      Posted
+                                    </span>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+
+                      <div className="ledger-mobile-only">
+                        {filteredAdvances.map((adv) => (
+                          <div key={adv.id} className="ledger-mobile-row" style={{ padding: '10px 12px', marginBottom: 8 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                              <span style={{ fontWeight: 800, fontSize: '0.9rem', color: '#143823' }}>
+                                {adv.labourer_name}
+                              </span>
+                              <span style={{ fontWeight: 800, color: '#b45309', fontSize: '0.92rem' }}>
+                                ₹{adv.amount.toLocaleString('en-IN')}
+                              </span>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.74rem', color: '#64748b' }}>
+                              <span>Given By: <strong style={{ color: '#15803d' }}>{adv.issued_by || 'Owner/Manager'}</strong></span>
+                              <span>{new Date(adv.issued_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
               </div>
             </div>
           </div>
@@ -1984,7 +2275,7 @@ export const SimpleFarmViewPage: React.FC = () => {
               <div className="ledger-kpi-box" style={{ background: 'linear-gradient(135deg, #ffffff 60%, #fef3c7 100%)', borderColor: '#fcd34d' }}>
                 <div className="ledger-kpi-title" style={{ color: '#b45309' }}>Advance Deductions</div>
                 <div className="ledger-kpi-value" style={{ color: '#92400e' }}>₹{totalAdvancesDeducted.toLocaleString('en-IN')}</div>
-                <div className="ledger-kpi-sub">Recovered from Khata</div>
+                <div className="ledger-kpi-sub">Recovered</div>
               </div>
 
               <div className="ledger-kpi-box" style={{ background: 'linear-gradient(135deg, #ffffff 60%, #f0f9ff 100%)', borderColor: '#bae6fd' }}>
@@ -2162,7 +2453,7 @@ export const SimpleFarmViewPage: React.FC = () => {
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14, flexWrap: 'wrap', gap: 10 }}>
                 <div>
                   <h2 style={{ fontSize: '1.3rem', margin: '0 0 3px 0', color: '#143823', fontWeight: 800 }}>
-                    Hired Tractor Rental Logs & Balance Khata
+                    Hired Tractor Rental Logs
                   </h2>
                   <div style={{ fontSize: '0.82rem', color: '#4b6354', fontWeight: 600 }}>
                     Track hired tractor hours, rental rates, advance paid & balance due (Zero owned tractors)
@@ -2176,7 +2467,7 @@ export const SimpleFarmViewPage: React.FC = () => {
                   style={{ padding: '8px 14px' }}
                 >
                   <Plus size={15} />
-                  <span>{isNewRentalOpen ? 'Close Form' : '+ Log Hired Tractor'}</span>
+                  <span>{isNewRentalOpen ? 'Close Form' : 'Log Hired Tractor'}</span>
                 </button>
               </div>
 
@@ -2392,7 +2683,7 @@ export const SimpleFarmViewPage: React.FC = () => {
                 <div className="ledger-card" style={{ textAlign: 'center', padding: '30px 16px', color: '#64748b' }}>
                   <Tractor size={32} color="#94a3b8" style={{ marginBottom: 8 }} />
                   <div style={{ fontWeight: 700, fontSize: '0.95rem', color: '#334155' }}>No Hired Tractor Runs Found</div>
-                  <div style={{ fontSize: '0.8rem' }}>Click "+ Log Hired Tractor" to record your first run.</div>
+                  <div style={{ fontSize: '0.8rem' }}>Click "Log Hired Tractor" to record your first run.</div>
                 </div>
               ) : (
                 <div>
@@ -2551,7 +2842,7 @@ export const SimpleFarmViewPage: React.FC = () => {
           ========================================================================= */}
         {activeSection === 'labours' && (
           <div>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+            {/* <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
               <div>
                 <h2 style={{ fontSize: '1.3rem', margin: '0 0 3px 0', color: '#143823', fontWeight: 800 }}>
                   Farm Crew Directory ({labourers.length} Labourers)
@@ -2568,9 +2859,8 @@ export const SimpleFarmViewPage: React.FC = () => {
                 style={{ padding: '8px 14px' }}
               >
                 <UserPlus size={15} />
-                <span>+ Add New Labour</span>
               </button>
-            </div>
+            </div> */}
 
             {labSuccessMsg && (
               <div style={{ background: '#dcfce7', border: '2px solid #86efac', color: '#14532d', padding: '10px 14px', borderRadius: 12, marginBottom: 14, fontSize: '0.84rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -2589,7 +2879,7 @@ export const SimpleFarmViewPage: React.FC = () => {
                       <th className="ledger-th">Full Name</th>
                       <th className="ledger-th">Daily Wage</th>
                       <th className="ledger-th">Phone</th>
-                      <th className="ledger-th">Khata Due</th>
+                      <th className="ledger-th">Due</th>
                       <th className="ledger-th" style={{ textAlign: 'right' }}>Actions</th>
                     </tr>
                   </thead>

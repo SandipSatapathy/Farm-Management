@@ -45,7 +45,7 @@ export const INTERNAL_USERS: InternalUserAccount[] = [
     id: 'user-admin',
     username: 'admin',
     aliases: ['owner', 'manager', 'admin@farm.local'],
-    password: 'FarmAdmin@2026',
+    password: 'Admin@2026',
     name: 'Farm Administrator',
     email: 'admin@farm.local',
     role: 'owner',
