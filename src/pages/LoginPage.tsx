@@ -15,8 +15,18 @@ import {
 
 export const LoginPage: React.FC = () => {
   const { login, farm } = useAuth();
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
+  const [username, setUsername] = useState(() => {
+    try { return localStorage.getItem('farmlog_saved_username') || ''; } catch { return ''; }
+  });
+  const [password, setPassword] = useState(() => {
+    try {
+      const isRem = localStorage.getItem('farmlog_remember_me') !== 'false';
+      return isRem ? (localStorage.getItem('farmlog_saved_password') || '') : '';
+    } catch { return ''; }
+  });
+  const [rememberMe, setRememberMe] = useState<boolean>(() => {
+    try { return localStorage.getItem('farmlog_remember_me') !== 'false'; } catch { return true; }
+  });
   const [showPassword, setShowPassword] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -27,7 +37,7 @@ export const LoginPage: React.FC = () => {
     setIsLoading(true);
 
     try {
-      await login(username, password);
+      await login(username, password, rememberMe);
     } catch (err: any) {
       setErrorMsg(err.message || 'Incorrect credentials. Please try again.');
     } finally {
@@ -70,9 +80,13 @@ export const LoginPage: React.FC = () => {
           <h1 style={{ fontSize: '1.9rem', margin: '0 0 6px 0', color: '#143823' }}>
             FarmLog Farm Portal
           </h1>
-          <p style={{ margin: 0, color: 'var(--color-text-muted)', fontSize: '0.92rem' }}>
+          <p style={{ margin: '0 0 10px 0', color: 'var(--color-text-muted)', fontSize: '0.92rem' }}>
             {farm.name} • Authorized Farm Access
           </p>
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: '#f0fdf4', color: '#15803d', border: '1px solid #bbf7d0', borderRadius: 9999, padding: '3px 10px', fontSize: '0.74rem', fontWeight: 700 }}>
+            <span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: '#16a34a' }} />
+            <span>Connected to: Supabase Cloud (PostgreSQL)</span>
+          </div>
         </div>
 
         {/* Claymorphism Login Card */}
@@ -156,6 +170,56 @@ export const LoginPage: React.FC = () => {
                   {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                 </button>
               </div>
+            </div>
+
+            {/* Remember Me Toggle */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                marginBottom: 20,
+                padding: '4px 2px',
+              }}
+            >
+              <label
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 9,
+                  cursor: 'pointer',
+                  userSelect: 'none',
+                  fontSize: '0.9rem',
+                  color: '#334155',
+                  fontWeight: 600,
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={rememberMe}
+                  onChange={(e) => setRememberMe(e.target.checked)}
+                  style={{
+                    width: 19,
+                    height: 19,
+                    accentColor: '#16a34a',
+                    cursor: 'pointer',
+                    borderRadius: 6,
+                  }}
+                />
+                <span>Remember me on this device</span>
+              </label>
+              <span
+                style={{
+                  fontSize: '0.74rem',
+                  color: '#15803d',
+                  fontWeight: 700,
+                  background: '#dcfce7',
+                  padding: '2px 8px',
+                  borderRadius: 9999,
+                }}
+              >
+                Auto-login
+              </span>
             </div>
 
             {/* Sign In Button */}

@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { dataService, round2 } from '../lib/dataService';
 import { Labourer, AttendanceStatus, TractorRentalLog, Advance } from '../types';
 import { LabourAttendanceCalendarModal } from '../components/common/LabourAttendanceCalendarModal';
+import { generateReportPDF } from '../lib/pdfGenerator';
 import confetti from 'canvas-confetti';
 import {
   CalendarCheck,
@@ -25,7 +26,9 @@ import {
   List,
   ChevronLeft,
   ChevronRight,
-  RefreshCw
+  RefreshCw,
+  FileDown,
+  Download
 } from 'lucide-react';
 
 type RoutineSection = 'attendance' | 'advance' | 'payday' | 'tractor' | 'labours';
@@ -99,6 +102,8 @@ export const SimpleFarmViewPage: React.FC = () => {
   const [labSuccessMsg, setLabSuccessMsg] = useState('');
   const [isSyncingSheets, setIsSyncingSheets] = useState(false);
   const [sheetsSyncMsg, setSheetsSyncMsg] = useState('');
+  const [isPdfExportModalOpen, setIsPdfExportModalOpen] = useState(false);
+  const [pdfSuccessMsg, setPdfSuccessMsg] = useState('');
 
   const handleManualSyncSheets = async () => {
     setIsSyncingSheets(true);
@@ -563,23 +568,306 @@ export const SimpleFarmViewPage: React.FC = () => {
     ? `All Months (${advFilterYear})`
     : `${advMonthNames[(advFilterMonth as number) - 1]} ${advFilterYear}`;
 
+  // PDF Export Handlers for Simple View
+  const triggerPdfSuccess = (name: string) => {
+    setPdfSuccessMsg(`Downloaded PDF: ${name}`);
+    confetti({
+      particleCount: 80,
+      spread: 70,
+      origin: { y: 0.6 }
+    });
+    setTimeout(() => setPdfSuccessMsg(''), 4500);
+  };
+
+  const handleExportDailyAttendancePdf = (targetDate: string = attendanceDate) => {
+    const dayAtt = dataService.getAttendanceForDate(targetDate);
+    let pCount = 0;
+    let hCount = 0;
+    let aCount = 0;
+    let estWages = 0;
+
+    const rows = labourers.map((lab, index) => {
+      const rec = dayAtt.find((a) => a.labourer_id === lab.id);
+      const st: AttendanceStatus = (targetDate === attendanceDate && attendance[lab.id]) ? attendance[lab.id] : (rec ? rec.status : 'present');
+
+      let units = 0;
+      let statusLabel = 'Present (Full Day)';
+      if (st === 'present') {
+        units = 1;
+        pCount++;
+      } else if (st === 'half_day') {
+        units = 0.5;
+        hCount++;
+        statusLabel = 'Half Day';
+      } else if (st === 'absent') {
+        units = 0;
+        aCount++;
+        statusLabel = 'Absent';
+      } else {
+        units = 0;
+        aCount++;
+        statusLabel = st.toUpperCase();
+      }
+
+      const wage = round2(units * lab.base_rate);
+      estWages += wage;
+
+      return [
+        index + 1,
+        lab.full_name,
+        lab.phone || '—',
+        statusLabel,
+        `Rs. ${lab.base_rate}`,
+        `Rs. ${wage.toLocaleString('en-IN')}`
+      ];
+    });
+
+    const res = generateReportPDF({
+      title: `Daily Labour Attendance Register`,
+      subtitle: `Official Field Muster Roll & Daily Wage Distribution Estimate`,
+      dateRange: targetDate,
+      farm: farm || { id: 'default', name: 'My Farm Operations', address: 'Agricultural Operations Hub' },
+      headers: ['#', 'Worker Name', 'Mobile', 'Status', 'Daily Base Rate', 'Estimated Wage'],
+      rows,
+      summaryTotals: [
+        { label: 'Present Labourers (Full)', value: `${pCount} workers` },
+        { label: 'Half-Day Labourers', value: `${hCount} workers` },
+        { label: 'Absent / On Leave', value: `${aCount} workers` },
+        { label: 'Total Payable Units', value: `${round2(pCount + hCount * 0.5)} shifts` },
+        { label: 'Total Estimated Wage Payout', value: `Rs. ${round2(estWages).toLocaleString('en-IN')}` }
+      ]
+    });
+
+    triggerPdfSuccess(res.filename);
+  };
+
+  const handleExportMonthlyAttendancePdf = (year: number = calYear, month: number = calMonth) => {
+    const mName = new Date(year, month - 1, 1).toLocaleString('default', { month: 'long' });
+    const dInMonth = new Date(year, month, 0).getDate();
+    let totalEffShifts = 0;
+    let totalGrossEarned = 0;
+
+    const rows = labourers.map((lab, index) => {
+      const { summary } = dataService.getLabourerMonthlyAttendance(lab.id, year, month);
+      totalEffShifts += summary.effectiveDays;
+      totalGrossEarned += summary.grossEarned;
+
+      return [
+        index + 1,
+        lab.full_name,
+        summary.presentDays,
+        summary.halfDays,
+        summary.absentDays,
+        summary.effectiveDays,
+        `Rs. ${lab.base_rate}`,
+        `Rs. ${summary.grossEarned.toLocaleString('en-IN')}`
+      ];
+    });
+
+    const res = generateReportPDF({
+      title: `Monthly Labour Attendance Register — ${mName} ${year}`,
+      subtitle: `Consolidated Monthly Labour Muster Roll & Accumulated Gross Earnings`,
+      dateRange: `01-${month}-${year} to ${dInMonth}-${month}-${year}`,
+      farm: farm || { id: 'default', name: 'My Farm Operations', address: 'Agricultural Operations Hub' },
+      headers: ['#', 'Worker Name', 'Present', 'Half-Day', 'Absent', 'Effective Days', 'Daily Rate', 'Gross Earned'],
+      rows,
+      summaryTotals: [
+        { label: 'Registered Farm Workforce', value: `${labourers.length} workers` },
+        { label: 'Total Crew Shifts Worked', value: `${round2(totalEffShifts)} days` },
+        { label: 'Total Gross Wages Incurred', value: `Rs. ${round2(totalGrossEarned).toLocaleString('en-IN')}` }
+      ]
+    });
+
+    triggerPdfSuccess(res.filename);
+  };
+
+  const handleExportAdvancesPdf = () => {
+    const isAll = advFilterMonth === 'all';
+    const periodLabel = isAll ? `All Months (${advFilterYear})` : `${advMonthNames[(advFilterMonth as number) - 1]} ${advFilterYear}`;
+
+    const rows = labourers.map((lab, index) => {
+      const bal = dataService.getLabourerAdvanceBalance(lab.id);
+      const advInPeriod = workerMonthAdvanceMap.get(lab.id) || 0;
+
+      return [
+        index + 1,
+        lab.full_name,
+        lab.phone || '—',
+        `Rs. ${advInPeriod.toLocaleString('en-IN')}`,
+        `Rs. ${bal.totalRecovered.toLocaleString('en-IN')}`,
+        `Rs. ${bal.outstanding.toLocaleString('en-IN')}`,
+        bal.outstanding > 0 ? 'DUE' : 'CLEAR'
+      ];
+    });
+
+    const res = generateReportPDF({
+      title: `Worker Advances & Khata Ledger`,
+      subtitle: `Wage Advances Disbursed, Deductions Settled & Current Outstanding Dues`,
+      dateRange: periodLabel,
+      farm: farm || { id: 'default', name: 'My Farm Operations', address: 'Agricultural Operations Hub' },
+      headers: ['#', 'Worker Name', 'Mobile', `Advances (${periodLabel})`, 'Total Repaid', 'Current Due', 'Status'],
+      rows,
+      summaryTotals: [
+        { label: `Advances Disbursed (${periodLabel})`, value: `Rs. ${totalAdvanceInFilteredPeriod.toLocaleString('en-IN')}` },
+        { label: 'Cumulative Outstanding Due (All Workers)', value: `Rs. ${totalOverallDue.toLocaleString('en-IN')}` },
+        { label: 'Workers With Outstanding Balance', value: `${labourers.filter((l) => dataService.getLabourerAdvanceBalance(l.id).outstanding > 0).length} workers` }
+      ]
+    });
+
+    triggerPdfSuccess(res.filename);
+  };
+
+  const handleExportSalaryPdf = (year: number = salaryYear, month: number = salaryMonth) => {
+    const mName = new Date(year, month - 1, 1).toLocaleString('default', { month: 'long' });
+
+    let sumDays = 0;
+    let sumGross = 0;
+    let sumAdvDeducted = 0;
+    let sumNet = 0;
+
+    const rows = salaryRows.map((r, index) => {
+      sumDays += r.daysWorked;
+      sumGross += r.grossWage;
+      sumAdvDeducted += r.advanceDeducted;
+      sumNet += r.netTakeHome;
+
+      return [
+        index + 1,
+        r.labourer.full_name,
+        `${r.daysWorked} days`,
+        `Rs. ${r.dailyRate}`,
+        `Rs. ${r.grossWage.toLocaleString('en-IN')}`,
+        `Rs. ${r.advanceDeducted.toLocaleString('en-IN')}`,
+        `Rs. ${r.netTakeHome.toLocaleString('en-IN')}`,
+        r.isSettled ? 'SETTLED' : 'PENDING'
+      ];
+    });
+
+    const res = generateReportPDF({
+      title: `Monthly Labour Payroll & Settlement Sheet`,
+      subtitle: `Monthly Earnings, Advance Adjustments & Net Wages Take-Home`,
+      dateRange: `${mName} ${year}`,
+      farm: farm || { id: 'default', name: 'My Farm Operations', address: 'Agricultural Operations Hub' },
+      headers: ['#', 'Worker Name', 'Days Worked', 'Rate', 'Gross Wage', 'Advance Ded.', 'Net Payable', 'Status'],
+      rows,
+      summaryTotals: [
+        { label: 'Total Crew Days Worked', value: `${round2(sumDays)} shifts` },
+        { label: 'Total Gross Wages Earned', value: `Rs. ${round2(sumGross).toLocaleString('en-IN')}` },
+        { label: 'Total Advances Deducted', value: `Rs. ${round2(sumAdvDeducted).toLocaleString('en-IN')}` },
+        { label: 'Total Net Payout Disbursed', value: `Rs. ${round2(sumNet).toLocaleString('en-IN')}` }
+      ]
+    });
+
+    triggerPdfSuccess(res.filename);
+  };
+
+  const handleExportTractorPdf = () => {
+    const totals = dataService.getTractorRentalTotals(tractorDateFilter);
+    const dateLabel = tractorDateFilter === 'all' ? 'All Recorded Runs' : (tractorDateFilter === today ? 'Today (13 Oct 2026)' : tractorDateFilter);
+
+    const rows = tractorRentals.map((r, index) => [
+      index + 1,
+      r.work_date,
+      r.tractor_name,
+      r.vendor_name,
+      r.task_name || 'Field Operations',
+      `${r.hours_worked} hrs`,
+      `Rs. ${r.hourly_rate}`,
+      `Rs. ${r.gross_amount.toLocaleString('en-IN')}`,
+      `Rs. ${r.advance_amount.toLocaleString('en-IN')}`,
+      `Rs. ${r.rest_amount.toLocaleString('en-IN')}`
+    ]);
+
+    const res = generateReportPDF({
+      title: `Hired Tractor Rentals & Vendor Dues`,
+      subtitle: `Commercial Equipment Runs, Fuel/Service Hourly Billings & Vendor Outstandings`,
+      dateRange: dateLabel,
+      farm: farm || { id: 'default', name: 'My Farm Operations', address: 'Agricultural Operations Hub' },
+      headers: ['#', 'Date', 'Tractor', 'Vendor', 'Task', 'Hours', 'Rate/Hr', 'Total Bill', 'Advance', 'Rest Due'],
+      rows,
+      summaryTotals: [
+        { label: 'Total Equipment Hours Worked', value: `${totals.totalHours} hours` },
+        { label: 'Total Gross Rental Billed', value: `Rs. ${totals.totalGross.toLocaleString('en-IN')}` },
+        { label: 'Advance Paid to Vendors', value: `Rs. ${totals.totalAdvance.toLocaleString('en-IN')}` },
+        { label: 'Rest Balance Due to Vendors', value: `Rs. ${totals.totalRest.toLocaleString('en-IN')}` }
+      ]
+    });
+
+    triggerPdfSuccess(res.filename);
+  };
+
+  const handleExportLabourersPdf = () => {
+    const rows = labourers.map((lab, index) => {
+      const bal = dataService.getLabourerAdvanceBalance(lab.id);
+      return [
+        index + 1,
+        lab.full_name,
+        lab.phone || '—',
+        `Rs. ${lab.base_rate}/day`,
+        `Rs. ${bal.outstanding.toLocaleString('en-IN')}`,
+        lab.notes || 'Active Crew Member'
+      ];
+    });
+
+    const res = generateReportPDF({
+      title: `Master Farm Labour Crew Register`,
+      subtitle: `Registered Workforce Directory, Standard Daily Rates & Outstanding Liabilities`,
+      dateRange: `Active Registry — ${new Date().toLocaleDateString('en-IN')}`,
+      farm: farm || { id: 'default', name: 'My Farm Operations', address: 'Agricultural Operations Hub' },
+      headers: ['#', 'Worker Name', 'Mobile Number', 'Daily Base Wage', 'Advance Balance', 'Notes'],
+      rows,
+      summaryTotals: [
+        { label: 'Registered Workforce Strength', value: `${labourers.length} workers` },
+        { label: 'Cumulative Advance Balances', value: `Rs. ${totalOverallDue.toLocaleString('en-IN')}` }
+      ]
+    });
+
+    triggerPdfSuccess(res.filename);
+  };
+
+  const handleExportCurrentViewPdf = () => {
+    switch (activeSection) {
+      case 'attendance':
+        if (attendanceViewMode === 'calendar') {
+          handleExportMonthlyAttendancePdf();
+        } else {
+          handleExportDailyAttendancePdf();
+        }
+        break;
+      case 'advance':
+        handleExportAdvancesPdf();
+        break;
+      case 'payday':
+        handleExportSalaryPdf();
+        break;
+      case 'tractor':
+        handleExportTractorPdf();
+        break;
+      case 'labours':
+        handleExportLabourersPdf();
+        break;
+      default:
+        handleExportDailyAttendancePdf();
+    }
+  };
+
   return (
     <>
       <div className="ledger-container">
-        {/* Mobile Compact Top Bar with Date & + Add Worker Button */}
+        {/* Mobile Compact Top Bar with Date & Actions */}
         <div className="mobile-ledger-topbar">
           <span style={{ fontSize: '0.78rem', fontWeight: 800, color: '#15803d', background: '#dcfce7', border: '1.5px solid #86efac', padding: '5px 10px', borderRadius: 10 }}>
             Today • 13 Oct 2026
           </span>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <button
               type="button"
               onClick={handleManualSyncSheets}
               disabled={isSyncingSheets}
               style={{
-                padding: '6px 10px',
-                fontSize: '0.78rem',
+                padding: '6px 8px',
+                fontSize: '0.75rem',
                 fontWeight: 700,
                 borderRadius: 10,
                 border: '1.5px solid #86efac',
@@ -588,19 +876,42 @@ export const SimpleFarmViewPage: React.FC = () => {
                 cursor: 'pointer',
                 display: 'inline-flex',
                 alignItems: 'center',
-                gap: 5
+                gap: 4
               }}
               title="Sync latest farm data to Google Sheets"
             >
-              <RefreshCw size={13} className={isSyncingSheets ? 'spin' : ''} />
-              <span>{isSyncingSheets ? 'Syncing...' : 'Sheets Sync'}</span>
+              <RefreshCw size={12} className={isSyncingSheets ? 'spin' : ''} />
+              <span>{isSyncingSheets ? 'Syncing...' : 'Sync'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setIsPdfExportModalOpen(true)}
+              style={{
+                padding: '6px 9px',
+                fontSize: '0.75rem',
+                fontWeight: 700,
+                borderRadius: 10,
+                border: '1.5px solid #15803d',
+                background: '#15803d',
+                color: '#ffffff',
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4,
+                boxShadow: '0 2px 4px rgba(21, 128, 61, 0.25)'
+              }}
+              title="Export official PDF reports"
+            >
+              <FileDown size={13} />
+              <span>PDF</span>
             </button>
 
             <button
               type="button"
               onClick={() => setIsAddModalOpen(true)}
               className="ledger-action-btn ledger-action-btn-primary"
-              style={{ padding: '6px 14px', fontSize: '0.82rem', borderRadius: 10, display: 'inline-flex', alignItems: 'center', gap: 6 }}
+              style={{ padding: '6px 12px', fontSize: '0.82rem', borderRadius: 10, display: 'inline-flex', alignItems: 'center', gap: 5 }}
               title="Register new worker in farm crew"
             >
               <UserPlus size={15} />
@@ -612,6 +923,22 @@ export const SimpleFarmViewPage: React.FC = () => {
           <div style={{ background: '#dcfce7', border: '1.5px solid #86efac', borderRadius: 10, padding: '8px 14px', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8, color: '#14532d', fontSize: '0.84rem', fontWeight: 700 }}>
             <CheckCircle2 size={16} color="#15803d" />
             <span>{sheetsSyncMsg}</span>
+          </div>
+        )}
+
+        {pdfSuccessMsg && (
+          <div style={{ background: '#ecfdf5', border: '2px solid #34d399', color: '#065f46', padding: '10px 14px', borderRadius: 12, marginBottom: 12, fontSize: '0.86rem', fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, boxShadow: '0 4px 12px rgba(16, 185, 129, 0.2)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <CheckCircle2 size={18} color="#059669" />
+              <span>{pdfSuccessMsg}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setPdfSuccessMsg('')}
+              style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#065f46', display: 'flex' }}
+            >
+              <X size={16} />
+            </button>
           </div>
         )}
 
@@ -696,6 +1023,29 @@ export const SimpleFarmViewPage: React.FC = () => {
             >
               <RefreshCw size={14} className={isSyncingSheets ? 'spin' : ''} />
               <span>{isSyncingSheets ? 'Syncing...' : 'Sync to Sheets'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setIsPdfExportModalOpen(true)}
+              style={{
+                padding: '6px 12px',
+                fontSize: '0.82rem',
+                fontWeight: 700,
+                borderRadius: 10,
+                border: '1.5px solid #15803d',
+                background: '#15803d',
+                color: '#ffffff',
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                boxShadow: '0 2px 5px rgba(21, 128, 61, 0.25)'
+              }}
+              title="Export official PDF reports"
+            >
+              <FileDown size={14} />
+              <span>Export PDF</span>
             </button>
 
             <span style={{ fontSize: '0.78rem', fontWeight: 800, color: '#15803d', background: '#dcfce7', border: '1.5px solid #86efac', padding: '5px 10px', borderRadius: 10 }}>
@@ -828,6 +1178,16 @@ export const SimpleFarmViewPage: React.FC = () => {
                   )}
                   <button
                     type="button"
+                    onClick={() => handleExportDailyAttendancePdf()}
+                    className="ledger-action-btn ledger-action-btn-secondary"
+                    style={{ fontSize: '0.78rem', display: 'inline-flex', alignItems: 'center', gap: 5 }}
+                    title="Export Daily Attendance Register to PDF"
+                  >
+                    <FileDown size={14} />
+                    <span>Export PDF</span>
+                  </button>
+                  <button
+                    type="button"
                     onClick={handleMarkAllPresent}
                     className="ledger-action-btn ledger-action-btn-secondary"
                   >
@@ -844,6 +1204,16 @@ export const SimpleFarmViewPage: React.FC = () => {
                 </div>
               ) : (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <button
+                    type="button"
+                    onClick={() => handleExportMonthlyAttendancePdf()}
+                    className="ledger-action-btn ledger-action-btn-secondary"
+                    style={{ fontSize: '0.8rem', padding: '6px 14px', display: 'inline-flex', alignItems: 'center', gap: 5 }}
+                    title="Export Monthly Attendance Muster Roll to PDF"
+                  >
+                    <FileDown size={14} />
+                    <span>Export Month PDF</span>
+                  </button>
                   <button
                     type="button"
                     onClick={handleCalToday}
@@ -1715,6 +2085,24 @@ export const SimpleFarmViewPage: React.FC = () => {
                   >
                     {advFilterMonth === 'all' ? 'All Months (Active)' : 'View All'}
                   </button>
+
+                  <button
+                    type="button"
+                    onClick={handleExportAdvancesPdf}
+                    className="ledger-action-btn ledger-action-btn-secondary"
+                    style={{
+                      fontSize: '0.78rem',
+                      padding: '6px 12px',
+                      borderRadius: 10,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 5
+                    }}
+                    title="Export Advances & Khata Ledger to PDF"
+                  >
+                    <FileDown size={14} />
+                    <span>Export PDF</span>
+                  </button>
                 </div>
               </div>
 
@@ -2255,6 +2643,24 @@ export const SimpleFarmViewPage: React.FC = () => {
                 >
                   Current Month
                 </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleExportSalaryPdf()}
+                  className="ledger-action-btn ledger-action-btn-secondary"
+                  style={{
+                    fontSize: '0.78rem',
+                    padding: '6px 12px',
+                    borderRadius: 10,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 5
+                  }}
+                  title="Export Monthly Salary Settlement Sheet to PDF"
+                >
+                  <FileDown size={14} />
+                  <span>Export PDF</span>
+                </button>
               </div>
             </div>
 
@@ -2460,15 +2866,28 @@ export const SimpleFarmViewPage: React.FC = () => {
                   </div>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => setIsNewRentalOpen(!isNewRentalOpen)}
-                  className="ledger-action-btn ledger-action-btn-primary"
-                  style={{ padding: '8px 14px' }}
-                >
-                  <Plus size={15} />
-                  <span>{isNewRentalOpen ? 'Close Form' : 'Log Hired Tractor'}</span>
-                </button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <button
+                    type="button"
+                    onClick={handleExportTractorPdf}
+                    className="ledger-action-btn ledger-action-btn-secondary"
+                    style={{ padding: '8px 14px', display: 'inline-flex', alignItems: 'center', gap: 5 }}
+                    title="Export Hired Tractor Rental Ledger to PDF"
+                  >
+                    <FileDown size={15} />
+                    <span>Export PDF</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setIsNewRentalOpen(!isNewRentalOpen)}
+                    className="ledger-action-btn ledger-action-btn-primary"
+                    style={{ padding: '8px 14px' }}
+                  >
+                    <Plus size={15} />
+                    <span>{isNewRentalOpen ? 'Close Form' : 'Log Hired Tractor'}</span>
+                  </button>
+                </div>
               </div>
 
               {tractorSuccessMsg && (
@@ -2842,25 +3261,39 @@ export const SimpleFarmViewPage: React.FC = () => {
           ========================================================================= */}
         {activeSection === 'labours' && (
           <div>
-            {/* <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14, flexWrap: 'wrap', gap: 10 }}>
               <div>
                 <h2 style={{ fontSize: '1.3rem', margin: '0 0 3px 0', color: '#143823', fontWeight: 800 }}>
                   Farm Crew Directory ({labourers.length} Labourers)
                 </h2>
                 <div style={{ fontSize: '0.82rem', color: '#4b6354', fontWeight: 600 }}>
-                  Manage registered labourers, wage rates & view monthly attendance records
+                  Manage registered workforce, wage rates & view monthly attendance records
                 </div>
               </div>
 
-              <button
-                type="button"
-                onClick={() => setIsAddModalOpen(true)}
-                className="ledger-action-btn ledger-action-btn-primary"
-                style={{ padding: '8px 14px' }}
-              >
-                <UserPlus size={15} />
-              </button>
-            </div> */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <button
+                  type="button"
+                  onClick={handleExportLabourersPdf}
+                  className="ledger-action-btn ledger-action-btn-secondary"
+                  style={{ padding: '8px 14px', display: 'inline-flex', alignItems: 'center', gap: 5 }}
+                  title="Export Farm Crew Directory to PDF"
+                >
+                  <FileDown size={15} />
+                  <span>Export Crew PDF</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setIsAddModalOpen(true)}
+                  className="ledger-action-btn ledger-action-btn-primary"
+                  style={{ padding: '8px 14px' }}
+                >
+                  <UserPlus size={15} />
+                  <span>Add Labourer</span>
+                </button>
+              </div>
+            </div>
 
             {labSuccessMsg && (
               <div style={{ background: '#dcfce7', border: '2px solid #86efac', color: '#14532d', padding: '10px 14px', borderRadius: 12, marginBottom: 14, fontSize: '0.84rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -3273,6 +3706,282 @@ export const SimpleFarmViewPage: React.FC = () => {
                 style={{ flex: 1, padding: '9px' }}
               >
                 Yes, Remove
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* =========================================================================
+          OFFICIAL FARM PDF EXPORT MODAL
+          ========================================================================= */}
+      {isPdfExportModalOpen && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(15, 23, 42, 0.55)',
+            backdropFilter: 'blur(4px)',
+            zIndex: 160,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 16,
+          }}
+          onClick={() => setIsPdfExportModalOpen(false)}
+        >
+          <div
+            className="ledger-card"
+            style={{
+              maxWidth: 580,
+              width: '100%',
+              padding: 24,
+              maxHeight: '90vh',
+              overflowY: 'auto',
+              borderRadius: 20,
+              boxShadow: '0 20px 40px rgba(0,0,0,0.25)',
+              border: '2px solid #86efac'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div style={{ width: 44, height: 44, borderRadius: 14, background: '#dcfce7', border: '1.5px solid #86efac', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <FileDown size={24} color="#15803d" />
+                </div>
+                <div>
+                  <h2 style={{ margin: 0, fontSize: '1.25rem', color: '#143823', fontWeight: 800 }}>
+                    Export Official Farm PDF
+                  </h2>
+                  <div style={{ fontSize: '0.8rem', color: '#4b6354', fontWeight: 600 }}>
+                    Auditable, tamper-evident PDF manifests with digital checksums
+                  </div>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setIsPdfExportModalOpen(false)}
+                style={{ background: '#f1f5f9', border: 'none', borderRadius: 8, padding: 6, cursor: 'pointer', color: '#64748b' }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Quick 1-Tap Export Current View Banner */}
+            <div style={{
+              background: 'linear-gradient(135deg, #15803d 0%, #166534 100%)',
+              borderRadius: 14,
+              padding: '14px 16px',
+              color: '#ffffff',
+              marginBottom: 18,
+              boxShadow: '0 6px 14px rgba(21, 128, 61, 0.25)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 12,
+              flexWrap: 'wrap'
+            }}>
+              <div>
+                <div style={{ fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.06em', color: '#86efac', fontWeight: 800 }}>
+                  Instant 1-Tap Quick Export
+                </div>
+                <div style={{ fontSize: '1.05rem', fontWeight: 800, marginTop: 2 }}>
+                  {activeSection === 'attendance'
+                    ? (attendanceViewMode === 'calendar' ? `Monthly Attendance (${monthName} ${calYear})` : `Today's Attendance (${attendanceDate})`)
+                    : activeSection === 'advance'
+                    ? `Worker Advances (${currentAdvMonthLabel})`
+                    : activeSection === 'payday'
+                    ? `Salary Sheet (${salaryMonthName} ${salaryYear})`
+                    : activeSection === 'tractor'
+                    ? `Hired Tractor Rentals (${tractorRentals.length} runs)`
+                    : `Labour Crew Directory (${labourers.length} workers)`
+                  }
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  handleExportCurrentViewPdf();
+                  setIsPdfExportModalOpen(false);
+                }}
+                style={{
+                  background: '#ffffff',
+                  color: '#15803d',
+                  border: 'none',
+                  borderRadius: 10,
+                  padding: '9px 16px',
+                  fontWeight: 800,
+                  fontSize: '0.86rem',
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  boxShadow: '0 2px 6px rgba(0,0,0,0.15)'
+                }}
+              >
+                <Download size={15} />
+                <span>Export Now</span>
+              </button>
+            </div>
+
+            {/* Report Options List */}
+            <div style={{ fontSize: '0.82rem', fontWeight: 800, color: '#334155', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+              Choose Report Manifest
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {/* Option 1: Daily Attendance */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px', borderRadius: 12, border: '1.5px solid #e2e8f0', background: '#f8fafc' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <CalendarCheck size={20} color="#15803d" />
+                  <div>
+                    <div style={{ fontWeight: 800, fontSize: '0.92rem', color: '#0f172a' }}>Daily Attendance Register</div>
+                    <div style={{ fontSize: '0.78rem', color: '#64748b' }}>Date: {attendanceDate} • {presentCount} Present • {halfDayCount} Half-Day</div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleExportDailyAttendancePdf();
+                    setIsPdfExportModalOpen(false);
+                  }}
+                  className="ledger-action-btn ledger-action-btn-secondary"
+                  style={{ fontSize: '0.78rem', padding: '6px 12px' }}
+                >
+                  <Download size={13} />
+                  <span>PDF</span>
+                </button>
+              </div>
+
+              {/* Option 2: Monthly Attendance */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px', borderRadius: 12, border: '1.5px solid #e2e8f0', background: '#f8fafc' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <Calendar size={20} color="#0284c7" />
+                  <div>
+                    <div style={{ fontWeight: 800, fontSize: '0.92rem', color: '#0f172a' }}>Monthly Attendance Muster Roll</div>
+                    <div style={{ fontSize: '0.78rem', color: '#64748b' }}>Month: {monthName} {calYear} • Cumulative shifts & gross wages</div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleExportMonthlyAttendancePdf();
+                    setIsPdfExportModalOpen(false);
+                  }}
+                  className="ledger-action-btn ledger-action-btn-secondary"
+                  style={{ fontSize: '0.78rem', padding: '6px 12px' }}
+                >
+                  <Download size={13} />
+                  <span>PDF</span>
+                </button>
+              </div>
+
+              {/* Option 3: Monthly Salary Settlement Sheet */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px', borderRadius: 12, border: '1.5px solid #e2e8f0', background: '#f8fafc' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <CreditCard size={20} color="#7c3aed" />
+                  <div>
+                    <div style={{ fontWeight: 800, fontSize: '0.92rem', color: '#0f172a' }}>Monthly Salary Settlement Sheet</div>
+                    <div style={{ fontSize: '0.78rem', color: '#64748b' }}>Month: {salaryMonthName} {salaryYear} • Net Payout: ₹{totalNetTakeHome.toLocaleString('en-IN')}</div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleExportSalaryPdf();
+                    setIsPdfExportModalOpen(false);
+                  }}
+                  className="ledger-action-btn ledger-action-btn-secondary"
+                  style={{ fontSize: '0.78rem', padding: '6px 12px' }}
+                >
+                  <Download size={13} />
+                  <span>PDF</span>
+                </button>
+              </div>
+
+              {/* Option 4: Advances & Khata */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px', borderRadius: 12, border: '1.5px solid #e2e8f0', background: '#f8fafc' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <Wallet size={20} color="#b45309" />
+                  <div>
+                    <div style={{ fontWeight: 800, fontSize: '0.92rem', color: '#0f172a' }}>Worker Advances & Khata Ledger</div>
+                    <div style={{ fontSize: '0.78rem', color: '#64748b' }}>Total Outstanding Due: ₹{totalOverallDue.toLocaleString('en-IN')}</div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleExportAdvancesPdf();
+                    setIsPdfExportModalOpen(false);
+                  }}
+                  className="ledger-action-btn ledger-action-btn-secondary"
+                  style={{ fontSize: '0.78rem', padding: '6px 12px' }}
+                >
+                  <Download size={13} />
+                  <span>PDF</span>
+                </button>
+              </div>
+
+              {/* Option 5: Hired Tractor Rentals */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px', borderRadius: 12, border: '1.5px solid #e2e8f0', background: '#f8fafc' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <Tractor size={20} color="#059669" />
+                  <div>
+                    <div style={{ fontWeight: 800, fontSize: '0.92rem', color: '#0f172a' }}>Hired Tractor Rentals & Vendor Dues</div>
+                    <div style={{ fontSize: '0.78rem', color: '#64748b' }}>Contract equipment hours, rental rates & vendor outstandings</div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleExportTractorPdf();
+                    setIsPdfExportModalOpen(false);
+                  }}
+                  className="ledger-action-btn ledger-action-btn-secondary"
+                  style={{ fontSize: '0.78rem', padding: '6px 12px' }}
+                >
+                  <Download size={13} />
+                  <span>PDF</span>
+                </button>
+              </div>
+
+              {/* Option 6: Master Labour Crew Register */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px', borderRadius: 12, border: '1.5px solid #e2e8f0', background: '#f8fafc' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <Users size={20} color="#475569" />
+                  <div>
+                    <div style={{ fontWeight: 800, fontSize: '0.92rem', color: '#0f172a' }}>Master Labour Crew Directory</div>
+                    <div style={{ fontSize: '0.78rem', color: '#64748b' }}>{labourers.length} registered workers • Base wage rates & phones</div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleExportLabourersPdf();
+                    setIsPdfExportModalOpen(false);
+                  }}
+                  className="ledger-action-btn ledger-action-btn-secondary"
+                  style={{ fontSize: '0.78rem', padding: '6px 12px' }}
+                >
+                  <Download size={13} />
+                  <span>PDF</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Footer Notice */}
+            <div style={{ marginTop: 16, paddingTop: 12, borderTop: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.75rem', color: '#64748b' }}>
+              <span>Verified format • Includes SHA-256 manifest hash</span>
+              <button
+                type="button"
+                onClick={() => setIsPdfExportModalOpen(false)}
+                className="ledger-action-btn ledger-action-btn-secondary"
+                style={{ fontSize: '0.78rem', padding: '6px 14px' }}
+              >
+                Close
               </button>
             </div>
           </div>

@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { dataService } from './lib/dataService';
 import { Navbar } from './components/common/Navbar';
 import { Sidebar, ActiveTab } from './components/common/Sidebar';
 import { BottomNav } from './components/common/BottomNav';
@@ -23,6 +24,20 @@ import { SettingsPage } from './pages/SettingsPage';
 export const AppContent: React.FC = () => {
   const { isAuthenticated, viewAccess } = useAuth();
   const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
+  const [, setSyncTick] = useState(0);
+
+  useEffect(() => {
+    dataService.initDatabaseSync();
+
+    const handleDataUpdated = () => {
+      setSyncTick(t => t + 1);
+    };
+
+    window.addEventListener('farmlog-data-updated', handleDataUpdated);
+    return () => {
+      window.removeEventListener('farmlog-data-updated', handleDataUpdated);
+    };
+  }, []);
 
   if (!isAuthenticated) {
     return <LoginPage />;

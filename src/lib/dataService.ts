@@ -21,6 +21,12 @@ import {
   TractorRentalLog,
   MonthlyAttendanceSummary
 } from '../types';
+import { 
+  upsertToLocalDb, 
+  deleteFromLocalDb, 
+  syncAllFromLocalDb, 
+  isDbSyncActive 
+} from './localDbClient';
 
 const STORAGE_KEY = 'kisanops_farm_data_v2';
 
@@ -136,12 +142,69 @@ const saveStore = (store: FarmDataStore) => {
 };
 
 export const dataService = {
+  // Database Sync Engine (Local PostgreSQL in Dev / Supabase in Prod)
+  initDatabaseSync: async () => {
+    if (!isDbSyncActive) return;
+
+    try {
+      const dbData = await syncAllFromLocalDb();
+      const store = getStore();
+
+      if (dbData) {
+        const hasDbRecords = 
+          (dbData.labourers && dbData.labourers.length > 0) ||
+          (dbData.attendance && dbData.attendance.length > 0) ||
+          (dbData.advances && dbData.advances.length > 0) ||
+          (dbData.tractorRentals && dbData.tractorRentals.length > 0);
+
+        const hasLocalRecords = 
+          store.labourers.length > 0 ||
+          store.attendance.length > 0 ||
+          store.advances.length > 0 ||
+          store.tractorRentals.length > 0;
+
+        if (hasDbRecords) {
+          // Database has records -> hydrate local store from DB
+          if (dbData.labourers) store.labourers = dbData.labourers;
+          if (dbData.attendance) store.attendance = dbData.attendance;
+          if (dbData.advances) store.advances = dbData.advances;
+          if (dbData.advanceAllocations) store.allocations = dbData.advanceAllocations;
+          if (dbData.tractorRentals) store.tractorRentals = dbData.tractorRentals;
+          if (dbData.payrollPeriods) store.payrollPeriods = dbData.payrollPeriods;
+          if (dbData.payrollLines) store.payrollLines = dbData.payrollLines;
+          if (dbData.appUsers && dbData.appUsers.length > 0) {
+            try {
+              localStorage.setItem('farmlog_cached_users', JSON.stringify(dbData.appUsers));
+            } catch {}
+          }
+          saveStore(store);
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('farmlog-data-updated'));
+          }
+        } else if (hasLocalRecords) {
+          // Database is empty, but local storage has records -> seed database!
+          if (store.farm) upsertToLocalDb('farms', [store.farm]).catch(() => {});
+          if (store.labourers.length > 0) upsertToLocalDb('labourers', store.labourers).catch(() => {});
+          if (store.attendance.length > 0) upsertToLocalDb('attendance', store.attendance).catch(() => {});
+          if (store.advances.length > 0) upsertToLocalDb('advances', store.advances).catch(() => {});
+          if (store.allocations.length > 0) upsertToLocalDb('advance_allocations', store.allocations).catch(() => {});
+          if (store.tractorRentals.length > 0) upsertToLocalDb('tractor_rentals', store.tractorRentals).catch(() => {});
+          if (store.payrollPeriods.length > 0) upsertToLocalDb('payroll_periods', store.payrollPeriods).catch(() => {});
+          if (store.payrollLines.length > 0) upsertToLocalDb('payroll_lines', store.payrollLines).catch(() => {});
+        }
+      }
+    } catch (err) {
+      console.warn('[DataService] Database sync initialization error:', err);
+    }
+  },
+
   // Farm & Memberships
   getFarm: (): Farm => getStore().farm,
   updateFarm: (updates: Partial<Farm>): Farm => {
     const store = getStore();
     store.farm = { ...store.farm, ...updates, updated_at: new Date().toISOString() };
     saveStore(store);
+    upsertToLocalDb('farms', [store.farm]).catch(() => {});
     return store.farm;
   },
   getMemberships: (): FarmMembership[] => getStore().memberships,
@@ -187,7 +250,9 @@ export const dataService = {
       store.labourers = store.labourers.map(l => l.id === labourer.id ? { ...l, ...labourer, updated_at: new Date().toISOString() } as Labourer : l);
       dataService.logAudit('UPDATE_LABOURER', 'labourers', labourer.id, `Updated labourer ${labourer.full_name}`);
       saveStore(store);
-      return store.labourers.find(l => l.id === labourer.id)!;
+      const updated = store.labourers.find(l => l.id === labourer.id)!;
+      upsertToLocalDb('labourers', [updated]).catch(() => {});
+      return updated;
     } else {
       // Auto-assign labour code if not provided
       let code = labourer.labour_code?.trim();
@@ -217,6 +282,7 @@ export const dataService = {
       store.labourers.push(newLabourer);
       dataService.logAudit('CREATE_LABOURER', 'labourers', newLabourer.id, `Created labourer ${newLabourer.full_name}`);
       saveStore(store);
+      upsertToLocalDb('labourers', [newLabourer]).catch(() => {});
       dataService.queueBackgroundSync();
       return newLabourer;
     }
@@ -229,6 +295,7 @@ export const dataService = {
     lab.updated_at = new Date().toISOString();
     dataService.logAudit('DEACTIVATE_LABOURER', 'labourers', id, `Set labourer ${lab.full_name} active=${lab.is_active}`);
     saveStore(store);
+    upsertToLocalDb('labourers', [lab]).catch(() => {});
     return lab;
   },
   removeLabourer: (id: string): boolean => {
@@ -238,6 +305,7 @@ export const dataService = {
     store.labourers = store.labourers.filter(l => l.id !== id);
     dataService.logAudit('REMOVE_LABOURER', 'labourers', id, `Removed labourer ${lab.full_name}`);
     saveStore(store);
+    deleteFromLocalDb('labourers', id).catch(() => {});
     return true;
   },
 
@@ -307,6 +375,10 @@ export const dataService = {
 
     dataService.logAudit('RECORD_ATTENDANCE', 'attendance', records[0]?.work_date, `Recorded attendance for ${records.length} labourers on ${records[0]?.work_date}`);
     saveStore(store);
+    const recordsToSync = store.attendance.filter(a =>
+      records.some(r => r.labourer_id === a.labourer_id && r.work_date === a.work_date && r.shift_code === a.shift_code)
+    );
+    upsertToLocalDb('attendance', recordsToSync).catch(() => {});
     dataService.queueBackgroundSync();
   },
 
@@ -468,6 +540,7 @@ export const dataService = {
     store.advances.push(newAdvance);
     dataService.logAudit('ISSUE_ADVANCE', 'advances', newAdvance.id, `Issued advance ₹${newAdvance.amount} to ${lab.full_name} (Given by: ${newAdvance.issued_by})`);
     saveStore(store);
+    upsertToLocalDb('advances', [newAdvance]).catch(() => {});
     dataService.queueBackgroundSync();
     return newAdvance;
   },
@@ -495,6 +568,7 @@ export const dataService = {
     store.allocations.push(allocation);
     dataService.logAudit('REPAY_ADVANCE', 'advances', advanceId, `Recorded direct cash repayment ₹${amount} for advance ${advanceId}`);
     saveStore(store);
+    upsertToLocalDb('advance_allocations', [allocation]).catch(() => {});
     return allocation;
   },
 
@@ -593,6 +667,7 @@ export const dataService = {
     };
 
     store.payrollPeriods.push(period);
+    upsertToLocalDb('payroll_periods', [period]).catch(() => {});
 
     // Write immutable lines
     previewLines.forEach(pl => {
@@ -619,6 +694,7 @@ export const dataService = {
         updated_at: now
       };
       store.payrollLines.push(line);
+      upsertToLocalDb('payroll_lines', [line]).catch(() => {});
 
       // Post advance recovery allocation if > 0
       if (pl.advance_recovery > 0) {
@@ -805,6 +881,7 @@ export const dataService = {
     if (store.auditLogs.length > 500) {
       store.auditLogs = store.auditLogs.slice(0, 500);
     }
+    upsertToLocalDb('audit_logs', [log]).catch(() => {});
   },
 
   // Sync Jobs (Google Sheets Mirror)
@@ -1040,6 +1117,7 @@ export const dataService = {
       `Recorded rental ${newLog.tractor_name} (${newLog.hours_worked} hrs @ ₹${newLog.hourly_rate}/hr, Advance ₹${newLog.advance_amount}, Rest ₹${newLog.rest_amount})`
     );
     saveStore(store);
+    upsertToLocalDb('tractor_rentals', [newLog]).catch(() => {});
     dataService.queueBackgroundSync();
     return newLog;
   },
@@ -1056,6 +1134,7 @@ export const dataService = {
 
     dataService.logAudit('SETTLE_TRACTOR_RENTAL', 'machinery', id, `Settled remaining payment ₹${log.rest_amount} for ${log.tractor_name}`);
     saveStore(store);
+    upsertToLocalDb('tractor_rentals', [log]).catch(() => {});
     return log;
   },
 
@@ -1065,6 +1144,7 @@ export const dataService = {
     store.tractorRentals = store.tractorRentals.filter(l => l.id !== id);
     dataService.logAudit('DELETE_TRACTOR_RENTAL', 'machinery', id, `Deleted tractor rental record ${id}`);
     saveStore(store);
+    deleteFromLocalDb('tractor_rentals', id).catch(() => {});
     return true;
   },
 
