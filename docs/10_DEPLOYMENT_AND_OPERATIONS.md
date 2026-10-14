@@ -39,6 +39,15 @@
 - Deploy preview and verify Auth redirect URLs and CORS/origin behavior.
 - Confirm free-tier function limits, execution limits, bandwidth and build quotas against current Netlify plan terms before release.
 
+### Secrets scanning and browser configuration
+Vite embeds `VITE_*` variables in the browser bundle. The Supabase project URL, Supabase anon/publishable key, and Google Apps Script deployment identifier are intentionally public configuration in this application, not server-side credentials.
+
+`netlify.toml` sets `SECRETS_SCAN_OMIT_KEYS` to exclude only these public variables (`VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, and `VITE_GOOGLE_DEPLOYMENT_ID`), alongside the existing timezone and currency exclusions. Secrets scanning remains enabled for other environment variables and files; no build-output paths are excluded.
+
+Before redeploying, verify that `VITE_SUPABASE_ANON_KEY` contains an anon or publishable key, never a service-role or secret key. RLS policies must protect every exposed Supabase table. The Google deployment identifier only locates the endpoint; it must not serve as an authentication secret. Keep private credentials in server-only environment variables accessed by Netlify Functions. If a private credential has already been exposed, rotate it rather than excluding it from scanning.
+
+If scanning still reports these public variables, check for conflicting `SECRETS_SCAN_OMIT_KEYS` settings in the Netlify site or deploy-context environment and reconcile them with the repository configuration. Inspect the reported variable names without copying their values into logs. Do not disable secrets scanning or exclude all of `dist` to resolve the failure.
+
 ## 5. Google Sheets setup
 - Create a dedicated spreadsheet with documented tab headers.
 - Enable Google Sheets API.
