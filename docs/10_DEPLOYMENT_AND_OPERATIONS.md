@@ -36,10 +36,19 @@
 - Configure SPA fallback routing so deep links resolve to `index.html` without masking function routes.
 - Set server-side environment variables in Netlify UI; scope production variables to production context.
 - Never put service-role keys or Google private keys in `VITE_*` variables.
+- All `VITE_*` values used by the frontend are embedded in the public browser bundle. Keeping those values in Netlify settings does not make them private.
+- Secrets scanning remains enabled. The repository excludes only the public Supabase project URL and the existing currency/timezone settings from value scanning; Google configuration and privileged credentials are not excluded.
+- Use only a Supabase anonymous/publishable key for `VITE_SUPABASE_ANON_KEY`, never a service-role or secret key. Verify Row Level Security before deploying. If scanning flags a confirmed public key, mark only that variable as non-secret in Netlify settings after reviewing it.
+- `.env` and `.env.*` files are already ignored. Ignoring a file does not remove it from Git history if it was previously committed.
 - Deploy preview and verify Auth redirect URLs and CORS/origin behavior.
 - Confirm free-tier function limits, execution limits, bandwidth and build quotas against current Netlify plan terms before release.
 
 ## 5. Google Sheets setup
+- Direct browser webhook sync was disabled because the Google endpoint must remain private. CSV exports remain available for manual spreadsheet imports.
+- The current login uses browser-local accounts, not server-verifiable sessions. Do not replace the removed direct webhook with an unauthenticated proxy; that would still allow unauthorized spreadsheet writes.
+- Revoke or redeploy the previously exposed Apps Script endpoint. Removing the URL from current source files does not remove it from repository history or previously published assets.
+- Remove `VITE_GOOGLE_DEPLOYMENT_ID` and `VITE_GOOGLE_SHEETS_WEBHOOK_URL` from Netlify environment settings. When a secure integration is implemented, configure a replacement `GOOGLE_SHEETS_WEBHOOK_URL` only for Netlify Functions, not the frontend build.
+- Before restoring remote sync, implement server-verified authentication and farm-level write authorization, validate the payload, and keep the destination fixed in server-only configuration. The browser must never receive the private endpoint or supply the destination URL.
 - Create a dedicated spreadsheet with documented tab headers.
 - Enable Google Sheets API.
 - Create service account and share the spreadsheet with its email, or use a secure OAuth flow.

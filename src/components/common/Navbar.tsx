@@ -190,7 +190,7 @@ export const Navbar: React.FC = () => {
                 <div style={{ fontSize: '0.78rem', color: '#475569', marginTop: 4 }}>
                   {isLocalDbEnabled 
                     ? `Host: localhost:5432 • Database: ${dbHealth?.database || 'farmlog_dev'}`
-                    : 'URL: ibndmdeykymszvfdqutm.supabase.co'}
+                    : 'Connection: configured via environment'}
                 </div>
               </div>
 
@@ -297,4 +297,3 @@ export const Navbar: React.FC = () => {
     </header>
   );
 };
-
