@@ -4,7 +4,7 @@
   functions = "netlify/functions"
 
   [build.environment]
-  SECRETS_SCAN_OMIT_KEYS = "APP_TIMEZONE,APP_CURRENCY"
+  SECRETS_SCAN_OMIT_KEYS = "APP_TIMEZONE,APP_CURRENCY,VITE_SUPABASE_URL"
 
 [[redirects]]
   from = "/*"

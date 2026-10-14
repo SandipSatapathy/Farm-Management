@@ -886,86 +886,9 @@ export const dataService = {
 
   // Sync Jobs (Google Sheets Mirror)
   getSyncJobs: (): SyncJob[] => getStore().syncJobs,
-  queueBackgroundSync: () => {
-    if (typeof window !== 'undefined') {
-      setTimeout(() => {
-        dataService.triggerSync().catch(() => {});
-      }, 600);
-    }
-  },
-  triggerSync: async (customWebhookUrl?: string): Promise<{ succeeded: number; failed: number; message?: string }> => {
-    const store = getStore();
-    const now = new Date().toISOString();
-    const defaultUrl =
-      import.meta.env.VITE_GOOGLE_SHEETS_WEBHOOK_URL ||
-      'https://script.google.com/macros/s/AKfycbwzPHk9cX19SgD04boxnAJ5AsHQF9ahZvpFP5WovBtGjmN74Pz0H1IhVXFCKUL-0Czh/exec';
-    const webhookUrl =
-      customWebhookUrl ||
-      (typeof window !== 'undefined' ? localStorage.getItem('kisanops_google_sheets_webhook_url') : '') ||
-      defaultUrl;
-
-    let syncStatus: 'succeeded' | 'failed' = 'succeeded';
-    let responseMsg = 'Local mirror snapshot updated';
-
-    if (webhookUrl) {
-      try {
-        const labourerMap = new Map(store.labourers.map(l => [l.id, l.full_name]));
-        const enrichedAttendance = store.attendance.map(a => ({
-          ...a,
-          worker_name: labourerMap.get(a.labourer_id) || a.labourer_id
-        }));
-        const enrichedAdvances = store.advances.map(adv => ({
-          ...adv,
-          worker_name: labourerMap.get(adv.labourer_id) || adv.labourer_id,
-          given_by: (adv as any).given_by || adv.issued_by || 'Supervisor'
-        }));
-
-        const payload = {
-          farm: store.farm,
-          labourers: store.labourers,
-          attendance: enrichedAttendance,
-          advances: enrichedAdvances,
-          machinery: store.machinery,
-          tractorRentals: store.tractorRentals,
-          payrollLines: store.payrollLines,
-          syncedAt: now
-        };
-
-        // Send to Google Apps Script Webhook
-        await fetch(webhookUrl, {
-          method: 'POST',
-          mode: 'no-cors',
-          headers: { 'Content-Type': 'text/plain' },
-          body: JSON.stringify(payload)
-        });
-        responseMsg = 'Data successfully mirrored to live Google Sheet!';
-      } catch (err: any) {
-        syncStatus = 'failed';
-        responseMsg = 'Google Sheets sync request failed: ' + (err.message || 'Network error');
-      }
-    }
-
-    const newJob: SyncJob = {
-      id: 'sync-' + Date.now(),
-      farm_id: store.farm.id,
-      entity_type: 'full_manifest',
-      entity_id: 'sheet-all',
-      operation: 'update',
-      status: syncStatus,
-      attempt_count: 1,
-      last_attempt_at: now,
-      completed_at: syncStatus === 'succeeded' ? now : undefined,
-      created_at: now
-    };
-
-    store.syncJobs.unshift(newJob);
-    dataService.logAudit('GOOGLE_SHEETS_SYNC', 'integrations', newJob.id, responseMsg);
-    saveStore(store);
-
-    if (syncStatus === 'failed') {
-      throw new Error(responseMsg);
-    }
-    return { succeeded: 1, failed: 0, message: responseMsg };
+  queueBackgroundSync: () => {},
+  triggerSync: async (): Promise<{ succeeded: number; failed: number; message?: string }> => {
+    throw new Error('Private Google Sheets sync is unavailable until an authenticated server-side integration is configured. Download CSV files to export your data.');
   },
 
   // Financial Year Close (1 April to 31 March)
