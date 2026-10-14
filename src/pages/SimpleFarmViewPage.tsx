@@ -1045,7 +1045,6 @@ export const SimpleFarmViewPage: React.FC = () => {
               title="Export official PDF reports"
             >
               <FileDown size={14} />
-              <span>Export PDF</span>
             </button>
 
             <span style={{ fontSize: '0.78rem', fontWeight: 800, color: '#15803d', background: '#dcfce7', border: '1.5px solid #86efac', padding: '5px 10px', borderRadius: 10 }}>
@@ -1184,7 +1183,6 @@ export const SimpleFarmViewPage: React.FC = () => {
                     title="Export Daily Attendance Register to PDF"
                   >
                     <FileDown size={14} />
-                    <span>Export PDF</span>
                   </button>
                   <button
                     type="button"
@@ -2101,7 +2099,6 @@ export const SimpleFarmViewPage: React.FC = () => {
                     title="Export Advances & Khata Ledger to PDF"
                   >
                     <FileDown size={14} />
-                    <span>Export PDF</span>
                   </button>
                 </div>
               </div>
@@ -2659,7 +2656,6 @@ export const SimpleFarmViewPage: React.FC = () => {
                   title="Export Monthly Salary Settlement Sheet to PDF"
                 >
                   <FileDown size={14} />
-                  <span>Export PDF</span>
                 </button>
               </div>
             </div>
@@ -2875,7 +2871,6 @@ export const SimpleFarmViewPage: React.FC = () => {
                     title="Export Hired Tractor Rental Ledger to PDF"
                   >
                     <FileDown size={15} />
-                    <span>Export PDF</span>
                   </button>
 
                   <button
@@ -3791,12 +3786,12 @@ export const SimpleFarmViewPage: React.FC = () => {
                   {activeSection === 'attendance'
                     ? (attendanceViewMode === 'calendar' ? `Monthly Attendance (${monthName} ${calYear})` : `Today's Attendance (${attendanceDate})`)
                     : activeSection === 'advance'
-                    ? `Worker Advances (${currentAdvMonthLabel})`
-                    : activeSection === 'payday'
-                    ? `Salary Sheet (${salaryMonthName} ${salaryYear})`
-                    : activeSection === 'tractor'
-                    ? `Hired Tractor Rentals (${tractorRentals.length} runs)`
-                    : `Labour Crew Directory (${labourers.length} workers)`
+                      ? `Worker Advances (${currentAdvMonthLabel})`
+                      : activeSection === 'payday'
+                        ? `Salary Sheet (${salaryMonthName} ${salaryYear})`
+                        : activeSection === 'tractor'
+                          ? `Hired Tractor Rentals (${tractorRentals.length} runs)`
+                          : `Labour Crew Directory (${labourers.length} workers)`
                   }
                 </div>
               </div>
