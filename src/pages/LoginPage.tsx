@@ -18,12 +18,7 @@ export const LoginPage: React.FC = () => {
   const [username, setUsername] = useState(() => {
     try { return localStorage.getItem('farmlog_saved_username') || ''; } catch { return ''; }
   });
-  const [password, setPassword] = useState(() => {
-    try {
-      const isRem = localStorage.getItem('farmlog_remember_me') !== 'false';
-      return isRem ? (localStorage.getItem('farmlog_saved_password') || '') : '';
-    } catch { return ''; }
-  });
+  const [password, setPassword] = useState('');
   const [rememberMe, setRememberMe] = useState<boolean>(() => {
     try { return localStorage.getItem('farmlog_remember_me') !== 'false'; } catch { return true; }
   });

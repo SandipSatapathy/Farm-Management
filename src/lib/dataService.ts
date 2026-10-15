@@ -51,13 +51,22 @@ const addTombstone = (id: string) => {
   } catch {}
 };
 
+export const genId = (): string => {
+  try {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      return crypto.randomUUID();
+    }
+  } catch {}
+  return 'id-' + Date.now() + '-' + Math.random().toString(36).slice(2, 9);
+};
+
 export const round2 = (num: number): number => {
   return Math.round((num + Number.EPSILON) * 100) / 100;
 };
 
 // Initial Clean Farm Setup (Real Production Data — Zero Demo/Test Records)
 const initialFarm: Farm = {
-  id: 'farm-main-001',
+  id: '11111111-1111-1111-1111-111111111111',
   name: 'My Farm Operations',
   address: '',
   currency_code: 'INR',
@@ -303,7 +312,7 @@ export const dataService = {
     const store = getStore();
     const newMember: FarmMembership = {
       ...member,
-      id: 'usr-' + Date.now(),
+      id: genId(),
       farm_id: store.farm.id,
       created_at: new Date().toISOString()
     };
@@ -359,7 +368,7 @@ export const dataService = {
         code = `LAB-${Date.now().toString().slice(-4)}`;
       }
       const newLabourer: Labourer = {
-        id: 'lab-' + Date.now(),
+        id: genId(),
         farm_id: store.farm.id,
         labour_code: code,
         full_name: labourer.full_name,
@@ -461,7 +470,7 @@ export const dataService = {
         };
       } else {
         store.attendance.push({
-          id: `att-${entry.work_date}-${entry.labourer_id}-${entry.shift_code}`,
+          id: genId(),
           farm_id: store.farm.id,
           labourer_id: entry.labourer_id,
           work_date: entry.work_date,
@@ -629,7 +638,7 @@ export const dataService = {
     if (data.amount <= 0) throw new Error('Advance amount must be greater than zero.');
 
     const newAdvance: Advance = {
-      id: 'adv-' + Date.now(),
+      id: genId(),
       farm_id: store.farm.id,
       labourer_id: data.labourer_id,
       labourer_name: lab.full_name,
@@ -683,7 +692,7 @@ export const dataService = {
     }
 
     const allocation: AdvanceAllocation = {
-      id: 'alloc-' + Date.now(),
+      id: genId(),
       farm_id: store.farm.id,
       advance_id: advanceId,
       allocation_date: new Date().toISOString().split('T')[0],
@@ -775,7 +784,7 @@ export const dataService = {
 
   finalizePayroll: (periodName: string, startDate: string, endDate: string, previewLines: any[]): PayrollPeriod => {
     const store = getStore();
-    const periodId = 'pay-' + Date.now();
+    const periodId = genId();
     const now = new Date().toISOString();
 
     const period: PayrollPeriod = {
@@ -799,7 +808,7 @@ export const dataService = {
 
     // Write immutable lines
     previewLines.forEach(pl => {
-      const lineId = 'pl-' + Date.now() + '-' + pl.labourer_id;
+      const lineId = genId();
       const line: PayrollLine = {
         id: lineId,
         farm_id: store.farm.id,
@@ -840,7 +849,7 @@ export const dataService = {
           if (advUnrecovered > 0) {
             const allocAmt = round2(Math.min(remainingToRecover, advUnrecovered));
             store.allocations.push({
-              id: 'alloc-' + Date.now() + '-' + adv.id,
+              id: genId(),
               farm_id: store.farm.id,
               advance_id: adv.id,
               payroll_line_id: lineId,
@@ -879,7 +888,7 @@ export const dataService = {
     line.updated_at = new Date().toISOString();
 
     const payment: PayrollPayment = {
-      id: 'paymt-' + Date.now(),
+      id: genId(),
       farm_id: store.farm.id,
       payroll_line_id: payrollLineId,
       paid_at: new Date().toISOString(),
@@ -906,7 +915,7 @@ export const dataService = {
       return store.machinery.find(m => m.id === machine.id)!;
     } else {
       const newMachine: Machinery = {
-        id: 'mac-' + Date.now(),
+        id: genId(),
         farm_id: store.farm.id,
         asset_code: machine.asset_code,
         name: machine.name,
@@ -993,11 +1002,24 @@ export const dataService = {
   getAuditLogs: (): AuditLog[] => getStore().auditLogs,
   logAudit: (action: string, entity_type: string, entity_id?: string, reason?: string) => {
     const store = getStore();
+    let actorName = 'Current User';
+    let actorRole: UserRole = 'owner';
+    try {
+      const raw = localStorage.getItem('kisanops_auth_session_v2') || sessionStorage.getItem('kisanops_auth_session_v2');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed.userId) {
+          actorName = parsed.userId;
+          actorRole = String(parsed.userId).includes('supervisor') ? 'supervisor' : 'owner';
+        }
+      }
+    } catch {}
+
     const log: AuditLog = {
-      id: 'aud-' + Date.now() + '-' + Math.random().toString(36).substring(7),
+      id: genId(),
       farm_id: store.farm.id,
-      actor_name: 'Current Session User',
-      actor_role: 'owner',
+      actor_name: actorName,
+      actor_role: actorRole,
       action,
       entity_type,
       entity_id,
@@ -1005,7 +1027,6 @@ export const dataService = {
       reason
     };
     store.auditLogs.unshift(log);
-    // keep max 500 audit logs in local store
     if (store.auditLogs.length > 500) {
       store.auditLogs = store.auditLogs.slice(0, 500);
     }
@@ -1027,10 +1048,7 @@ export const dataService = {
     const defaultUrl =
       import.meta.env.VITE_GOOGLE_SHEETS_WEBHOOK_URL ||
       'https://script.google.com/macros/s/AKfycbwzPHk9cX19SgD04boxnAJ5AsHQF9ahZvpFP5WovBtGjmN74Pz0H1IhVXFCKUL-0Czh/exec';
-    const webhookUrl =
-      customWebhookUrl ||
-      (typeof window !== 'undefined' ? localStorage.getItem('kisanops_google_sheets_webhook_url') : '') ||
-      defaultUrl;
+    const webhookUrl = customWebhookUrl || defaultUrl;
 
     let syncStatus: 'succeeded' | 'failed' = 'succeeded';
     let responseMsg = 'Local mirror snapshot updated';
@@ -1220,7 +1238,7 @@ export const dataService = {
     const rest = round2(Math.max(0, gross - adv));
 
     const newLog: TractorRentalLog = {
-      id: 'trc-rent-' + Date.now(),
+      id: genId(),
       farm_id: store.farm.id,
       tractor_name: rental.tractor_name.trim() || 'Rented Tractor',
       vendor_name: rental.vendor_name.trim() || 'Tractor Owner/Rental',

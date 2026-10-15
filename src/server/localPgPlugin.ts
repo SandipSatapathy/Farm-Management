@@ -51,6 +51,25 @@ export function localPgPlugin(): Plugin {
     }
   };
 
+  const ALLOWED_TABLES = new Set([
+    'labourers',
+    'attendance',
+    'attendance_records',
+    'advances',
+    'advance_allocations',
+    'tractor_rentals',
+    'payroll_periods',
+    'payroll_lines',
+    'payroll_payments',
+    'machinery',
+    'machinery_usage',
+    'machinery_expenses',
+    'audit_logs',
+    'app_users',
+    'farms',
+    'farm_memberships',
+  ]);
+
   return {
     name: 'vite-plugin-local-pg',
     configureServer(server: ViteDevServer) {
@@ -130,8 +149,9 @@ export function localPgPlugin(): Plugin {
             req.on('end', async () => {
               try {
                 const { table, records } = JSON.parse(body);
-                if (!table || !Array.isArray(records) || records.length === 0) {
-                  return res.end(JSON.stringify({ ok: false, error: 'Invalid payload' }));
+                if (!table || !ALLOWED_TABLES.has(table) || !Array.isArray(records) || records.length === 0) {
+                  res.statusCode = 400;
+                  return res.end(JSON.stringify({ ok: false, error: 'Invalid payload or table not allowed' }));
                 }
 
                 const validCols = await getTableColumns(db, table);
@@ -180,8 +200,9 @@ export function localPgPlugin(): Plugin {
             req.on('end', async () => {
               try {
                 const { table, id } = JSON.parse(body);
-                if (!table || !id) {
-                  return res.end(JSON.stringify({ ok: false, error: 'Table and id required' }));
+                if (!table || !ALLOWED_TABLES.has(table) || !id) {
+                  res.statusCode = 400;
+                  return res.end(JSON.stringify({ ok: false, error: 'Table not allowed or id required' }));
                 }
                 await db.query(`DELETE FROM "${table}" WHERE id = $1`, [id]);
                 return res.end(JSON.stringify({ ok: true }));

@@ -188,9 +188,13 @@ export async function syncAllFromLocalDb() {
 
   if (isSupabaseConfigured && supabase) {
     try {
-      const [labs, atts, advs, allocs, trcs, pps, pls, usrs] = await Promise.all([
+      let atts = await supabase.from('attendance').select('*').order('work_date', { ascending: false });
+      if (atts.error) {
+        atts = await supabase.from('attendance_records').select('*').order('work_date', { ascending: false });
+      }
+
+      const [labs, advs, allocs, trcs, pps, pls, usrs] = await Promise.all([
         supabase.from('labourers').select('*').order('full_name', { ascending: true }),
-        supabase.from('attendance').select('*').order('work_date', { ascending: false }),
         supabase.from('advances').select('*').order('issued_at', { ascending: false }),
         supabase.from('advance_allocations').select('*').order('allocation_date', { ascending: false }),
         supabase.from('tractor_rentals').select('*').order('work_date', { ascending: false }),
@@ -227,18 +231,24 @@ export async function syncAllFromLocalDb() {
 }
 
 // Allowed columns per table in Supabase schema (strips computed / frontend-only properties)
+const ATTENDANCE_COLS = ['id', 'farm_id', 'labourer_id', 'work_date', 'shift_code', 'status', 'payable_units', 'hours_worked', 'piece_quantity', 'task_name', 'field_name', 'supervisor_user_id', 'approval_status', 'correction_reason', 'created_by', 'updated_by', 'created_at', 'updated_at'];
+
 const TABLE_COLUMNS: Record<string, string[]> = {
   farms: ['id', 'name', 'address', 'currency_code', 'timezone', 'financial_year_start_month', 'financial_year_start_day', 'settings', 'created_at', 'updated_at'],
   app_users: ['id', 'farm_id', 'username', 'password_hash', 'full_name', 'email', 'role', 'view_access', 'is_active', 'created_at', 'last_login_at'],
   farm_memberships: ['id', 'farm_id', 'user_id', 'user_email', 'user_name', 'role', 'is_active', 'created_at'],
   labourers: ['id', 'farm_id', 'labour_code', 'full_name', 'phone', 'work_category', 'start_date', 'end_date', 'wage_basis', 'base_rate', 'is_active', 'notes', 'created_at', 'updated_at'],
-  attendance: ['id', 'farm_id', 'labourer_id', 'work_date', 'shift_code', 'status', 'payable_units', 'hours_worked', 'piece_quantity', 'task_name', 'field_name', 'supervisor_user_id', 'approval_status', 'correction_reason', 'created_by', 'updated_by', 'created_at', 'updated_at'],
+  attendance: ATTENDANCE_COLS,
+  attendance_records: ATTENDANCE_COLS,
   advances: ['id', 'farm_id', 'labourer_id', 'issued_at', 'amount', 'purpose', 'payment_method', 'payment_reference', 'status', 'issued_by', 'notes', 'created_at', 'updated_at'],
   advance_allocations: ['id', 'farm_id', 'advance_id', 'payroll_line_id', 'allocation_date', 'amount', 'allocation_type', 'recorded_by', 'notes', 'created_at'],
   tractor_rentals: ['id', 'farm_id', 'machinery_id', 'tractor_name', 'vendor_name', 'work_date', 'hours_worked', 'hourly_rate', 'gross_amount', 'advance_amount', 'rest_amount', 'status', 'fuel_provided_litres', 'task_name', 'notes', 'created_at', 'updated_at'],
   payroll_periods: ['id', 'farm_id', 'period_name', 'start_date', 'end_date', 'status', 'approved_by', 'approved_at', 'finalized_at', 'calculation_version', 'notes', 'created_at', 'updated_at'],
   payroll_lines: ['id', 'farm_id', 'payroll_period_id', 'labourer_id', 'attendance_snapshot', 'wage_basis', 'rate_snapshot', 'units', 'gross_amount', 'additions', 'other_deductions', 'advance_recovery', 'net_payable', 'paid_amount', 'calculation_details', 'created_at', 'updated_at'],
   payroll_payments: ['id', 'farm_id', 'payroll_line_id', 'paid_at', 'amount', 'method', 'reference', 'recorded_by', 'notes', 'created_at'],
+  machinery: ['id', 'farm_id', 'asset_code', 'name', 'asset_type', 'ownership_type', 'registration_reference', 'make', 'model', 'meter_type', 'initial_meter', 'is_active', 'notes', 'created_at', 'updated_at'],
+  machinery_usage: ['id', 'farm_id', 'machinery_id', 'work_date', 'operator_name', 'operator_user_id', 'field_name', 'task_name', 'start_time', 'end_time', 'start_meter', 'end_meter', 'duration_minutes', 'work_quantity', 'fuel_quantity', 'notes', 'created_by', 'created_at', 'updated_at'],
+  machinery_expenses: ['id', 'farm_id', 'machinery_id', 'usage_id', 'expense_date', 'category', 'amount', 'quantity', 'unit', 'vendor', 'payment_method', 'payment_reference', 'receipt_path', 'notes', 'created_by', 'created_at', 'updated_at'],
   audit_logs: ['id', 'farm_id', 'actor_user_id', 'actor_name', 'actor_role', 'action', 'entity_type', 'entity_id', 'occurred_at', 'reason', 'request_id', 'changes']
 };
 
@@ -277,10 +287,13 @@ export async function upsertToLocalDb(table: string, records: any[]) {
 
   if (isSupabaseConfigured && supabase) {
     try {
-      const { error } = await supabase.from(table).upsert(sanitized);
-      if (error) {
-        console.error(`[Supabase] Upsert error on ${table}:`, error);
-        throw error;
+      let res = await supabase.from(table).upsert(sanitized);
+      if (res.error && table === 'attendance') {
+        res = await supabase.from('attendance_records').upsert(sanitized);
+      }
+      if (res.error) {
+        console.error(`[Supabase] Upsert error on ${table}:`, res.error);
+        throw res.error;
       }
       return true;
     } catch (err: any) {
@@ -312,10 +325,13 @@ export async function deleteFromLocalDb(table: string, id: string) {
 
   if (isSupabaseConfigured && supabase) {
     try {
-      const { error } = await supabase.from(table).delete().eq('id', id);
-      if (error) {
-        console.error(`[Supabase] Delete error on ${table} (${id}):`, error);
-        throw error;
+      let res = await supabase.from(table).delete().eq('id', id);
+      if (res.error && table === 'attendance') {
+        res = await supabase.from('attendance_records').delete().eq('id', id);
+      }
+      if (res.error) {
+        console.error(`[Supabase] Delete error on ${table} (${id}):`, res.error);
+        throw res.error;
       }
       return true;
     } catch (err: any) {

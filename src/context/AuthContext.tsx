@@ -122,7 +122,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         localStorage.setItem(AUTH_STORAGE_KEY, sessionPayload);
         localStorage.setItem('farmlog_remember_me', 'true');
         localStorage.setItem('farmlog_saved_username', cleanUser);
-        localStorage.setItem('farmlog_saved_password', cleanPass);
+        localStorage.removeItem('farmlog_saved_password');
       } else {
         sessionStorage.setItem(AUTH_STORAGE_KEY, sessionPayload);
         localStorage.removeItem(AUTH_STORAGE_KEY);
@@ -182,12 +182,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const updatedList = Array.from(userMap.values());
     try {
       localStorage.setItem('farmlog_cached_users', JSON.stringify(updatedList));
+      localStorage.removeItem('farmlog_saved_password');
     } catch {}
-
-    // Update saved password if remember me was enabled
-    if (localStorage.getItem('farmlog_remember_me') === 'true') {
-      localStorage.setItem('farmlog_saved_password', cleanNew);
-    }
 
     setCurrentUser(updatedUser);
 
@@ -195,7 +191,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       await upsertToLocalDb('app_users', [{
         id: currentUser.id,
-        farm_id: farm.id || 'farm-main-001',
+        farm_id: farm.id || '11111111-1111-1111-1111-111111111111',
         username: currentUser.username,
         password_hash: cleanNew,
         full_name: currentUser.name,
@@ -246,7 +242,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       await upsertToLocalDb('app_users', [{
         id: currentUser.id,
-        farm_id: farm.id || 'farm-main-001',
+        farm_id: farm.id || '11111111-1111-1111-1111-111111111111',
         username: currentUser.username,
         password_hash: currentUser.password,
         full_name: cleanName,
