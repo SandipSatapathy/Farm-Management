@@ -58,7 +58,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onSelectTab }) => {
     { id: 'sheets', label: 'Google Sheets Sync', icon: Share2, roles: ['owner', 'admin'] },
     { id: 'audit', label: 'Audit Trail', icon: History, roles: ['owner', 'admin'] },
     { id: 'qa-test', label: 'QA Verification', icon: CheckCircle2, roles: ['owner', 'admin', 'payroll', 'supervisor', 'partner_viewer'] },
-    { id: 'settings', label: 'Farm Settings', icon: Sliders, roles: ['owner', 'admin'] },
+    { id: 'settings', label: 'Settings & Security', icon: Sliders, roles: ['owner', 'admin', 'payroll', 'supervisor', 'partner_viewer', 'tractor_operator'] },
   ];
 
   const visibleItems = navItems.filter(item => item.roles.includes(currentRole));

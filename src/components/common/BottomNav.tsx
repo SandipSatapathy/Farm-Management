@@ -44,7 +44,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, onSelectTab }) 
     { id: 'fy-close', label: 'Financial Year Close', icon: Lock, roles: ['owner', 'admin', 'partner_viewer'] },
     { id: 'sheets', label: 'Google Sheets Sync', icon: Share2, roles: ['owner', 'admin'] },
     { id: 'qa-test', label: 'QA Verification', icon: CheckCircle2, roles: ['owner', 'admin', 'payroll', 'supervisor', 'partner_viewer'] },
-    { id: 'settings', label: 'Farm Settings', icon: Sliders, roles: ['owner', 'admin'] },
+    { id: 'settings', label: 'Settings & Security', icon: Sliders, roles: ['owner', 'admin', 'payroll', 'supervisor', 'partner_viewer', 'tractor_operator'] },
   ].filter(i => i.roles.includes(currentRole));
 
   return (
@@ -180,6 +180,15 @@ export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, onSelectTab }) 
           >
             <Users size={18} />
             <span>Workers</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => handleSelect('settings')}
+            className={`mobile-bottom-nav-item ${activeTab === 'settings' ? 'active' : ''}`}
+          >
+            <Sliders size={18} />
+            <span>Settings</span>
           </button>
         </nav>,
         document.body

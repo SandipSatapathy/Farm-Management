@@ -1,11 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { Sprout, LogOut, ShieldCheck, Database } from 'lucide-react';
+import { Sprout, LogOut, Database } from 'lucide-react';
 import { checkLocalDbHealth, LocalDbHealth, isLocalDbEnabled } from '../../lib/localDbClient';
 import { isSupabaseConfigured } from '../../lib/supabaseClient';
 
 export const Navbar: React.FC = () => {
-  const { farm, currentUser, logout } = useAuth();
+  const { farm, logout } = useAuth();
   const [dbHealth, setDbHealth] = useState<LocalDbHealth | null>(null);
   const [showDbModal, setShowDbModal] = useState(false);
 
@@ -230,44 +230,8 @@ export const Navbar: React.FC = () => {
           </div>
         )}
 
-        {/* User Identity & Logout Button */}
+        {/* Secure Sign Out Button */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          {/* Active User Chip */}
-          {/* <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              background: currentUser.viewAccess === 'advanced' ? '#f0fdf4' : '#eff6ff',
-              border: `1.5px solid ${currentUser.viewAccess === 'advanced' ? '#86efac' : '#93c5fd'}`,
-              padding: '5px 12px',
-              borderRadius: 14,
-              fontSize: '0.8rem',
-              fontWeight: 700,
-              color: currentUser.viewAccess === 'advanced' ? '#14532d' : '#1e40af',
-              boxShadow: '2px 2px 6px rgba(166, 184, 170, 0.2), inset 1px 1px 2px #ffffff',
-            }}
-            title={currentUser.roleTitle}
-          >
-            <ShieldCheck size={15} color={currentUser.viewAccess === 'advanced' ? '#16a34a' : '#2563eb'} />
-            <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.15 }}>
-              <span style={{ fontWeight: 800 }}>{currentUser.name}</span>
-              <span style={{ fontSize: '0.68rem', color: currentUser.viewAccess === 'advanced' ? '#166534' : '#1d4ed8', fontWeight: 600 }}>
-                {currentUser.viewAccess === 'simple' ? 'Simpler View' : 'Advanced View'}
-              </span>
-            </div>
-            <span
-              style={{
-                width: 7,
-                height: 7,
-                borderRadius: '50%',
-                background: currentUser.viewAccess === 'advanced' ? '#22c55e' : '#3b82f6',
-                boxShadow: `0 0 6px ${currentUser.viewAccess === 'advanced' ? '#22c55e' : '#3b82f6'}`,
-              }}
-            />
-          </div> */}
-
-          {/* Secure Sign Out Button */}
           <button
             type="button"
             onClick={logout}

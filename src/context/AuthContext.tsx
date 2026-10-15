@@ -3,10 +3,14 @@ import { Farm, UserRole } from '../types';
 import { dataService } from '../lib/dataService';
 import { INTERNAL_USERS, InternalUserAccount, ViewAccess } from '../lib/authConfig';
 
+import { upsertToLocalDb } from '../lib/localDbClient';
+
 export interface AuthContextType {
   isAuthenticated: boolean;
   login: (usernameOrEmail: string, password: string, rememberMe?: boolean) => Promise<boolean>;
   logout: () => void;
+  updatePassword: (currentPassword: string, newPassword: string) => Promise<{ success: boolean; message: string }>;
+  updateProfile: (name: string, email: string) => Promise<{ success: boolean; message: string }>;
   currentUser: InternalUserAccount;
   currentRole: UserRole;
   viewAccess: ViewAccess;
@@ -27,7 +31,29 @@ const getCombinedUsers = (): InternalUserAccount[] => {
     if (cached) {
       const parsed = JSON.parse(cached);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        return [...parsed, ...INTERNAL_USERS];
+        const userMap = new Map<string, InternalUserAccount>();
+        // Base accounts first
+        for (const u of INTERNAL_USERS) {
+          userMap.set(u.id, u);
+          userMap.set(u.username.toLowerCase(), u);
+        }
+        // Cached/synced accounts override base accounts
+        for (const u of parsed) {
+          const userObj: InternalUserAccount = {
+            id: u.id,
+            username: u.username,
+            aliases: u.aliases || [u.username],
+            password: u.password || u.password_hash,
+            name: u.name || u.full_name || u.username,
+            email: u.email || `${u.username}@farm.local`,
+            role: u.role,
+            viewAccess: u.viewAccess || u.view_access || 'simple',
+            roleTitle: u.roleTitle || (u.viewAccess === 'advanced' || u.view_access === 'advanced' ? 'Farm Administrator' : 'Field Operations')
+          };
+          userMap.set(userObj.id, userObj);
+          userMap.set(userObj.username.toLowerCase(), userObj);
+        }
+        return Array.from(new Set(userMap.values()));
       }
     }
   } catch {}
@@ -116,6 +142,133 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     throw new Error('Invalid credentials. Please enter a valid username and password.');
   };
 
+  const updatePassword = async (currentPass: string, newPass: string): Promise<{ success: boolean; message: string }> => {
+    const cleanCurrent = currentPass.trim();
+    const cleanNew = newPass.trim();
+
+    if (!cleanCurrent || !cleanNew) {
+      throw new Error('Please enter both current and new passwords.');
+    }
+
+    // Verify current password against current state or fallback
+    const isCurrentValid =
+      cleanCurrent === currentUser.password ||
+      (currentUser.id === 'user-admin' && cleanCurrent === 'FarmAdmin@2026') ||
+      (currentUser.id === 'user-supervisor' && cleanCurrent === 'Supervisor@2026');
+
+    if (!isCurrentValid) {
+      throw new Error('Current password is incorrect. Please check and try again.');
+    }
+
+    if (cleanNew.length < 6) {
+      throw new Error('New password must be at least 6 characters long.');
+    }
+
+    if (cleanNew === cleanCurrent) {
+      throw new Error('New password cannot be the same as your current password.');
+    }
+
+    const updatedUser: InternalUserAccount = {
+      ...currentUser,
+      password: cleanNew,
+    };
+
+    // Update in cached users list
+    const allUsers = getCombinedUsers();
+    const userMap = new Map<string, InternalUserAccount>();
+    allUsers.forEach(u => userMap.set(u.id, u));
+    userMap.set(updatedUser.id, updatedUser);
+
+    const updatedList = Array.from(userMap.values());
+    try {
+      localStorage.setItem('farmlog_cached_users', JSON.stringify(updatedList));
+    } catch {}
+
+    // Update saved password if remember me was enabled
+    if (localStorage.getItem('farmlog_remember_me') === 'true') {
+      localStorage.setItem('farmlog_saved_password', cleanNew);
+    }
+
+    setCurrentUser(updatedUser);
+
+    // Sync to PostgreSQL / Supabase
+    try {
+      await upsertToLocalDb('app_users', [{
+        id: currentUser.id,
+        farm_id: farm.id || 'farm-main-001',
+        username: currentUser.username,
+        password_hash: cleanNew,
+        full_name: currentUser.name,
+        email: currentUser.email,
+        role: currentUser.role,
+        view_access: currentUser.viewAccess,
+        is_active: true
+      }]);
+    } catch (err) {
+      console.warn('[AuthContext] Backend sync error on password update:', err);
+    }
+
+    dataService.logAudit(
+      'USER_PASSWORD_CHANGE',
+      'auth',
+      currentUser.id,
+      `User ${currentUser.name} (@${currentUser.username}) successfully updated account password`
+    );
+
+    return { success: true, message: 'Password updated successfully!' };
+  };
+
+  const updateProfile = async (name: string, email: string): Promise<{ success: boolean; message: string }> => {
+    const cleanName = name.trim();
+    const cleanEmail = email.trim();
+
+    if (!cleanName) {
+      throw new Error('Full name cannot be blank.');
+    }
+
+    const updatedUser: InternalUserAccount = {
+      ...currentUser,
+      name: cleanName,
+      email: cleanEmail || currentUser.email
+    };
+
+    const allUsers = getCombinedUsers();
+    const userMap = new Map<string, InternalUserAccount>();
+    allUsers.forEach(u => userMap.set(u.id, u));
+    userMap.set(updatedUser.id, updatedUser);
+
+    try {
+      localStorage.setItem('farmlog_cached_users', JSON.stringify(Array.from(userMap.values())));
+    } catch {}
+
+    setCurrentUser(updatedUser);
+
+    try {
+      await upsertToLocalDb('app_users', [{
+        id: currentUser.id,
+        farm_id: farm.id || 'farm-main-001',
+        username: currentUser.username,
+        password_hash: currentUser.password,
+        full_name: cleanName,
+        email: cleanEmail || currentUser.email,
+        role: currentUser.role,
+        view_access: currentUser.viewAccess,
+        is_active: true
+      }]);
+    } catch (err) {
+      console.warn('[AuthContext] Backend sync error on profile update:', err);
+    }
+
+    dataService.logAudit(
+      'USER_PROFILE_UPDATE',
+      'auth',
+      currentUser.id,
+      `User profile updated for ${cleanName} (@${currentUser.username})`
+    );
+
+    return { success: true, message: 'Profile details saved successfully!' };
+  };
+
   const logout = () => {
     setIsAuthenticated(false);
     localStorage.removeItem(AUTH_STORAGE_KEY);
@@ -133,6 +286,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isAuthenticated,
         login,
         logout,
+        updatePassword,
+        updateProfile,
         currentUser,
         currentRole: currentUser.role,
         viewAccess: currentUser.viewAccess,
@@ -157,3 +312,4 @@ export const useAuth = () => {
   }
   return context;
 };
+

@@ -28,10 +28,13 @@ import {
   ChevronRight,
   RefreshCw,
   FileDown,
-  Download
+  Download,
+  Sliders,
+  UserCog
 } from 'lucide-react';
+import { UserSettingsPage } from './UserSettingsPage';
 
-type RoutineSection = 'attendance' | 'advance' | 'payday' | 'tractor' | 'labours';
+type RoutineSection = 'attendance' | 'advance' | 'payday' | 'tractor' | 'labours' | 'settings';
 
 export const SimpleFarmViewPage: React.FC = () => {
   const { farm, currentUser } = useAuth();
@@ -916,6 +919,27 @@ export const SimpleFarmViewPage: React.FC = () => {
             >
               <UserPlus size={15} />
             </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveSection('settings')}
+              className={`ledger-action-btn ${activeSection === 'settings' ? 'ledger-action-btn-primary' : ''}`}
+              style={{
+                padding: '6px 10px',
+                fontSize: '0.78rem',
+                borderRadius: 10,
+                border: '1.5px solid #86efac',
+                background: activeSection === 'settings' ? '#15803d' : '#ffffff',
+                color: activeSection === 'settings' ? '#ffffff' : '#15803d',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4
+              }}
+              title="User Settings & Update Password"
+            >
+              <Sliders size={13} />
+              <span>Settings</span>
+            </button>
           </div>
         </div>
 
@@ -998,6 +1022,15 @@ export const SimpleFarmViewPage: React.FC = () => {
             <span style={{ fontSize: '0.7rem', background: activeSection === 'labours' ? 'rgba(255,255,255,0.25)' : '#f1f5f9', color: activeSection === 'labours' ? '#ffffff' : '#475569', padding: '1px 6px', borderRadius: 9999, fontWeight: 800 }}>
               {labourers.length}
             </span>
+          </button>
+
+          <button
+            type="button"
+            className={`desktop-ledger-tab-btn ${activeSection === 'settings' ? 'active' : ''}`}
+            onClick={() => setActiveSection('settings')}
+          >
+            <Sliders size={16} />
+            <span>Settings</span>
           </button>
 
           {/* Desktop Right Quick Actions */}
@@ -3464,6 +3497,13 @@ export const SimpleFarmViewPage: React.FC = () => {
             </div>
           </div>
         )}
+
+        {/* User Settings & Password Update Routine Section */}
+        {activeSection === 'settings' && (
+          <div style={{ marginTop: 16 }}>
+            <UserSettingsPage />
+          </div>
+        )}
       </div>
 
       {/* =========================================================================
@@ -3541,6 +3581,18 @@ export const SimpleFarmViewPage: React.FC = () => {
           >
             <Users size={18} />
             <span>Workers</span>
+          </button>
+
+          <button
+            type="button"
+            className={`mobile-bottom-nav-item ${activeSection === 'settings' ? 'active' : ''}`}
+            onClick={() => {
+              setActiveSection('settings');
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }}
+          >
+            <Sliders size={18} />
+            <span>Settings</span>
           </button>
         </nav>,
         document.body
