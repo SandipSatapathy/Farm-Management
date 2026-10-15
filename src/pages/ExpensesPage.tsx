@@ -25,12 +25,12 @@ export const ExpensesPage: React.FC = () => {
 
   // Form State
   const [selectedMachineId, setSelectedMachineId] = useState('');
-  const [expenseDate, setExpenseDate] = useState('2026-10-13');
+  const [expenseDate, setExpenseDate] = useState(() => new Date().toLocaleDateString('en-CA'));
   const [category, setCategory] = useState<ExpenseCategory>('fuel');
-  const [amount, setAmount] = useState<number>(2500);
-  const [quantity, setQuantity] = useState<number>(25);
+  const [amount, setAmount] = useState<number>(1000);
+  const [quantity, setQuantity] = useState<number>(10);
   const [unit, setUnit] = useState('Litres');
-  const [vendor, setVendor] = useState('Indian Oil Kisan Seva');
+  const [vendor, setVendor] = useState('');
   const [method, setMethod] = useState<PaymentMethod>('upi');
   const [ref, setRef] = useState('');
   const [notes, setNotes] = useState('');

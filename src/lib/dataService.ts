@@ -517,7 +517,7 @@ export const dataService = {
     let weeklyOffDays = 0;
     let unmarkedDays = 0;
 
-    const todayStr = '2026-10-13';
+    const todayStr = new Date().toLocaleDateString('en-CA');
 
     for (let day = 1; day <= daysInMonth; day++) {
       const dateStr = `${monthPrefix}-${String(day).padStart(2, '0')}`;

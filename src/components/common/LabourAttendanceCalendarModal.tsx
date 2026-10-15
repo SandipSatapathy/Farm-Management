@@ -31,15 +31,15 @@ export const LabourAttendanceCalendarModal: React.FC<LabourAttendanceCalendarMod
   onAdvanceClick,
   onAttendanceUpdated
 }) => {
-  const [currentYear, setCurrentYear] = useState<number>(2026);
-  const [currentMonth, setCurrentMonth] = useState<number>(10); // 1-indexed, 10 = October
-  const [selectedDate, setSelectedDate] = useState<string>('2026-10-13');
+  const now = new Date();
+  const [currentYear, setCurrentYear] = useState<number>(now.getFullYear());
+  const [currentMonth, setCurrentMonth] = useState<number>(now.getMonth() + 1); // 1-indexed
+  const todayStr = now.toLocaleDateString('en-CA');
+  const [selectedDate, setSelectedDate] = useState<string>(todayStr);
   const [data, setData] = useState<{
     records: Record<string, AttendanceRecord>;
     summary: MonthlyAttendanceSummary;
   } | null>(null);
-
-  const todayStr = '2026-10-13';
 
   const loadMonthData = () => {
     if (!labourer) return;
@@ -76,9 +76,10 @@ export const LabourAttendanceCalendarModal: React.FC<LabourAttendanceCalendarMod
   };
 
   const handleResetToCurrent = () => {
-    setCurrentYear(2026);
-    setCurrentMonth(10);
-    setSelectedDate(todayStr);
+    const n = new Date();
+    setCurrentYear(n.getFullYear());
+    setCurrentMonth(n.getMonth() + 1);
+    setSelectedDate(n.toLocaleDateString('en-CA'));
   };
 
   // Month metadata
@@ -225,7 +226,7 @@ export const LabourAttendanceCalendarModal: React.FC<LabourAttendanceCalendarMod
             <span style={{ fontSize: '1.15rem', fontWeight: 800, color: '#143823' }}>
               {monthName} {currentYear}
             </span>
-            {(currentYear !== 2026 || currentMonth !== 10) && (
+            {(currentYear !== new Date().getFullYear() || currentMonth !== (new Date().getMonth() + 1)) && (
               <button
                 onClick={handleResetToCurrent}
                 style={{

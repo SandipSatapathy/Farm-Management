@@ -38,7 +38,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
     unpaidPayrollBalance: 0
   });
 
-  const today = '2026-10-13'; // Standard mock reference date
+  const today = new Date().toLocaleDateString('en-CA');
 
   useEffect(() => {
     const labourers = dataService.getLabourers(true);

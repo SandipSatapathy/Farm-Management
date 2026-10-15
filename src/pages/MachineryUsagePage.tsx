@@ -24,10 +24,10 @@ export const MachineryUsagePage: React.FC = () => {
 
   // Form State
   const [selectedMachineId, setSelectedMachineId] = useState('');
-  const [workDate, setWorkDate] = useState('2026-10-13');
-  const [operatorName, setOperatorName] = useState('Ganesh More');
-  const [fieldName, setFieldName] = useState('Plot A (Vineyard)');
-  const [taskName, setTaskName] = useState('Rotavator & Soil Aeration');
+  const [workDate, setWorkDate] = useState(() => new Date().toLocaleDateString('en-CA'));
+  const [operatorName, setOperatorName] = useState('');
+  const [fieldName, setFieldName] = useState('');
+  const [taskName, setTaskName] = useState('');
   const [startTime, setStartTime] = useState('08:00');
   const [endTime, setEndTime] = useState('11:30');
   const [startMeter, setStartMeter] = useState<number>(0);

@@ -44,7 +44,11 @@ export const SimpleFarmViewPage: React.FC = () => {
   const [crewFilter, setCrewFilter] = useState<'active' | 'deactivated' | 'all'>('all');
   const [isSyncingLive, setIsSyncingLive] = useState(false);
   const [lastSyncTime, setLastSyncTime] = useState('');
-  const today = '2026-10-13';
+  // Dynamic Real-Time Date Engine
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth() + 1;
+  const today = now.toLocaleDateString('en-CA');
 
   // Active section state
   const [activeSection, setActiveSection] = useState<RoutineSection>('attendance');
@@ -54,13 +58,13 @@ export const SimpleFarmViewPage: React.FC = () => {
 
   // Attendance View Mode: 'list' (current daily sheet) | 'calendar' (monthly interactive calendar)
   const [attendanceViewMode, setAttendanceViewMode] = useState<'list' | 'calendar'>('list');
-  const [attendanceDate, setAttendanceDate] = useState('2026-10-13');
+  const [attendanceDate, setAttendanceDate] = useState(today);
 
   // Calendar View states
-  const [calYear, setCalYear] = useState<number>(2026);
-  const [calMonth, setCalMonth] = useState<number>(10);
+  const [calYear, setCalYear] = useState<number>(currentYear);
+  const [calMonth, setCalMonth] = useState<number>(currentMonth);
   const [calWorkerId, setCalWorkerId] = useState<string>('all');
-  const [calSelectedDate, setCalSelectedDate] = useState<string>('2026-10-13');
+  const [calSelectedDate, setCalSelectedDate] = useState<string>(today);
   const [calDayAttendance, setCalDayAttendance] = useState<Record<string, AttendanceStatus>>({});
   const [calSavedMsg, setCalSavedMsg] = useState('');
   const [calMonthRecords, setCalMonthRecords] = useState<any[]>([]);
@@ -72,17 +76,17 @@ export const SimpleFarmViewPage: React.FC = () => {
   // Advance state
   const [advLabId, setAdvLabId] = useState('');
   const [advAmount, setAdvAmount] = useState<number>(500);
-  const [advDate, setAdvDate] = useState<string>('2026-10-13');
+  const [advDate, setAdvDate] = useState<string>(today);
   const [advGivenBy, setAdvGivenBy] = useState<string>(currentUser?.name || 'Sandip');
   const [advSuccess, setAdvSuccess] = useState(false);
   const [recentAdvances, setRecentAdvances] = useState<Advance[]>([]);
-  const [advFilterYear, setAdvFilterYear] = useState<number>(2026);
-  const [advFilterMonth, setAdvFilterMonth] = useState<number | 'all'>(10);
+  const [advFilterYear, setAdvFilterYear] = useState<number>(currentYear);
+  const [advFilterMonth, setAdvFilterMonth] = useState<number | 'all'>(currentMonth);
 
   // Settlement state
   const [settledLabId, setSettledLabId] = useState<string | null>(null);
-  const [salaryYear, setSalaryYear] = useState<number>(2026);
-  const [salaryMonth, setSalaryMonth] = useState<number>(10);
+  const [salaryYear, setSalaryYear] = useState<number>(currentYear);
+  const [salaryMonth, setSalaryMonth] = useState<number>(currentMonth);
   const [settledLabIds, setSettledLabIds] = useState<string[]>([]);
   const [salarySettledSuccessMsg, setSalarySettledSuccessMsg] = useState('');
 
@@ -90,13 +94,13 @@ export const SimpleFarmViewPage: React.FC = () => {
   const [tractorRentals, setTractorRentals] = useState<TractorRentalLog[]>([]);
   const [tractorDateFilter, setTractorDateFilter] = useState<string>('all');
   const [isNewRentalOpen, setIsNewRentalOpen] = useState(false);
-  const [rentalDate, setRentalDate] = useState('2026-10-13');
-  const [rentalTractorName, setRentalTractorName] = useState('Mahindra 575 DI (Hired)');
-  const [rentalVendorName, setRentalVendorName] = useState('Patil Agri Rentals');
+  const [rentalDate, setRentalDate] = useState(today);
+  const [rentalTractorName, setRentalTractorName] = useState('');
+  const [rentalVendorName, setRentalVendorName] = useState('');
   const [rentalHours, setRentalHours] = useState<number>(4.0);
   const [rentalRate, setRentalRate] = useState<number>(900);
-  const [rentalAdvance, setRentalAdvance] = useState<number>(1000);
-  const [rentalTask, setRentalTask] = useState('Deep Plowing & Bed Preparation');
+  const [rentalAdvance, setRentalAdvance] = useState<number>(0);
+  const [rentalTask, setRentalTask] = useState('');
   const [rentalNotes, setRentalNotes] = useState('');
   const [tractorSuccessMsg, setTractorSuccessMsg] = useState('');
 
@@ -293,9 +297,10 @@ export const SimpleFarmViewPage: React.FC = () => {
   };
 
   const handleCalToday = () => {
-    setCalYear(2026);
-    setCalMonth(10);
-    setCalSelectedDate(today);
+    const n = new Date();
+    setCalYear(n.getFullYear());
+    setCalMonth(n.getMonth() + 1);
+    setCalSelectedDate(n.toLocaleDateString('en-CA'));
   };
 
   const handleCalMarkAllPresent = () => {
@@ -448,8 +453,9 @@ export const SimpleFarmViewPage: React.FC = () => {
   };
 
   const handleSalaryCurrentMonth = () => {
-    setSalaryYear(2026);
-    setSalaryMonth(10);
+    const n = new Date();
+    setSalaryYear(n.getFullYear());
+    setSalaryMonth(n.getMonth() + 1);
   };
 
   const handleSettleSalary = (lab: Labourer, netPay: number) => {
@@ -915,7 +921,8 @@ export const SimpleFarmViewPage: React.FC = () => {
 
   const handleExportTractorPdf = () => {
     const totals = dataService.getTractorRentalTotals(tractorDateFilter);
-    const dateLabel = tractorDateFilter === 'all' ? 'All Recorded Runs' : (tractorDateFilter === today ? 'Today (13 Oct 2026)' : tractorDateFilter);
+    const todayFormatted = new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+    const dateLabel = tractorDateFilter === 'all' ? 'All Recorded Runs' : (tractorDateFilter === today ? `Today (${todayFormatted})` : tractorDateFilter);
 
     const rows = tractorRentals.map((r, index) => [
       index + 1,
@@ -1008,10 +1015,6 @@ export const SimpleFarmViewPage: React.FC = () => {
       <div className="ledger-container">
         {/* Mobile Compact Top Bar with Date & Actions */}
         <div className="mobile-ledger-topbar">
-          <span style={{ fontSize: '0.78rem', fontWeight: 800, color: '#15803d', background: '#dcfce7', border: '1.5px solid #86efac', padding: '5px 10px', borderRadius: 10 }}>
-            Today • 13 Oct 2026
-          </span>
-
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <button
               type="button"
@@ -1090,27 +1093,6 @@ export const SimpleFarmViewPage: React.FC = () => {
               title="Register new worker in farm crew"
             >
               <UserPlus size={15} />
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setActiveSection('settings')}
-              className={`ledger-action-btn ${activeSection === 'settings' ? 'ledger-action-btn-primary' : ''}`}
-              style={{
-                padding: '6px 10px',
-                fontSize: '0.78rem',
-                borderRadius: 10,
-                border: '1.5px solid #86efac',
-                background: activeSection === 'settings' ? '#15803d' : '#ffffff',
-                color: activeSection === 'settings' ? '#ffffff' : '#15803d',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 4
-              }}
-              title="User Settings & Update Password"
-            >
-              <Sliders size={13} />
-              <span>Settings</span>
             </button>
           </div>
         </div>
@@ -1274,10 +1256,6 @@ export const SimpleFarmViewPage: React.FC = () => {
             >
               <FileDown size={14} />
             </button>
-
-            <span style={{ fontSize: '0.78rem', fontWeight: 800, color: '#15803d', background: '#dcfce7', border: '1.5px solid #86efac', padding: '5px 10px', borderRadius: 10 }}>
-              Today • 13 Oct 2026
-            </span>
             <button
               type="button"
               onClick={() => setIsAddModalOpen(true)}
@@ -1294,7 +1272,7 @@ export const SimpleFarmViewPage: React.FC = () => {
         {attSaved && (
           <div style={{ background: '#dcfce7', border: '2px solid #86efac', color: '#14532d', padding: '12px 16px', borderRadius: 14, marginBottom: 16, fontSize: '0.86rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: 8, boxShadow: '3px 3px 10px rgba(22, 163, 74, 0.15)' }}>
             <CheckCircle2 size={18} color="#16a34a" />
-            <span>Attendance saved successfully for today (13 Oct 2026).</span>
+            <span>Attendance saved successfully for today.</span>
           </div>
         )}
 
@@ -1446,7 +1424,7 @@ export const SimpleFarmViewPage: React.FC = () => {
                     className="ledger-action-btn ledger-action-btn-secondary"
                     style={{ fontSize: '0.8rem', padding: '6px 14px' }}
                   >
-                    Jump to Today (13 Oct)
+                    Jump to Today ({new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })})
                   </button>
                 </div>
               )}
@@ -1534,250 +1512,250 @@ export const SimpleFarmViewPage: React.FC = () => {
                 ) : (
                   <>
                     {/* Desktop Table View */}
-                <div className="ledger-desktop-only">
-                  <div className="ledger-table-wrap">
-                    <table className="ledger-table">
-                      <thead>
-                        <tr>
-                          <th className="ledger-th">Labourer</th>
-                          <th className="ledger-th">Daily Wage Rate</th>
-                          <th className="ledger-th">Advance</th>
-                          <th className="ledger-th" style={{ textAlign: 'center' }}>Today Attendance Status</th>
-                          <th className="ledger-th">Today Earned</th>
-                          <th className="ledger-th" style={{ textAlign: 'right' }}>Monthly Audit</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {labourers.map((lab) => {
-                          const st = attendance[lab.id] || 'present';
-                          const units = st === 'present' ? 1.0 : (st === 'half_day' ? 0.5 : 0.0);
-                          const earned = round2(units * lab.base_rate);
-                          const bal = dataService.getLabourerAdvanceBalance(lab.id);
+                    <div className="ledger-desktop-only">
+                      <div className="ledger-table-wrap">
+                        <table className="ledger-table">
+                          <thead>
+                            <tr>
+                              <th className="ledger-th">Labourer</th>
+                              <th className="ledger-th">Daily Wage Rate</th>
+                              <th className="ledger-th">Advance</th>
+                              <th className="ledger-th" style={{ textAlign: 'center' }}>Today Attendance Status</th>
+                              <th className="ledger-th">Today Earned</th>
+                              <th className="ledger-th" style={{ textAlign: 'right' }}>Monthly Audit</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {labourers.map((lab) => {
+                              const st = attendance[lab.id] || 'present';
+                              const units = st === 'present' ? 1.0 : (st === 'half_day' ? 0.5 : 0.0);
+                              const earned = round2(units * lab.base_rate);
+                              const bal = dataService.getLabourerAdvanceBalance(lab.id);
 
-                          return (
-                            <tr key={lab.id} className="ledger-tr">
-                              <td className="ledger-td">
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                                  <div style={{
-                                    width: 38,
-                                    height: 38,
-                                    borderRadius: 12,
-                                    background: 'linear-gradient(135deg, #dcfce7, #bbf7d0)',
-                                    color: '#15803d',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    fontWeight: 800,
-                                    fontSize: '0.92rem',
-                                    boxShadow: '2px 2px 5px rgba(166, 184, 170, 0.25), inset 1px 1px 2px #ffffff',
-                                    border: '1.5px solid #86efac',
-                                    flexShrink: 0
-                                  }}>
-                                    {lab.full_name.charAt(0)}
+                              return (
+                                <tr key={lab.id} className="ledger-tr">
+                                  <td className="ledger-td">
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                      <div style={{
+                                        width: 38,
+                                        height: 38,
+                                        borderRadius: 12,
+                                        background: 'linear-gradient(135deg, #dcfce7, #bbf7d0)',
+                                        color: '#15803d',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        fontWeight: 800,
+                                        fontSize: '0.92rem',
+                                        boxShadow: '2px 2px 5px rgba(166, 184, 170, 0.25), inset 1px 1px 2px #ffffff',
+                                        border: '1.5px solid #86efac',
+                                        flexShrink: 0
+                                      }}>
+                                        {lab.full_name.charAt(0)}
+                                      </div>
+                                      <div>
+                                        <div style={{ fontWeight: 800, color: '#143823', fontSize: '0.92rem' }}>{lab.full_name}</div>
+                                        <div style={{ fontSize: '0.72rem', color: '#64748b' }}>{lab.labour_code}</div>
+                                      </div>
+                                    </div>
+                                  </td>
+                                  <td className="ledger-td" style={{ fontWeight: 800, color: '#143823' }}>
+                                    ₹{lab.base_rate} <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 500 }}>/day</span>
+                                  </td>
+                                  <td className="ledger-td">
+                                    {bal.outstanding > 0 ? (
+                                      <span style={{ fontSize: '0.78rem', fontWeight: 800, color: '#b45309', background: '#fef3c7', padding: '3px 8px', borderRadius: 6, border: '1px solid #fde68a' }}>
+                                        Due: ₹{bal.outstanding}
+                                      </span>
+                                    ) : (
+                                      <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#15803d', background: '#f0fdf4', padding: '3px 8px', borderRadius: 6, border: '1px solid #bbf7d0' }}>
+                                        Clear
+                                      </span>
+                                    )}
+                                  </td>
+                                  <td className="ledger-td" style={{ textAlign: 'center' }}>
+                                    <div className="ledger-seg-control">
+                                      <button
+                                        type="button"
+                                        className={`ledger-seg-btn ${st === 'present' ? 'active-present' : ''}`}
+                                        onClick={() => handleToggleStatus(lab.id, 'present')}
+                                      >
+                                        Present
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className={`ledger-seg-btn ${st === 'half_day' ? 'active-half' : ''}`}
+                                        onClick={() => handleToggleStatus(lab.id, 'half_day')}
+                                      >
+                                        Half-Day
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className={`ledger-seg-btn ${st === 'absent' || st === 'leave' ? 'active-absent' : ''}`}
+                                        onClick={() => handleToggleStatus(lab.id, 'absent')}
+                                      >
+                                        Absent
+                                      </button>
+                                    </div>
+                                  </td>
+                                  <td className="ledger-td">
+                                    <span style={{ fontWeight: 800, fontSize: '0.95rem', color: earned > 0 ? '#15803d' : '#64748b' }}>
+                                      ₹{earned}
+                                    </span>
+                                    <span style={{ fontSize: '0.72rem', color: '#64748b', marginLeft: 4, fontWeight: 600 }}>
+                                      ({units} day)
+                                    </span>
+                                  </td>
+                                  <td className="ledger-td" style={{ textAlign: 'right' }}>
+                                    <button
+                                      type="button"
+                                      onClick={() => setSelectedLabourerForCalendar(lab)}
+                                      className="ledger-action-btn ledger-action-btn-secondary"
+                                      style={{ padding: '5px 10px', fontSize: '0.76rem' }}
+                                    >
+                                      <Calendar size={13} color="#15803d" />
+                                      <span>Monthly Calendar</span>
+                                    </button>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+
+                    {/* Mobile High-Density Rows View */}
+                    <div className="ledger-mobile-only">
+                      {labourers.map((lab) => {
+                        const st = attendance[lab.id] || 'present';
+                        const units = st === 'present' ? 1.0 : (st === 'half_day' ? 0.5 : 0.0);
+                        const earned = round2(units * lab.base_rate);
+                        const bal = dataService.getLabourerAdvanceBalance(lab.id);
+
+                        return (
+                          <div key={lab.id} className="ledger-mobile-row">
+                            {/* Row Top: Avatar, Name, Rate, Khata */}
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                <div style={{
+                                  width: 38,
+                                  height: 38,
+                                  borderRadius: 12,
+                                  background: 'linear-gradient(135deg, #dcfce7, #bbf7d0)',
+                                  color: '#15803d',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  fontWeight: 800,
+                                  fontSize: '0.92rem',
+                                  boxShadow: '2px 2px 5px rgba(166, 184, 170, 0.25), inset 1px 1px 2px #ffffff',
+                                  border: '1.5px solid #86efac',
+                                  flexShrink: 0
+                                }}>
+                                  {lab.full_name.charAt(0)}
+                                </div>
+                                <div>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                    <span style={{ fontWeight: 800, fontSize: '0.95rem', color: '#143823' }}>
+                                      {lab.full_name}
+                                    </span>
+                                    <span style={{ fontSize: '0.68rem', color: '#475569', background: '#f1f5f9', padding: '1px 5px', borderRadius: 4, fontWeight: 700 }}>
+                                      {lab.labour_code}
+                                    </span>
                                   </div>
-                                  <div>
-                                    <div style={{ fontWeight: 800, color: '#143823', fontSize: '0.92rem' }}>{lab.full_name}</div>
-                                    <div style={{ fontSize: '0.72rem', color: '#64748b' }}>{lab.labour_code}</div>
+                                  <div style={{ fontSize: '0.76rem', color: '#4b6354', fontWeight: 600 }}>
+                                    ₹{lab.base_rate}/day
                                   </div>
                                 </div>
-                              </td>
-                              <td className="ledger-td" style={{ fontWeight: 800, color: '#143823' }}>
-                                ₹{lab.base_rate} <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 500 }}>/day</span>
-                              </td>
-                              <td className="ledger-td">
+                              </div>
+
+                              <div style={{ textAlign: 'right' }}>
                                 {bal.outstanding > 0 ? (
-                                  <span style={{ fontSize: '0.78rem', fontWeight: 800, color: '#b45309', background: '#fef3c7', padding: '3px 8px', borderRadius: 6, border: '1px solid #fde68a' }}>
+                                  <span style={{ fontSize: '0.72rem', fontWeight: 800, color: '#b45309', background: '#fef3c7', padding: '2px 6px', borderRadius: 6, border: '1px solid #fde68a' }}>
                                     Due: ₹{bal.outstanding}
                                   </span>
                                 ) : (
-                                  <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#15803d', background: '#f0fdf4', padding: '3px 8px', borderRadius: 6, border: '1px solid #bbf7d0' }}>
+                                  <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#15803d', background: '#f0fdf4', padding: '2px 6px', borderRadius: 6, border: '1px solid #bbf7d0' }}>
                                     Clear
                                   </span>
                                 )}
-                              </td>
-                              <td className="ledger-td" style={{ textAlign: 'center' }}>
-                                <div className="ledger-seg-control">
-                                  <button
-                                    type="button"
-                                    className={`ledger-seg-btn ${st === 'present' ? 'active-present' : ''}`}
-                                    onClick={() => handleToggleStatus(lab.id, 'present')}
-                                  >
-                                    Present
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className={`ledger-seg-btn ${st === 'half_day' ? 'active-half' : ''}`}
-                                    onClick={() => handleToggleStatus(lab.id, 'half_day')}
-                                  >
-                                    Half-Day
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className={`ledger-seg-btn ${st === 'absent' || st === 'leave' ? 'active-absent' : ''}`}
-                                    onClick={() => handleToggleStatus(lab.id, 'absent')}
-                                  >
-                                    Absent
-                                  </button>
-                                </div>
-                              </td>
-                              <td className="ledger-td">
-                                <span style={{ fontWeight: 800, fontSize: '0.95rem', color: earned > 0 ? '#15803d' : '#64748b' }}>
-                                  ₹{earned}
-                                </span>
-                                <span style={{ fontSize: '0.72rem', color: '#64748b', marginLeft: 4, fontWeight: 600 }}>
-                                  ({units} day)
-                                </span>
-                              </td>
-                              <td className="ledger-td" style={{ textAlign: 'right' }}>
-                                <button
-                                  type="button"
-                                  onClick={() => setSelectedLabourerForCalendar(lab)}
-                                  className="ledger-action-btn ledger-action-btn-secondary"
-                                  style={{ padding: '5px 10px', fontSize: '0.76rem' }}
-                                >
-                                  <Calendar size={13} color="#15803d" />
-                                  <span>Monthly Calendar</span>
-                                </button>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-
-                {/* Mobile High-Density Rows View */}
-                <div className="ledger-mobile-only">
-                  {labourers.map((lab) => {
-                    const st = attendance[lab.id] || 'present';
-                    const units = st === 'present' ? 1.0 : (st === 'half_day' ? 0.5 : 0.0);
-                    const earned = round2(units * lab.base_rate);
-                    const bal = dataService.getLabourerAdvanceBalance(lab.id);
-
-                    return (
-                      <div key={lab.id} className="ledger-mobile-row">
-                        {/* Row Top: Avatar, Name, Rate, Khata */}
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                            <div style={{
-                              width: 38,
-                              height: 38,
-                              borderRadius: 12,
-                              background: 'linear-gradient(135deg, #dcfce7, #bbf7d0)',
-                              color: '#15803d',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              fontWeight: 800,
-                              fontSize: '0.92rem',
-                              boxShadow: '2px 2px 5px rgba(166, 184, 170, 0.25), inset 1px 1px 2px #ffffff',
-                              border: '1.5px solid #86efac',
-                              flexShrink: 0
-                            }}>
-                              {lab.full_name.charAt(0)}
-                            </div>
-                            <div>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                <span style={{ fontWeight: 800, fontSize: '0.95rem', color: '#143823' }}>
-                                  {lab.full_name}
-                                </span>
-                                <span style={{ fontSize: '0.68rem', color: '#475569', background: '#f1f5f9', padding: '1px 5px', borderRadius: 4, fontWeight: 700 }}>
-                                  {lab.labour_code}
-                                </span>
-                              </div>
-                              <div style={{ fontSize: '0.76rem', color: '#4b6354', fontWeight: 600 }}>
-                                ₹{lab.base_rate}/day
                               </div>
                             </div>
+
+                            {/* 1-Tap Segmented Control */}
+                            <div className="ledger-seg-control" style={{ marginBottom: 10 }}>
+                              <button
+                                type="button"
+                                className={`ledger-seg-btn ${st === 'present' ? 'active-present' : ''}`}
+                                onClick={() => handleToggleStatus(lab.id, 'present')}
+                              >
+                                Present
+                              </button>
+                              <button
+                                type="button"
+                                className={`ledger-seg-btn ${st === 'half_day' ? 'active-half' : ''}`}
+                                onClick={() => handleToggleStatus(lab.id, 'half_day')}
+                              >
+                                Half-Day
+                              </button>
+                              <button
+                                type="button"
+                                className={`ledger-seg-btn ${st === 'absent' || st === 'leave' ? 'active-absent' : ''}`}
+                                onClick={() => handleToggleStatus(lab.id, 'absent')}
+                              >
+                                Absent
+                              </button>
+                            </div>
+
+                            {/* Row Bottom: Summary and Calendar */}
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: 8, borderTop: '1px dashed #dcfce7' }}>
+                              <div style={{ fontSize: '0.8rem', color: '#143823' }}>
+                                Today: <strong>{units} Day</strong> • <strong style={{ color: earned > 0 ? '#15803d' : '#64748b' }}>₹{earned}</strong>
+                              </div>
+
+                              <button
+                                type="button"
+                                onClick={() => setSelectedLabourerForCalendar(lab)}
+                                style={{
+                                  background: '#f0fdf4',
+                                  border: '1px solid #86efac',
+                                  color: '#15803d',
+                                  fontWeight: 800,
+                                  fontSize: '0.74rem',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: 4,
+                                  cursor: 'pointer',
+                                  padding: '4px 8px',
+                                  borderRadius: 8,
+                                }}
+                              >
+                                <Calendar size={13} />
+                                <span>Monthly Calendar</span>
+                              </button>
+                            </div>
                           </div>
+                        );
+                      })}
 
-                          <div style={{ textAlign: 'right' }}>
-                            {bal.outstanding > 0 ? (
-                              <span style={{ fontSize: '0.72rem', fontWeight: 800, color: '#b45309', background: '#fef3c7', padding: '2px 6px', borderRadius: 6, border: '1px solid #fde68a' }}>
-                                Due: ₹{bal.outstanding}
-                              </span>
-                            ) : (
-                              <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#15803d', background: '#f0fdf4', padding: '2px 6px', borderRadius: 6, border: '1px solid #bbf7d0' }}>
-                                Clear
-                              </span>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* 1-Tap Segmented Control */}
-                        <div className="ledger-seg-control" style={{ marginBottom: 10 }}>
-                          <button
-                            type="button"
-                            className={`ledger-seg-btn ${st === 'present' ? 'active-present' : ''}`}
-                            onClick={() => handleToggleStatus(lab.id, 'present')}
-                          >
-                            Present
-                          </button>
-                          <button
-                            type="button"
-                            className={`ledger-seg-btn ${st === 'half_day' ? 'active-half' : ''}`}
-                            onClick={() => handleToggleStatus(lab.id, 'half_day')}
-                          >
-                            Half-Day
-                          </button>
-                          <button
-                            type="button"
-                            className={`ledger-seg-btn ${st === 'absent' || st === 'leave' ? 'active-absent' : ''}`}
-                            onClick={() => handleToggleStatus(lab.id, 'absent')}
-                          >
-                            Absent
-                          </button>
-                        </div>
-
-                        {/* Row Bottom: Summary and Calendar */}
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: 8, borderTop: '1px dashed #dcfce7' }}>
-                          <div style={{ fontSize: '0.8rem', color: '#143823' }}>
-                            Today: <strong>{units} Day</strong> • <strong style={{ color: earned > 0 ? '#15803d' : '#64748b' }}>₹{earned}</strong>
-                          </div>
-
-                          <button
-                            type="button"
-                            onClick={() => setSelectedLabourerForCalendar(lab)}
-                            style={{
-                              background: '#f0fdf4',
-                              border: '1px solid #86efac',
-                              color: '#15803d',
-                              fontWeight: 800,
-                              fontSize: '0.74rem',
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: 4,
-                              cursor: 'pointer',
-                              padding: '4px 8px',
-                              borderRadius: 8,
-                            }}
-                          >
-                            <Calendar size={13} />
-                            <span>Monthly Calendar</span>
-                          </button>
-                        </div>
+                      {/* Mobile Save Button */}
+                      <div style={{ marginTop: 14 }}>
+                        <button
+                          type="button"
+                          onClick={handleSaveAttendance}
+                          className="ledger-action-btn ledger-action-btn-primary"
+                          style={{ width: '100%', padding: '14px', fontSize: '0.92rem', borderRadius: 16 }}
+                        >
+                          <CheckCircle2 size={18} />
+                          <span>Save Today's Attendance ({totalPayableUnits} Days)</span>
+                        </button>
                       </div>
-                    );
-                  })}
-
-                  {/* Mobile Save Button */}
-                  <div style={{ marginTop: 14 }}>
-                    <button
-                      type="button"
-                      onClick={handleSaveAttendance}
-                      className="ledger-action-btn ledger-action-btn-primary"
-                      style={{ width: '100%', padding: '14px', fontSize: '0.92rem', borderRadius: 16 }}
-                    >
-                      <CheckCircle2 size={18} />
-                      <span>Save Today's Attendance ({totalPayableUnits} Days)</span>
-                    </button>
-                  </div>
-                </div>
+                    </div>
+                  </>
+                )}
               </>
             )}
-          </>
-        )}
 
             {/* =========================================================================
               VIEW 2: CALENDAR VIEW (MONTHLY OPERATIONS CALENDAR)
@@ -2358,11 +2336,15 @@ export const SimpleFarmViewPage: React.FC = () => {
 
                   <button
                     type="button"
-                    onClick={() => { setAdvFilterYear(2026); setAdvFilterMonth(10); }}
+                    onClick={() => {
+                      const n = new Date();
+                      setAdvFilterYear(n.getFullYear());
+                      setAdvFilterMonth(n.getMonth() + 1);
+                    }}
                     style={{
-                      background: advFilterMonth === 10 && advFilterYear === 2026 ? '#15803d' : '#f0fdf4',
+                      background: advFilterMonth === (new Date().getMonth() + 1) && advFilterYear === new Date().getFullYear() ? '#15803d' : '#f0fdf4',
                       border: '1.5px solid #86efac',
-                      color: advFilterMonth === 10 && advFilterYear === 2026 ? '#ffffff' : '#15803d',
+                      color: advFilterMonth === (new Date().getMonth() + 1) && advFilterYear === new Date().getFullYear() ? '#ffffff' : '#15803d',
                       fontWeight: 800,
                       fontSize: '0.78rem',
                       padding: '6px 12px',
@@ -2375,7 +2357,7 @@ export const SimpleFarmViewPage: React.FC = () => {
 
                   <button
                     type="button"
-                    onClick={() => setAdvFilterMonth(advFilterMonth === 'all' ? 10 : 'all')}
+                    onClick={() => setAdvFilterMonth(advFilterMonth === 'all' ? (new Date().getMonth() + 1) : 'all')}
                     style={{
                       background: advFilterMonth === 'all' ? '#15803d' : '#f8fafc',
                       border: '1.5px solid #cbd5e1',
@@ -2387,7 +2369,7 @@ export const SimpleFarmViewPage: React.FC = () => {
                       cursor: 'pointer'
                     }}
                   >
-                    {advFilterMonth === 'all' ? 'All Months (Active)' : 'View All'}
+                    {advFilterMonth === 'all' ? 'View By Month' : 'All Months'}
                   </button>
 
                   <button
@@ -3098,46 +3080,46 @@ export const SimpleFarmViewPage: React.FC = () => {
                                 </div>
                               </div>
                             </td>
-                          <td className="ledger-td" style={{ color: '#475569', fontWeight: 700 }}>
-                            ₹{dailyRate}/day
-                          </td>
-                          <td className="ledger-td" style={{ fontWeight: 800, color: '#143823' }}>
-                            {daysWorked} Days
-                          </td>
-                          <td className="ledger-td" style={{ fontWeight: 800, color: '#143823' }}>
-                            ₹{grossWage.toLocaleString('en-IN')}
-                          </td>
-                          <td className="ledger-td">
-                            {advanceDue > 0 ? (
-                              <span style={{ color: '#b45309', fontWeight: 800, background: '#fef3c7', padding: '2px 8px', borderRadius: 6, border: '1px solid #fde68a', fontSize: '0.8rem' }}>
-                                ₹{advanceDue.toLocaleString('en-IN')}
+                            <td className="ledger-td" style={{ color: '#475569', fontWeight: 700 }}>
+                              ₹{dailyRate}/day
+                            </td>
+                            <td className="ledger-td" style={{ fontWeight: 800, color: '#143823' }}>
+                              {daysWorked} Days
+                            </td>
+                            <td className="ledger-td" style={{ fontWeight: 800, color: '#143823' }}>
+                              ₹{grossWage.toLocaleString('en-IN')}
+                            </td>
+                            <td className="ledger-td">
+                              {advanceDue > 0 ? (
+                                <span style={{ color: '#b45309', fontWeight: 800, background: '#fef3c7', padding: '2px 8px', borderRadius: 6, border: '1px solid #fde68a', fontSize: '0.8rem' }}>
+                                  ₹{advanceDue.toLocaleString('en-IN')}
+                                </span>
+                              ) : (
+                                <span style={{ color: '#15803d', fontWeight: 700, background: '#f0fdf4', padding: '2px 8px', borderRadius: 6, border: '1px solid #bbf7d0', fontSize: '0.78rem' }}>
+                                  ₹0
+                                </span>
+                              )}
+                            </td>
+                            <td className="ledger-td">
+                              <span style={{ fontSize: '1.18rem', fontWeight: 900, color: '#15803d', fontFamily: 'Outfit, Plus Jakarta Sans, sans-serif' }}>
+                                ₹{netTakeHome.toLocaleString('en-IN')}
                               </span>
-                            ) : (
-                              <span style={{ color: '#15803d', fontWeight: 700, background: '#f0fdf4', padding: '2px 8px', borderRadius: 6, border: '1px solid #bbf7d0', fontSize: '0.78rem' }}>
-                                ₹0
-                              </span>
-                            )}
-                          </td>
-                          <td className="ledger-td">
-                            <span style={{ fontSize: '1.18rem', fontWeight: 900, color: '#15803d', fontFamily: 'Outfit, Plus Jakarta Sans, sans-serif' }}>
-                              ₹{netTakeHome.toLocaleString('en-IN')}
-                            </span>
-                          </td>
-                          <td className="ledger-td" style={{ textAlign: 'right' }}>
-                            <button
-                              type="button"
-                              disabled={isSettled}
-                              onClick={() => handleSettleSalary(lab, netTakeHome)}
-                              className={`ledger-action-btn ${isSettled ? 'ledger-action-btn-secondary' : 'ledger-action-btn-primary'}`}
-                              style={{ padding: '6px 14px', fontSize: '0.8rem' }}
-                            >
-                              {isSettled ? '✓ Paid / Settled' : 'Pay Cash / UPI'}
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })
-                  )}
+                            </td>
+                            <td className="ledger-td" style={{ textAlign: 'right' }}>
+                              <button
+                                type="button"
+                                disabled={isSettled}
+                                onClick={() => handleSettleSalary(lab, netTakeHome)}
+                                className={`ledger-action-btn ${isSettled ? 'ledger-action-btn-secondary' : 'ledger-action-btn-primary'}`}
+                                style={{ padding: '6px 14px', fontSize: '0.8rem' }}
+                              >
+                                {isSettled ? '✓ Paid / Settled' : 'Pay Cash / UPI'}
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -3188,32 +3170,32 @@ export const SimpleFarmViewPage: React.FC = () => {
                           </div>
                         </div>
 
-                      <div style={{ textAlign: 'right' }}>
-                        <div style={{ fontSize: '0.68rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 800 }}>Net Take-Home</div>
-                        <div style={{ fontSize: '1.25rem', fontWeight: 900, color: '#15803d', fontFamily: 'Outfit, sans-serif' }}>
-                          ₹{netTakeHome.toLocaleString('en-IN')}
+                        <div style={{ textAlign: 'right' }}>
+                          <div style={{ fontSize: '0.68rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 800 }}>Net Take-Home</div>
+                          <div style={{ fontSize: '1.25rem', fontWeight: 900, color: '#15803d', fontFamily: 'Outfit, sans-serif' }}>
+                            ₹{netTakeHome.toLocaleString('en-IN')}
+                          </div>
                         </div>
                       </div>
-                    </div>
 
-                    <div style={{ background: '#f8faf8', border: '1px solid rgba(220, 235, 224, 0.8)', padding: '8px 12px', borderRadius: 10, fontSize: '0.78rem', color: '#334e3e', marginBottom: 10 }}>
-                      <span>Gross Wage: <strong>₹{grossWage.toLocaleString('en-IN')}</strong></span>
-                      {advanceDue > 0 && <span style={{ color: '#b45309', marginLeft: 10 }}>Advance: <strong>₹{advanceDue.toLocaleString('en-IN')}</strong></span>}
-                    </div>
+                      <div style={{ background: '#f8faf8', border: '1px solid rgba(220, 235, 224, 0.8)', padding: '8px 12px', borderRadius: 10, fontSize: '0.78rem', color: '#334e3e', marginBottom: 10 }}>
+                        <span>Gross Wage: <strong>₹{grossWage.toLocaleString('en-IN')}</strong></span>
+                        {advanceDue > 0 && <span style={{ color: '#b45309', marginLeft: 10 }}>Advance: <strong>₹{advanceDue.toLocaleString('en-IN')}</strong></span>}
+                      </div>
 
-                    <button
-                      type="button"
-                      disabled={isSettled}
-                      onClick={() => handleSettleSalary(lab, netTakeHome)}
-                      className={`ledger-action-btn ${isSettled ? 'ledger-action-btn-secondary' : 'ledger-action-btn-primary'}`}
-                      style={{ width: '100%', padding: '10px', fontSize: '0.85rem', borderRadius: 12 }}
-                    >
-                      {isSettled ? '✓ Paid & Settled' : `Pay Cash / UPI (₹${netTakeHome})`}
-                    </button>
-                  </div>
-                );
-              })
-            )}
+                      <button
+                        type="button"
+                        disabled={isSettled}
+                        onClick={() => handleSettleSalary(lab, netTakeHome)}
+                        className={`ledger-action-btn ${isSettled ? 'ledger-action-btn-secondary' : 'ledger-action-btn-primary'}`}
+                        style={{ width: '100%', padding: '10px', fontSize: '0.85rem', borderRadius: 12 }}
+                      >
+                        {isSettled ? '✓ Paid & Settled' : `Pay Cash / UPI (₹${netTakeHome})`}
+                      </button>
+                    </div>
+                  );
+                })
+              )}
             </div>
           </div>
         )}
@@ -3301,31 +3283,54 @@ export const SimpleFarmViewPage: React.FC = () => {
                 <Filter size={14} color="#64748b" />
                 <span style={{ fontSize: '0.8rem', fontWeight: 700, color: '#334155' }}>Filter Date:</span>
 
-                {['all', '2026-10-13', '2026-10-12', '2026-10-11'].map((d) => {
-                  const label = d === 'all' ? 'All Dates' : (d === '2026-10-13' ? 'Today (13 Oct)' : (d === '2026-10-12' ? '12 Oct' : '11 Oct'));
-                  const isActive = tractorDateFilter === d;
+                {(() => {
+                  const options: { id: string; label: string }[] = [{ id: 'all', label: 'All Dates' }];
+                  const n = new Date();
+                  
+                  // Today
+                  const tStr = n.toLocaleDateString('en-CA');
+                  const tLabel = `Today (${n.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })})`;
+                  options.push({ id: tStr, label: tLabel });
 
-                  return (
-                    <button
-                      key={d}
-                      type="button"
-                      onClick={() => setTractorDateFilter(d)}
-                      style={{
-                        padding: '4px 10px',
-                        borderRadius: 6,
-                        border: '1px solid',
-                        borderColor: isActive ? '#16a34a' : '#cbd5e1',
-                        background: isActive ? '#dcfce7' : '#ffffff',
-                        color: isActive ? '#15803d' : '#475569',
-                        fontSize: '0.78rem',
-                        fontWeight: 700,
-                        cursor: 'pointer',
-                      }}
-                    >
-                      {label}
-                    </button>
-                  );
-                })}
+                  // Yesterday
+                  const y = new Date(n);
+                  y.setDate(y.getDate() - 1);
+                  const yStr = y.toLocaleDateString('en-CA');
+                  const yLabel = `Yesterday (${y.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })})`;
+                  options.push({ id: yStr, label: yLabel });
+
+                  // 2 Days Ago
+                  const d2 = new Date(n);
+                  d2.setDate(d2.getDate() - 2);
+                  const d2Str = d2.toLocaleDateString('en-CA');
+                  const d2Label = d2.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+                  options.push({ id: d2Str, label: d2Label });
+
+                  return options.map(({ id, label }) => {
+                    const isActive = tractorDateFilter === id;
+
+                    return (
+                      <button
+                        key={id}
+                        type="button"
+                        onClick={() => setTractorDateFilter(id)}
+                        style={{
+                          padding: '4px 10px',
+                          borderRadius: 6,
+                          border: '1px solid',
+                          borderColor: isActive ? '#16a34a' : '#cbd5e1',
+                          background: isActive ? '#dcfce7' : '#ffffff',
+                          color: isActive ? '#15803d' : '#475569',
+                          fontSize: '0.78rem',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        {label}
+                      </button>
+                    );
+                  });
+                })()}
 
                 <input
                   type="date"

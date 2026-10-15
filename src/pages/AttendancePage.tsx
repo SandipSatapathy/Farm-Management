@@ -20,7 +20,7 @@ import {
 
 export const AttendancePage: React.FC = () => {
   const { isReadOnlyPartner, canMutateOperations, currentUser } = useAuth();
-  const [selectedDate, setSelectedDate] = useState('2026-10-13');
+  const [selectedDate, setSelectedDate] = useState(() => new Date().toLocaleDateString('en-CA'));
   const [selectedShift, setSelectedShift] = useState('regular');
   const [labourers, setLabourers] = useState<Labourer[]>([]);
   
