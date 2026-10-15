@@ -25,10 +25,31 @@ import {
   upsertToLocalDb, 
   deleteFromLocalDb, 
   syncAllFromLocalDb, 
+  subscribeToRealtimeSync,
   isDbSyncActive 
 } from './localDbClient';
 
 const STORAGE_KEY = 'kisanops_farm_data_v2';
+const TOMBSTONES_KEY = 'farmlog_tombstones_v1';
+
+// Tombstones: tracks deleted IDs so background syncs don't re-insert deleted records
+const getTombstones = (): Set<string> => {
+  try {
+    const raw = localStorage.getItem(TOMBSTONES_KEY);
+    return raw ? new Set(JSON.parse(raw)) : new Set();
+  } catch {
+    return new Set();
+  }
+};
+
+const addTombstone = (id: string) => {
+  if (!id) return;
+  try {
+    const set = getTombstones();
+    set.add(id);
+    localStorage.setItem(TOMBSTONES_KEY, JSON.stringify([...set]));
+  } catch {}
+};
 
 export const round2 = (num: number): number => {
   return Math.round((num + Number.EPSILON) * 100) / 100;
@@ -142,59 +163,129 @@ const saveStore = (store: FarmDataStore) => {
 };
 
 export const dataService = {
-  // Database Sync Engine (Local PostgreSQL in Dev / Supabase in Prod)
-  initDatabaseSync: async () => {
-    if (!isDbSyncActive) return;
+  // Live Database Fetch Engine (Direct Supabase / Local PostgreSQL)
+  fetchLiveAll: async (): Promise<boolean> => {
+    if (!isDbSyncActive) return false;
 
     try {
       const dbData = await syncAllFromLocalDb();
+      if (!dbData) return false;
+
       const store = getStore();
 
-      if (dbData) {
-        const hasDbRecords = 
-          (dbData.labourers && dbData.labourers.length > 0) ||
-          (dbData.attendance && dbData.attendance.length > 0) ||
-          (dbData.advances && dbData.advances.length > 0) ||
-          (dbData.tractorRentals && dbData.tractorRentals.length > 0);
+      // Cloud data is 100% authoritative - assign clean live dataset
+      store.labourers = dbData.labourers || [];
+      store.attendance = dbData.attendance || [];
+      store.advances = dbData.advances || [];
+      store.allocations = dbData.advanceAllocations || [];
+      store.tractorRentals = dbData.tractorRentals || [];
+      store.payrollPeriods = dbData.payrollPeriods || [];
+      store.payrollLines = dbData.payrollLines || [];
 
-        const hasLocalRecords = 
-          store.labourers.length > 0 ||
-          store.attendance.length > 0 ||
-          store.advances.length > 0 ||
-          store.tractorRentals.length > 0;
-
-        if (hasDbRecords) {
-          // Database has records -> hydrate local store from DB
-          if (dbData.labourers) store.labourers = dbData.labourers;
-          if (dbData.attendance) store.attendance = dbData.attendance;
-          if (dbData.advances) store.advances = dbData.advances;
-          if (dbData.advanceAllocations) store.allocations = dbData.advanceAllocations;
-          if (dbData.tractorRentals) store.tractorRentals = dbData.tractorRentals;
-          if (dbData.payrollPeriods) store.payrollPeriods = dbData.payrollPeriods;
-          if (dbData.payrollLines) store.payrollLines = dbData.payrollLines;
-          if (dbData.appUsers && dbData.appUsers.length > 0) {
-            try {
-              localStorage.setItem('farmlog_cached_users', JSON.stringify(dbData.appUsers));
-            } catch {}
-          }
-          saveStore(store);
-          if (typeof window !== 'undefined') {
-            window.dispatchEvent(new CustomEvent('farmlog-data-updated'));
-          }
-        } else if (hasLocalRecords) {
-          // Database is empty, but local storage has records -> seed database!
-          if (store.farm) upsertToLocalDb('farms', [store.farm]).catch(() => {});
-          if (store.labourers.length > 0) upsertToLocalDb('labourers', store.labourers).catch(() => {});
-          if (store.attendance.length > 0) upsertToLocalDb('attendance', store.attendance).catch(() => {});
-          if (store.advances.length > 0) upsertToLocalDb('advances', store.advances).catch(() => {});
-          if (store.allocations.length > 0) upsertToLocalDb('advance_allocations', store.allocations).catch(() => {});
-          if (store.tractorRentals.length > 0) upsertToLocalDb('tractor_rentals', store.tractorRentals).catch(() => {});
-          if (store.payrollPeriods.length > 0) upsertToLocalDb('payroll_periods', store.payrollPeriods).catch(() => {});
-          if (store.payrollLines.length > 0) upsertToLocalDb('payroll_lines', store.payrollLines).catch(() => {});
-        }
+      if (dbData.appUsers && dbData.appUsers.length > 0) {
+        try {
+          localStorage.setItem('farmlog_cached_users', JSON.stringify(dbData.appUsers));
+        } catch {}
       }
+
+      saveStore(store);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('farmlog-data-updated'));
+      }
+      return true;
     } catch (err) {
-      console.warn('[DataService] Database sync initialization error:', err);
+      console.warn('[DataService] Live database sync error:', err);
+      return false;
+    }
+  },
+
+  initDatabaseSync: async () => {
+    return dataService.fetchLiveAll();
+  },
+
+  // Realtime Live Synchronization across all connected devices
+  initRealtimeSync: () => {
+    return subscribeToRealtimeSync((table, eventType, payload) => {
+      dataService.handleRealtimeChange(table, eventType, payload);
+    });
+  },
+
+  handleRealtimeChange: (table: string, eventType: 'INSERT' | 'UPDATE' | 'DELETE', payload: any) => {
+    const store = getStore();
+    const newRecord = payload.new;
+    const oldRecord = payload.old;
+
+    if (table === 'labourers') {
+      if (eventType === 'DELETE' && oldRecord?.id) {
+        store.labourers = store.labourers.filter(l => l.id !== oldRecord.id);
+        store.attendance = store.attendance.filter(a => a.labourer_id !== oldRecord.id);
+        store.advances = store.advances.filter(a => a.labourer_id !== oldRecord.id);
+        addTombstone(oldRecord.id);
+      } else if (newRecord) {
+        const item: Labourer = {
+          ...newRecord,
+          base_rate: Number(newRecord.base_rate || 0),
+          start_date: newRecord.start_date ? newRecord.start_date.split('T')[0] : ''
+        };
+        const idx = store.labourers.findIndex(l => l.id === item.id);
+        if (idx >= 0) store.labourers[idx] = item;
+        else store.labourers.push(item);
+      }
+    } else if (table === 'attendance') {
+      if (eventType === 'DELETE' && oldRecord?.id) {
+        store.attendance = store.attendance.filter(a => a.id !== oldRecord.id);
+        addTombstone(oldRecord.id);
+      } else if (newRecord) {
+        const item: AttendanceRecord = {
+          ...newRecord,
+          payable_units: Number(newRecord.payable_units || 0),
+          hours_worked: newRecord.hours_worked != null ? Number(newRecord.hours_worked) : undefined,
+          work_date: newRecord.work_date ? newRecord.work_date.split('T')[0] : ''
+        };
+        const idx = store.attendance.findIndex(a => a.id === item.id);
+        if (idx >= 0) store.attendance[idx] = item;
+        else store.attendance.push(item);
+      }
+    } else if (table === 'advances') {
+      if (eventType === 'DELETE' && oldRecord?.id) {
+        store.advances = store.advances.filter(a => a.id !== oldRecord.id);
+        addTombstone(oldRecord.id);
+      } else if (newRecord) {
+        const lab = store.labourers.find(l => l.id === newRecord.labourer_id);
+        const item: Advance = {
+          ...newRecord,
+          amount: Number(newRecord.amount || 0),
+          labourer_name: lab?.full_name || 'Worker',
+          labour_code: lab?.labour_code || ''
+        };
+        const idx = store.advances.findIndex(a => a.id === item.id);
+        if (idx >= 0) store.advances[idx] = item;
+        else store.advances.push(item);
+      }
+    } else if (table === 'tractor_rentals') {
+      if (eventType === 'DELETE' && oldRecord?.id) {
+        store.tractorRentals = (store.tractorRentals || []).filter(t => t.id !== oldRecord.id);
+        addTombstone(oldRecord.id);
+      } else if (newRecord) {
+        const item: TractorRentalLog = {
+          ...newRecord,
+          hours_worked: Number(newRecord.hours_worked || 0),
+          hourly_rate: Number(newRecord.hourly_rate || 0),
+          gross_amount: Number(newRecord.gross_amount || 0),
+          advance_amount: Number(newRecord.advance_amount || 0),
+          rest_amount: Number(newRecord.rest_amount || 0),
+          work_date: newRecord.work_date ? newRecord.work_date.split('T')[0] : ''
+        };
+        if (!store.tractorRentals) store.tractorRentals = [];
+        const idx = store.tractorRentals.findIndex(t => t.id === item.id);
+        if (idx >= 0) store.tractorRentals[idx] = item;
+        else store.tractorRentals.push(item);
+      }
+    }
+
+    saveStore(store);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('farmlog-data-updated'));
     }
   },
 
@@ -244,14 +335,17 @@ export const dataService = {
   getLabourerById: (id: string): Labourer | undefined => {
     return getStore().labourers.find(l => l.id === id);
   },
-  saveLabourer: (labourer: Partial<Labourer> & { full_name: string; base_rate: number; wage_basis?: any; labour_code?: string }): Labourer => {
+  saveLabourer: async (labourer: Partial<Labourer> & { full_name: string; base_rate: number; wage_basis?: any; labour_code?: string }): Promise<Labourer> => {
     const store = getStore();
     if (labourer.id) {
       store.labourers = store.labourers.map(l => l.id === labourer.id ? { ...l, ...labourer, updated_at: new Date().toISOString() } as Labourer : l);
       dataService.logAudit('UPDATE_LABOURER', 'labourers', labourer.id, `Updated labourer ${labourer.full_name}`);
       saveStore(store);
       const updated = store.labourers.find(l => l.id === labourer.id)!;
-      upsertToLocalDb('labourers', [updated]).catch(() => {});
+      await upsertToLocalDb('labourers', [updated]);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('farmlog-data-updated'));
+      }
       return updated;
     } else {
       // Auto-assign labour code if not provided
@@ -282,12 +376,15 @@ export const dataService = {
       store.labourers.push(newLabourer);
       dataService.logAudit('CREATE_LABOURER', 'labourers', newLabourer.id, `Created labourer ${newLabourer.full_name}`);
       saveStore(store);
-      upsertToLocalDb('labourers', [newLabourer]).catch(() => {});
+      await upsertToLocalDb('labourers', [newLabourer]);
       dataService.queueBackgroundSync();
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('farmlog-data-updated'));
+      }
       return newLabourer;
     }
   },
-  toggleLabourerActive: (id: string): Labourer => {
+  toggleLabourerActive: async (id: string): Promise<Labourer> => {
     const store = getStore();
     const lab = store.labourers.find(l => l.id === id);
     if (!lab) throw new Error('Labourer not found');
@@ -295,17 +392,26 @@ export const dataService = {
     lab.updated_at = new Date().toISOString();
     dataService.logAudit('DEACTIVATE_LABOURER', 'labourers', id, `Set labourer ${lab.full_name} active=${lab.is_active}`);
     saveStore(store);
-    upsertToLocalDb('labourers', [lab]).catch(() => {});
+    await upsertToLocalDb('labourers', [lab]);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('farmlog-data-updated'));
+    }
     return lab;
   },
-  removeLabourer: (id: string): boolean => {
+  removeLabourer: async (id: string): Promise<boolean> => {
     const store = getStore();
     const lab = store.labourers.find(l => l.id === id);
     if (!lab) throw new Error('Labourer not found');
     store.labourers = store.labourers.filter(l => l.id !== id);
+    store.attendance = store.attendance.filter(a => a.labourer_id !== id);
+    store.advances = store.advances.filter(a => a.labourer_id !== id);
+    addTombstone(id);
     dataService.logAudit('REMOVE_LABOURER', 'labourers', id, `Removed labourer ${lab.full_name}`);
     saveStore(store);
-    deleteFromLocalDb('labourers', id).catch(() => {});
+    await deleteFromLocalDb('labourers', id);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('farmlog-data-updated'));
+    }
     return true;
   },
 
@@ -316,7 +422,7 @@ export const dataService = {
   getAttendanceBetween: (startDate: string, endDate: string): AttendanceRecord[] => {
     return getStore().attendance.filter(a => a.work_date >= startDate && a.work_date <= endDate);
   },
-  recordAttendance: (
+  recordAttendance: async (
     records: Array<{
       labourer_id: string;
       work_date: string;
@@ -329,7 +435,7 @@ export const dataService = {
       correction_reason?: string;
     }>,
     actorUserId = 'current-user'
-  ) => {
+  ): Promise<void> => {
     const store = getStore();
     const now = new Date().toISOString();
 
@@ -378,8 +484,11 @@ export const dataService = {
     const recordsToSync = store.attendance.filter(a =>
       records.some(r => r.labourer_id === a.labourer_id && r.work_date === a.work_date && r.shift_code === a.shift_code)
     );
-    upsertToLocalDb('attendance', recordsToSync).catch(() => {});
+    await upsertToLocalDb('attendance', recordsToSync);
     dataService.queueBackgroundSync();
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('farmlog-data-updated'));
+    }
   },
 
   getLabourerMonthlyAttendance: (
@@ -504,7 +613,7 @@ export const dataService = {
     const outstanding = round2(Math.max(0, totalIssued - totalRecovered));
     return { totalIssued, totalRecovered, outstanding };
   },
-  issueAdvance: (data: {
+  issueAdvance: async (data: {
     labourer_id: string;
     amount: number;
     purpose?: string;
@@ -513,7 +622,7 @@ export const dataService = {
     notes?: string;
     issued_by?: string;
     issued_at?: string;
-  }): Advance => {
+  }): Promise<Advance> => {
     const store = getStore();
     const lab = store.labourers.find(l => l.id === data.labourer_id);
     if (!lab) throw new Error('Labourer not found');
@@ -540,9 +649,28 @@ export const dataService = {
     store.advances.push(newAdvance);
     dataService.logAudit('ISSUE_ADVANCE', 'advances', newAdvance.id, `Issued advance ₹${newAdvance.amount} to ${lab.full_name} (Given by: ${newAdvance.issued_by})`);
     saveStore(store);
-    upsertToLocalDb('advances', [newAdvance]).catch(() => {});
+    await upsertToLocalDb('advances', [newAdvance]);
     dataService.queueBackgroundSync();
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('farmlog-data-updated'));
+    }
     return newAdvance;
+  },
+  deleteAdvance: async (id: string): Promise<boolean> => {
+    const store = getStore();
+    if (!store.advances) store.advances = [];
+    const adv = store.advances.find(a => a.id === id);
+    if (!adv) return false;
+    store.advances = store.advances.filter(a => a.id !== id);
+    store.allocations = (store.allocations || []).filter(al => al.advance_id !== id);
+    addTombstone(id);
+    dataService.logAudit('DELETE_ADVANCE', 'advances', id, `Deleted advance ${id}`);
+    saveStore(store);
+    await deleteFromLocalDb('advances', id);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('farmlog-data-updated'));
+    }
+    return true;
   },
   recordDirectAdvanceRepayment: (advanceId: string, amount: number, notes?: string): AdvanceAllocation => {
     const store = getStore();
@@ -1073,7 +1201,7 @@ export const dataService = {
     return rentals.filter(r => r.work_date === dateFilter);
   },
 
-  saveTractorRental: (rental: {
+  saveTractorRental: async (rental: {
     tractor_name: string;
     vendor_name: string;
     work_date: string;
@@ -1083,7 +1211,7 @@ export const dataService = {
     fuel_provided_litres?: number;
     task_name?: string;
     notes?: string;
-  }): TractorRentalLog => {
+  }): Promise<TractorRentalLog> => {
     const store = getStore();
     if (!store.tractorRentals) store.tractorRentals = [];
 
@@ -1117,12 +1245,15 @@ export const dataService = {
       `Recorded rental ${newLog.tractor_name} (${newLog.hours_worked} hrs @ ₹${newLog.hourly_rate}/hr, Advance ₹${newLog.advance_amount}, Rest ₹${newLog.rest_amount})`
     );
     saveStore(store);
-    upsertToLocalDb('tractor_rentals', [newLog]).catch(() => {});
+    await upsertToLocalDb('tractor_rentals', [newLog]);
     dataService.queueBackgroundSync();
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('farmlog-data-updated'));
+    }
     return newLog;
   },
 
-  settleTractorRental: (id: string): TractorRentalLog => {
+  settleTractorRental: async (id: string): Promise<TractorRentalLog> => {
     const store = getStore();
     if (!store.tractorRentals) store.tractorRentals = [];
     const log = store.tractorRentals.find(l => l.id === id);
@@ -1134,17 +1265,24 @@ export const dataService = {
 
     dataService.logAudit('SETTLE_TRACTOR_RENTAL', 'machinery', id, `Settled remaining payment ₹${log.rest_amount} for ${log.tractor_name}`);
     saveStore(store);
-    upsertToLocalDb('tractor_rentals', [log]).catch(() => {});
+    await upsertToLocalDb('tractor_rentals', [log]);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('farmlog-data-updated'));
+    }
     return log;
   },
 
-  deleteTractorRental: (id: string): boolean => {
+  deleteTractorRental: async (id: string): Promise<boolean> => {
     const store = getStore();
     if (!store.tractorRentals) store.tractorRentals = [];
     store.tractorRentals = store.tractorRentals.filter(l => l.id !== id);
+    addTombstone(id);
     dataService.logAudit('DELETE_TRACTOR_RENTAL', 'machinery', id, `Deleted tractor rental record ${id}`);
     saveStore(store);
-    deleteFromLocalDb('tractor_rentals', id).catch(() => {});
+    await deleteFromLocalDb('tractor_rentals', id);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('farmlog-data-updated'));
+    }
     return true;
   },
 

@@ -162,7 +162,7 @@ export const UsersRolesPage: React.FC = () => {
                   {m.role === 'owner' && 'Full system, user management & FY Close'}
                   {m.role === 'admin' && 'Crew, attendance & machinery management'}
                   {m.role === 'payroll' && 'Advance issuance & payroll finalization'}
-                  {m.role === 'supervisor' && 'Field attendance & usage logging'}
+                  {m.role === 'supervisor' && 'Worker management, field attendance & usage logging'}
                   {m.role === 'partner_viewer' && 'Strictly read-only dashboards & reports'}
                   {m.role === 'tractor_operator' && 'Usage hours & fuel logs only'}
                 </td>

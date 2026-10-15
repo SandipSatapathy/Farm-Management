@@ -190,7 +190,7 @@ export const Navbar: React.FC = () => {
                 <div style={{ fontSize: '0.78rem', color: '#475569', marginTop: 4 }}>
                   {isLocalDbEnabled 
                     ? `Host: localhost:5432 • Database: ${dbHealth?.database || 'farmlog_dev'}`
-                    : 'URL: ibndmdeykymszvfdqutm.supabase.co'}
+                    : `URL: ${import.meta.env.VITE_SUPABASE_URL?.replace(/^https?:\/\//, '') || 'Supabase Cloud'}`}
                 </div>
               </div>
 

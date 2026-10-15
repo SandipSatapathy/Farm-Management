@@ -49,6 +49,15 @@ export const LabourersPage: React.FC = () => {
 
   useEffect(() => {
     loadLabourers();
+
+    const handleDataUpdated = () => {
+      loadLabourers();
+    };
+
+    window.addEventListener('farmlog-data-updated', handleDataUpdated);
+    return () => {
+      window.removeEventListener('farmlog-data-updated', handleDataUpdated);
+    };
   }, []);
 
   const handleOpenAdd = () => {
@@ -79,7 +88,7 @@ export const LabourersPage: React.FC = () => {
     setIsModalOpen(true);
   };
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.full_name.trim()) {
       setFormError('Please enter full name.');
@@ -91,7 +100,7 @@ export const LabourersPage: React.FC = () => {
     }
 
     try {
-      dataService.saveLabourer({
+      await dataService.saveLabourer({
         id: editingLabourer ? editingLabourer.id : undefined,
         labour_code: formData.labour_code.trim().toUpperCase(),
         full_name: formData.full_name.trim(),
@@ -107,9 +116,9 @@ export const LabourersPage: React.FC = () => {
     }
   };
 
-  const handleToggleActive = (lab: Labourer) => {
+  const handleToggleActive = async (lab: Labourer) => {
     if (isReadOnlyPartner) return;
-    dataService.toggleLabourerActive(lab.id);
+    await dataService.toggleLabourerActive(lab.id);
     loadLabourers();
   };
 

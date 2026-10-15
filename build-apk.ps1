@@ -18,8 +18,15 @@ $env:ANDROID_SDK_ROOT = $SdkDir
 $CmdLineToolsDir = Join-Path $SdkDir "cmdline-tools\latest\bin"
 $env:Path = "$CmdLineToolsDir;$SdkDir\platform-tools;" + $env:Path
 
-Write-Host "Syncing web assets to Android container..."
+Write-Host "Compiling fresh web assets (npm run build)..."
 Set-Location $PSScriptRoot
+& npm.cmd run build
+if ($LASTEXITCODE -ne 0) {
+    Write-Error "Web build failed! Halting APK build."
+    exit 1
+}
+
+Write-Host "`nSyncing web assets to Android container..."
 & npx.cmd cap sync android
 
 # Ensure Java 17 compatibility

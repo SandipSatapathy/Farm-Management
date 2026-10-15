@@ -47,9 +47,18 @@ export const AdvancesPage: React.FC = () => {
 
   useEffect(() => {
     loadData();
+
+    const handleDataUpdated = () => {
+      loadData();
+    };
+
+    window.addEventListener('farmlog-data-updated', handleDataUpdated);
+    return () => {
+      window.removeEventListener('farmlog-data-updated', handleDataUpdated);
+    };
   }, []);
 
-  const handleIssueAdvance = (e: React.FormEvent) => {
+  const handleIssueAdvance = async (e: React.FormEvent) => {
     e.preventDefault();
     if (amount <= 0) {
       setErrorMsg('Amount must be greater than zero.');
@@ -57,7 +66,7 @@ export const AdvancesPage: React.FC = () => {
     }
 
     try {
-      dataService.issueAdvance({
+      await dataService.issueAdvance({
         labourer_id: selectedLabId,
         amount: Number(amount),
         purpose,
@@ -206,8 +215,8 @@ export const AdvancesPage: React.FC = () => {
                 <tr key={adv.id}>
                   <td>{new Date(adv.issued_at).toLocaleDateString('en-IN')}</td>
                   <td>
-                    <strong>{adv.labourer_name}</strong>
-                    <div style={{ fontSize: '0.75rem', color: '#64748b' }}>{adv.labour_code}</div>
+                    <strong>{adv.labourer_name || dataService.getLabourerById(adv.labourer_id)?.full_name || 'Worker'}</strong>
+                    <div style={{ fontSize: '0.75rem', color: '#64748b' }}>{adv.labour_code || dataService.getLabourerById(adv.labourer_id)?.labour_code || ''}</div>
                   </td>
                   <td style={{ fontWeight: 800, color: '#b45309', fontSize: '1rem' }}>
                     ₹{adv.amount.toLocaleString('en-IN')}

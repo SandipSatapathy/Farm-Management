@@ -30,7 +30,8 @@ import {
   FileDown,
   Download,
   Sliders,
-  UserCog
+  UserCog,
+  Edit2
 } from 'lucide-react';
 import { UserSettingsPage } from './UserSettingsPage';
 
@@ -39,6 +40,10 @@ type RoutineSection = 'attendance' | 'advance' | 'payday' | 'tractor' | 'labours
 export const SimpleFarmViewPage: React.FC = () => {
   const { farm, currentUser } = useAuth();
   const [labourers, setLabourers] = useState<Labourer[]>([]);
+  const [allLabourers, setAllLabourers] = useState<Labourer[]>([]);
+  const [crewFilter, setCrewFilter] = useState<'active' | 'deactivated' | 'all'>('all');
+  const [isSyncingLive, setIsSyncingLive] = useState(false);
+  const [lastSyncTime, setLastSyncTime] = useState('');
   const today = '2026-10-13';
 
   // Active section state
@@ -97,6 +102,13 @@ export const SimpleFarmViewPage: React.FC = () => {
 
   // Labourer Management state
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [editingLabourer, setEditingLabourer] = useState<Labourer | null>(null);
+  const [editLabName, setEditLabName] = useState('');
+  const [editLabCode, setEditLabCode] = useState('');
+  const [editLabRate, setEditLabRate] = useState<number>(450);
+  const [editLabPhone, setEditLabPhone] = useState('');
+  const [editLabNotes, setEditLabNotes] = useState('');
+  const [editLabActive, setEditLabActive] = useState<boolean>(true);
   const [deleteConfirmLab, setDeleteConfirmLab] = useState<Labourer | null>(null);
   const [newLabName, setNewLabName] = useState('');
   const [newLabRate, setNewLabRate] = useState<number>(450);
@@ -129,15 +141,20 @@ export const SimpleFarmViewPage: React.FC = () => {
   };
 
   const loadData = () => {
-    const labs = dataService.getLabourers(true);
-    setLabourers(labs);
-    if (labs.length > 0 && (!advLabId || !labs.some(l => l.id === advLabId))) {
-      setAdvLabId(labs[0].id);
+    const activeLabs = dataService.getLabourers(true);
+    const allLabs = dataService.getLabourers(false);
+    setLabourers(activeLabs);
+    setAllLabourers(allLabs);
+
+    if (activeLabs.length > 0 && (!advLabId || !activeLabs.some(l => l.id === advLabId))) {
+      setAdvLabId(activeLabs[0].id);
+    } else if (activeLabs.length === 0 && allLabs.length > 0 && (!advLabId || !allLabs.some(l => l.id === advLabId))) {
+      setAdvLabId(allLabs[0].id);
     }
 
     const currentAtt = dataService.getAttendanceForDate(attendanceDate);
     const map: Record<string, AttendanceStatus> = {};
-    labs.forEach((l) => {
+    activeLabs.forEach((l) => {
       const rec = currentAtt.find((a) => a.labourer_id === l.id);
       map[l.id] = rec ? rec.status : 'present';
     });
@@ -148,8 +165,48 @@ export const SimpleFarmViewPage: React.FC = () => {
     refreshCalMonthRecords();
   };
 
+  const handleLiveSync = async (silent = false) => {
+    if (!silent) setIsSyncingLive(true);
+    try {
+      await dataService.fetchLiveAll();
+      loadData();
+      setLastSyncTime(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+    } finally {
+      if (!silent) setIsSyncingLive(false);
+    }
+  };
+
   useEffect(() => {
     loadData();
+    handleLiveSync(true);
+
+    const handleDataUpdated = () => {
+      loadData();
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        handleLiveSync(true);
+      }
+    };
+
+    // Fast live background polling (every 3 seconds) so changes on web/app reflect near instantly
+    const pollInterval = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        handleLiveSync(true);
+      }
+    }, 3000);
+
+    window.addEventListener('farmlog-data-updated', handleDataUpdated);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', handleVisibilityChange);
+
+    return () => {
+      clearInterval(pollInterval);
+      window.removeEventListener('farmlog-data-updated', handleDataUpdated);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleVisibilityChange);
+    };
   }, []);
 
   useEffect(() => {
@@ -186,7 +243,7 @@ export const SimpleFarmViewPage: React.FC = () => {
     setAttendance(map);
   };
 
-  const handleSaveAttendance = () => {
+  const handleSaveAttendance = async () => {
     const records = labourers.map((l) => {
       const st = attendance[l.id] || 'present';
       const units = st === 'present' ? 1.0 : (st === 'half_day' ? 0.5 : 0.0);
@@ -201,15 +258,19 @@ export const SimpleFarmViewPage: React.FC = () => {
       };
     });
 
-    dataService.recordAttendance(records, 'Farm Team');
-    setAttSaved(true);
-    confetti({
-      particleCount: 50,
-      spread: 60,
-      origin: { y: 0.8 }
-    });
-    setTimeout(() => setAttSaved(false), 2500);
-    refreshCalMonthRecords();
+    try {
+      await dataService.recordAttendance(records, currentUser?.name || 'Farm Team');
+      setAttSaved(true);
+      confetti({
+        particleCount: 50,
+        spread: 60,
+        origin: { y: 0.8 }
+      });
+      setTimeout(() => setAttSaved(false), 2500);
+      refreshCalMonthRecords();
+    } catch (err: any) {
+      alert(err.message || 'Error saving attendance');
+    }
   };
 
   // Calendar Attendance Handlers
@@ -332,25 +393,39 @@ export const SimpleFarmViewPage: React.FC = () => {
     }
   };
 
-  const handleGiveAdvance = (e: React.FormEvent) => {
+  const handleGiveAdvance = async (e: React.FormEvent) => {
     e.preventDefault();
     if (advAmount <= 0) return;
 
     const person = advGivenBy.trim() || currentUser?.name || 'Sandip';
 
-    dataService.issueAdvance({
-      labourer_id: advLabId,
-      amount: advAmount,
-      payment_method: 'cash',
-      purpose: 'Field work cash advance',
-      issued_by: person,
-      issued_at: advDate ? `${advDate}T12:00:00.000Z` : new Date().toISOString()
-    });
+    try {
+      await dataService.issueAdvance({
+        labourer_id: advLabId,
+        amount: advAmount,
+        payment_method: 'cash',
+        purpose: 'Field work cash advance',
+        issued_by: person,
+        issued_at: advDate ? `${advDate}T12:00:00.000Z` : new Date().toISOString()
+      });
 
-    setAdvSuccess(true);
-    setAdvAmount(500);
-    setTimeout(() => setAdvSuccess(false), 3000);
-    loadData();
+      setAdvSuccess(true);
+      setAdvAmount(500);
+      loadData();
+      setTimeout(() => setAdvSuccess(false), 3000);
+    } catch (err: any) {
+      alert(err.message || 'Error recording advance');
+    }
+  };
+
+  const handleDeleteAdvance = async (advId: string) => {
+    if (!window.confirm('Delete this advance record? This will restore the worker balance.')) return;
+    try {
+      await dataService.deleteAdvance(advId);
+      loadData();
+    } catch (err: any) {
+      alert(err.message || 'Error deleting advance');
+    }
   };
 
   // Salary Settlement Handlers
@@ -395,49 +470,61 @@ export const SimpleFarmViewPage: React.FC = () => {
   };
 
   // Tractor Handlers
-  const handleSaveTractorRental = (e: React.FormEvent) => {
+  const handleSaveTractorRental = async (e: React.FormEvent) => {
     e.preventDefault();
     const gross = round2(rentalHours * rentalRate);
     const rest = round2(Math.max(0, gross - rentalAdvance));
 
-    const newLog = dataService.saveTractorRental({
-      work_date: rentalDate,
-      vendor_name: rentalVendorName,
-      tractor_name: rentalTractorName,
-      hours_worked: rentalHours,
-      hourly_rate: rentalRate,
-      advance_amount: rentalAdvance,
-      task_name: rentalTask,
-      notes: rentalNotes,
-    });
+    try {
+      const newLog = await dataService.saveTractorRental({
+        work_date: rentalDate,
+        vendor_name: rentalVendorName,
+        tractor_name: rentalTractorName,
+        hours_worked: rentalHours,
+        hourly_rate: rentalRate,
+        advance_amount: rentalAdvance,
+        task_name: rentalTask,
+        notes: rentalNotes,
+      });
 
-    setTractorRentals(dataService.getTractorRentals(tractorDateFilter));
-    setTractorSuccessMsg(`Hired tractor session logged: ${newLog.tractor_name} (Rest Due: ₹${rest})`);
-    setIsNewRentalOpen(false);
-    setTimeout(() => setTractorSuccessMsg(''), 3500);
-  };
-
-  const handleSettleRental = (rentalId: string) => {
-    dataService.settleTractorRental(rentalId);
-    setTractorRentals(dataService.getTractorRentals(tractorDateFilter));
-    setTractorSuccessMsg('Tractor rental balance settled in full.');
-    setTimeout(() => setTractorSuccessMsg(''), 3000);
-  };
-
-  const handleDeleteRental = (rentalId: string) => {
-    if (confirm('Delete this hired tractor rental log?')) {
-      dataService.deleteTractorRental(rentalId);
       setTractorRentals(dataService.getTractorRentals(tractorDateFilter));
+      setTractorSuccessMsg(`Hired tractor session logged: ${newLog.tractor_name} (Rest Due: ₹${rest})`);
+      setIsNewRentalOpen(false);
+      setTimeout(() => setTractorSuccessMsg(''), 3500);
+    } catch (err: any) {
+      alert(err.message || 'Error saving tractor rental');
+    }
+  };
+
+  const handleSettleRental = async (rentalId: string) => {
+    try {
+      await dataService.settleTractorRental(rentalId);
+      setTractorRentals(dataService.getTractorRentals(tractorDateFilter));
+      setTractorSuccessMsg('Tractor rental balance settled in full.');
+      setTimeout(() => setTractorSuccessMsg(''), 3000);
+    } catch (err: any) {
+      alert(err.message || 'Error settling tractor rental');
+    }
+  };
+
+  const handleDeleteRental = async (rentalId: string) => {
+    if (confirm('Delete this hired tractor rental log?')) {
+      try {
+        await dataService.deleteTractorRental(rentalId);
+        setTractorRentals(dataService.getTractorRentals(tractorDateFilter));
+      } catch (err: any) {
+        alert(err.message || 'Error deleting tractor rental');
+      }
     }
   };
 
   // Labour Management Handlers
-  const handleAddLabour = (e: React.FormEvent) => {
+  const handleAddLabour = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newLabName.trim()) return;
 
     try {
-      const added = dataService.saveLabourer({
+      const added = await dataService.saveLabourer({
         full_name: newLabName.trim(),
         base_rate: newLabRate,
         phone: newLabPhone.trim() || undefined,
@@ -456,12 +543,62 @@ export const SimpleFarmViewPage: React.FC = () => {
     }
   };
 
-  const handleConfirmRemoveLabour = (labId: string) => {
+  const handleOpenEditLabourer = (lab: Labourer) => {
+    setEditingLabourer(lab);
+    setEditLabName(lab.full_name);
+    setEditLabCode(lab.labour_code);
+    setEditLabRate(lab.base_rate);
+    setEditLabPhone(lab.phone || '');
+    setEditLabNotes(lab.notes || '');
+    setEditLabActive(lab.is_active);
+  };
+
+  const handleUpdateLabourer = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingLabourer || !editLabName.trim()) return;
+
+    if (editLabRate <= 0) {
+      alert('Daily wage rate must be greater than zero.');
+      return;
+    }
+
     try {
-      dataService.removeLabourer(labId);
+      const updated = await dataService.saveLabourer({
+        id: editingLabourer.id,
+        labour_code: editLabCode.trim().toUpperCase() || editingLabourer.labour_code,
+        full_name: editLabName.trim(),
+        base_rate: Number(editLabRate),
+        phone: editLabPhone.trim() || undefined,
+        notes: editLabNotes.trim() || undefined,
+        is_active: editLabActive,
+      });
+
+      setEditingLabourer(null);
+      loadData();
+      setLabSuccessMsg(`Labourer ${updated.full_name} (${updated.labour_code}) updated successfully.`);
+      setTimeout(() => setLabSuccessMsg(''), 3500);
+    } catch (err: any) {
+      alert(err.message || 'Error updating labourer details');
+    }
+  };
+
+  const handleToggleLabourActive = async (labId: string) => {
+    try {
+      const updated = await dataService.toggleLabourerActive(labId);
+      loadData();
+      setLabSuccessMsg(`Labourer ${updated.full_name} is now ${updated.is_active ? 'Active' : 'Deactivated'}.`);
+      setTimeout(() => setLabSuccessMsg(''), 3000);
+    } catch (err: any) {
+      alert(err.message || 'Error updating labourer status');
+    }
+  };
+
+  const handleConfirmRemoveLabour = async (labId: string) => {
+    try {
+      await dataService.removeLabourer(labId);
       setDeleteConfirmLab(null);
       loadData();
-      setLabSuccessMsg('Labourer removed from active farm crew.');
+      setLabSuccessMsg('Labourer deleted permanently.');
       setTimeout(() => setLabSuccessMsg(''), 3000);
     } catch (err: any) {
       alert(err.message || 'Error removing labourer');
@@ -510,7 +647,14 @@ export const SimpleFarmViewPage: React.FC = () => {
   // Monthly Salary Calculations
   const salaryMonthName = new Date(salaryYear, salaryMonth - 1, 1).toLocaleString('default', { month: 'long' });
 
-  const salaryRows = labourers.map((lab) => {
+  const eligibleSalaryLabourers = allLabourers.filter((lab) => {
+    if (lab.is_active) return true;
+    const { summary } = dataService.getLabourerMonthlyAttendance(lab.id, salaryYear, salaryMonth);
+    const advanceInfo = dataService.getLabourerAdvanceBalance(lab.id);
+    return summary.effectiveDays > 0 || advanceInfo.outstanding > 0;
+  });
+
+  const salaryRows = (eligibleSalaryLabourers.length > 0 ? eligibleSalaryLabourers : (allLabourers.length > 0 ? allLabourers : labourers)).map((lab) => {
     const { summary } = dataService.getLabourerMonthlyAttendance(lab.id, salaryYear, salaryMonth);
     const advanceInfo = dataService.getLabourerAdvanceBalance(lab.id);
     const daysWorked = summary.effectiveDays;
@@ -557,7 +701,7 @@ export const SimpleFarmViewPage: React.FC = () => {
   const uniqueWorkersWithAdvance = new Set(filteredAdvances.map((a) => a.labourer_id)).size;
 
   const totalOverallDue = round2(
-    labourers.reduce((sum, l) => sum + dataService.getLabourerAdvanceBalance(l.id).outstanding, 0)
+    allLabourers.reduce((sum, l) => sum + dataService.getLabourerAdvanceBalance(l.id).outstanding, 0)
   );
 
   // Map each worker's advance total in the selected month
@@ -566,6 +710,11 @@ export const SimpleFarmViewPage: React.FC = () => {
     const prev = workerMonthAdvanceMap.get(a.labourer_id) || 0;
     workerMonthAdvanceMap.set(a.labourer_id, round2(prev + (Number(a.amount) || 0)));
   });
+
+  const advanceLabourers = allLabourers.filter(
+    (l) => l.is_active || dataService.getLabourerAdvanceBalance(l.id).totalIssued > 0 || (workerMonthAdvanceMap.get(l.id) || 0) > 0
+  );
+  const displayAdvanceLabourers = advanceLabourers.length > 0 ? advanceLabourers : (allLabourers.length > 0 ? allLabourers : labourers);
 
   const currentAdvMonthLabel = advFilterMonth === 'all'
     ? `All Months (${advFilterYear})`
@@ -866,6 +1015,29 @@ export const SimpleFarmViewPage: React.FC = () => {
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <button
               type="button"
+              onClick={() => handleLiveSync(false)}
+              disabled={isSyncingLive}
+              style={{
+                padding: '6px 9px',
+                fontSize: '0.75rem',
+                fontWeight: 800,
+                borderRadius: 10,
+                border: '1.5px solid #86efac',
+                background: '#f0fdf4',
+                color: '#15803d',
+                cursor: isSyncingLive ? 'wait' : 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 5
+              }}
+              title={lastSyncTime ? `Live cloud connected. Last updated at ${lastSyncTime}` : 'Fetch latest live data from Supabase Cloud'}
+            >
+              <RefreshCw size={12} className={isSyncingLive ? 'spin-anim' : ''} />
+              <span>{isSyncingLive ? 'Fetching...' : 'Live Sync'}</span>
+            </button>
+
+            <button
+              type="button"
               onClick={handleManualSyncSheets}
               disabled={isSyncingSheets}
               style={{
@@ -884,7 +1056,7 @@ export const SimpleFarmViewPage: React.FC = () => {
               title="Sync latest farm data to Google Sheets"
             >
               <RefreshCw size={12} className={isSyncingSheets ? 'spin' : ''} />
-              <span>{isSyncingSheets ? 'Syncing...' : 'Sync'}</span>
+              <span>{isSyncingSheets ? 'Syncing...' : 'Sheets'}</span>
             </button>
 
             <button
@@ -1020,7 +1192,7 @@ export const SimpleFarmViewPage: React.FC = () => {
             <Users size={16} />
             <span>Workers</span>
             <span style={{ fontSize: '0.7rem', background: activeSection === 'labours' ? 'rgba(255,255,255,0.25)' : '#f1f5f9', color: activeSection === 'labours' ? '#ffffff' : '#475569', padding: '1px 6px', borderRadius: 9999, fontWeight: 800 }}>
-              {labourers.length}
+              {allLabourers.length}
             </span>
           </button>
 
@@ -1035,6 +1207,29 @@ export const SimpleFarmViewPage: React.FC = () => {
 
           {/* Desktop Right Quick Actions */}
           <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
+            <button
+              type="button"
+              onClick={() => handleLiveSync(false)}
+              disabled={isSyncingLive}
+              style={{
+                padding: '6px 12px',
+                fontSize: '0.82rem',
+                fontWeight: 800,
+                borderRadius: 10,
+                border: '1.5px solid #86efac',
+                background: '#f0fdf4',
+                color: '#15803d',
+                cursor: isSyncingLive ? 'wait' : 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6
+              }}
+              title={lastSyncTime ? `Live cloud connected. Last updated at ${lastSyncTime}` : 'Fetch live updates from Supabase Cloud'}
+            >
+              <RefreshCw size={14} className={isSyncingLive ? 'spin-anim' : ''} />
+              <span>{isSyncingLive ? 'Syncing Live...' : 'Live Sync'}</span>
+            </button>
+
             <button
               type="button"
               onClick={handleManualSyncSheets}
@@ -1262,7 +1457,83 @@ export const SimpleFarmViewPage: React.FC = () => {
               ========================================================================= */}
             {attendanceViewMode === 'list' && (
               <>
-                {/* Desktop Table View */}
+                {labourers.length === 0 ? (
+                  <div style={{
+                    background: '#fffbeb',
+                    border: '2px solid #fde68a',
+                    borderRadius: 18,
+                    padding: '24px 20px',
+                    textAlign: 'center',
+                    margin: '16px 0',
+                    boxShadow: '0 4px 12px rgba(217, 119, 6, 0.1)'
+                  }}>
+                    <AlertTriangle size={38} color="#d97706" style={{ margin: '0 auto 10px' }} />
+                    <h3 style={{ margin: '0 0 6px 0', color: '#92400e', fontWeight: 800, fontSize: '1.1rem' }}>
+                      {allLabourers.length > 0 ? 'All Workers Are Currently Deactivated' : 'No Workers Registered'}
+                    </h3>
+                    <p style={{ margin: '0 0 16px 0', color: '#78350f', fontSize: '0.86rem', maxWidth: 480, marginLeft: 'auto', marginRight: 'auto' }}>
+                      {allLabourers.length > 0
+                        ? `You have ${allLabourers.length} worker(s) in your farm database (${allLabourers.map(l => l.full_name).join(', ')}), but they are currently deactivated. Deactivated workers are excluded from daily attendance.`
+                        : 'No farm workers have been registered in the database yet. Add a new worker to start taking attendance.'
+                      }
+                    </p>
+
+                    {allLabourers.length > 0 && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxWidth: 360, margin: '0 auto 16px auto' }}>
+                        {allLabourers.filter(l => !l.is_active).map(deactLab => (
+                          <div key={deactLab.id} style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            background: '#ffffff',
+                            padding: '10px 14px',
+                            borderRadius: 12,
+                            border: '1.5px solid #fde68a'
+                          }}>
+                            <div style={{ textAlign: 'left' }}>
+                              <div style={{ fontWeight: 800, fontSize: '0.9rem', color: '#143823' }}>{deactLab.full_name}</div>
+                              <div style={{ fontSize: '0.74rem', color: '#64748b' }}>₹{deactLab.base_rate}/day • Deactivated</div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleToggleLabourActive(deactLab.id)}
+                              className="ledger-action-btn ledger-action-btn-primary"
+                              style={{ padding: '6px 14px', fontSize: '0.78rem' }}
+                            >
+                              ⚡ Reactivate
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCrewFilter('all');
+                          setActiveSection('labours');
+                        }}
+                        className="ledger-action-btn ledger-action-btn-secondary"
+                        style={{ padding: '8px 16px', fontSize: '0.82rem' }}
+                      >
+                        <Users size={15} />
+                        <span>View Farm Crew Directory</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setIsAddModalOpen(true)}
+                        className="ledger-action-btn ledger-action-btn-primary"
+                        style={{ padding: '8px 16px', fontSize: '0.82rem' }}
+                      >
+                        <UserPlus size={15} />
+                        <span>+ Add New Worker</span>
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    {/* Desktop Table View */}
                 <div className="ledger-desktop-only">
                   <div className="ledger-table-wrap">
                     <table className="ledger-table">
@@ -1505,6 +1776,8 @@ export const SimpleFarmViewPage: React.FC = () => {
                 </div>
               </>
             )}
+          </>
+        )}
 
             {/* =========================================================================
               VIEW 2: CALENDAR VIEW (MONTHLY OPERATIONS CALENDAR)
@@ -2210,11 +2483,11 @@ export const SimpleFarmViewPage: React.FC = () => {
                       onChange={(e) => setAdvLabId(e.target.value)}
                       className="ledger-input"
                     >
-                      {labourers.map((l) => {
+                      {(labourers.length > 0 ? labourers : allLabourers).map((l) => {
                         const bal = dataService.getLabourerAdvanceBalance(l.id);
                         return (
                           <option key={l.id} value={l.id}>
-                            {l.full_name} ({bal.outstanding > 0 ? `Due: ₹${bal.outstanding}` : 'Clear'})
+                            {l.full_name} {!l.is_active ? '(Deactivated)' : ''} ({bal.outstanding > 0 ? `Due: ₹${bal.outstanding}` : 'Clear'})
                           </option>
                         );
                       })}
@@ -2336,33 +2609,40 @@ export const SimpleFarmViewPage: React.FC = () => {
                         </tr>
                       </thead>
                       <tbody>
-                        {labourers.map((l) => {
+                        {displayAdvanceLabourers.map((l) => {
                           const bal = dataService.getLabourerAdvanceBalance(l.id);
                           const monthAmt = workerMonthAdvanceMap.get(l.id) || 0;
 
                           return (
-                            <tr key={l.id} className="ledger-tr">
+                            <tr key={l.id} className="ledger-tr" style={{ opacity: l.is_active ? 1 : 0.85 }}>
                               <td className="ledger-td">
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                                   <div style={{
                                     width: 36,
                                     height: 36,
                                     borderRadius: 12,
-                                    background: 'linear-gradient(135deg, #dcfce7, #bbf7d0)',
-                                    color: '#15803d',
+                                    background: l.is_active ? 'linear-gradient(135deg, #dcfce7, #bbf7d0)' : '#e2e8f0',
+                                    color: l.is_active ? '#15803d' : '#64748b',
                                     display: 'flex',
                                     alignItems: 'center',
                                     justifyContent: 'center',
                                     fontWeight: 800,
                                     fontSize: '0.9rem',
                                     boxShadow: '2px 2px 5px rgba(166, 184, 170, 0.25)',
-                                    border: '1.5px solid #86efac',
+                                    border: l.is_active ? '1.5px solid #86efac' : '1.5px solid #cbd5e1',
                                     flexShrink: 0
                                   }}>
                                     {l.full_name.charAt(0)}
                                   </div>
                                   <div>
-                                    <span style={{ fontWeight: 800, color: '#143823' }}>{l.full_name}</span>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                      <span style={{ fontWeight: 800, color: l.is_active ? '#143823' : '#475569' }}>{l.full_name}</span>
+                                      {!l.is_active && (
+                                        <span style={{ background: '#f1f5f9', color: '#64748b', border: '1px solid #cbd5e1', padding: '1px 5px', borderRadius: 4, fontSize: '0.65rem', fontWeight: 800 }}>
+                                          Deactivated
+                                        </span>
+                                      )}
+                                    </div>
                                     <div style={{ fontSize: '0.72rem', color: '#64748b' }}>{l.labour_code}</div>
                                   </div>
                                 </div>
@@ -2424,32 +2704,39 @@ export const SimpleFarmViewPage: React.FC = () => {
 
                 {/* Mobile Rows */}
                 <div className="ledger-mobile-only">
-                  {labourers.map((l) => {
+                  {displayAdvanceLabourers.map((l) => {
                     const bal = dataService.getLabourerAdvanceBalance(l.id);
                     const monthAmt = workerMonthAdvanceMap.get(l.id) || 0;
 
                     return (
-                      <div key={l.id} className="ledger-mobile-row">
+                      <div key={l.id} className="ledger-mobile-row" style={{ opacity: l.is_active ? 1 : 0.85 }}>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                             <div style={{
                               width: 36,
                               height: 36,
                               borderRadius: 12,
-                              background: 'linear-gradient(135deg, #dcfce7, #bbf7d0)',
-                              color: '#15803d',
+                              background: l.is_active ? 'linear-gradient(135deg, #dcfce7, #bbf7d0)' : '#e2e8f0',
+                              color: l.is_active ? '#15803d' : '#64748b',
                               display: 'flex',
                               alignItems: 'center',
                               justifyContent: 'center',
                               fontWeight: 800,
                               fontSize: '0.9rem',
-                              border: '1.5px solid #86efac',
+                              border: l.is_active ? '1.5px solid #86efac' : '1.5px solid #cbd5e1',
                               flexShrink: 0
                             }}>
                               {l.full_name.charAt(0)}
                             </div>
                             <div>
-                              <div style={{ fontWeight: 800, fontSize: '0.94rem', color: '#143823' }}>{l.full_name}</div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <div style={{ fontWeight: 800, fontSize: '0.94rem', color: l.is_active ? '#143823' : '#475569' }}>{l.full_name}</div>
+                                {!l.is_active && (
+                                  <span style={{ background: '#f1f5f9', color: '#64748b', border: '1px solid #cbd5e1', padding: '1px 5px', borderRadius: 4, fontSize: '0.65rem', fontWeight: 800 }}>
+                                    Deactivated
+                                  </span>
+                                )}
+                              </div>
                               {monthAmt > 0 && (
                                 <div style={{ fontSize: '0.74rem', color: '#b45309', fontWeight: 800 }}>
                                   In {advFilterMonth === 'all' ? advFilterYear : advMonthNames[(advFilterMonth as number) - 1]}: ₹{monthAmt.toLocaleString('en-IN')}
@@ -2533,6 +2820,7 @@ export const SimpleFarmViewPage: React.FC = () => {
                                 <th className="ledger-th">Given By</th>
                                 <th className="ledger-th">Purpose</th>
                                 <th className="ledger-th">Status</th>
+                                <th className="ledger-th" style={{ textAlign: 'right' }}>Actions</th>
                               </tr>
                             </thead>
                             <tbody>
@@ -2542,7 +2830,7 @@ export const SimpleFarmViewPage: React.FC = () => {
                                     {new Date(adv.issued_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
                                   </td>
                                   <td className="ledger-td" style={{ fontWeight: 800, color: '#143823' }}>
-                                    {adv.labourer_name}
+                                    {adv.labourer_name || labourers.find(l => l.id === adv.labourer_id)?.full_name || 'Worker'}
                                   </td>
                                   <td className="ledger-td" style={{ fontWeight: 800, color: '#b45309', fontSize: '0.95rem' }}>
                                     ₹{adv.amount.toLocaleString('en-IN')}
@@ -2571,6 +2859,17 @@ export const SimpleFarmViewPage: React.FC = () => {
                                       Posted
                                     </span>
                                   </td>
+                                  <td className="ledger-td" style={{ textAlign: 'right' }}>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDeleteAdvance(adv.id)}
+                                      className="ledger-action-btn ledger-action-btn-danger"
+                                      style={{ padding: '4px 7px' }}
+                                      title="Delete advance record"
+                                    >
+                                      <Trash2 size={12} />
+                                    </button>
+                                  </td>
                                 </tr>
                               ))}
                             </tbody>
@@ -2583,11 +2882,22 @@ export const SimpleFarmViewPage: React.FC = () => {
                           <div key={adv.id} className="ledger-mobile-row" style={{ padding: '10px 12px', marginBottom: 8 }}>
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
                               <span style={{ fontWeight: 800, fontSize: '0.9rem', color: '#143823' }}>
-                                {adv.labourer_name}
+                                {adv.labourer_name || labourers.find(l => l.id === adv.labourer_id)?.full_name || 'Worker'}
                               </span>
-                              <span style={{ fontWeight: 800, color: '#b45309', fontSize: '0.92rem' }}>
-                                ₹{adv.amount.toLocaleString('en-IN')}
-                              </span>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <span style={{ fontWeight: 800, color: '#b45309', fontSize: '0.92rem' }}>
+                                  ₹{adv.amount.toLocaleString('en-IN')}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteAdvance(adv.id)}
+                                  className="ledger-action-btn ledger-action-btn-danger"
+                                  style={{ padding: '3px 6px' }}
+                                  title="Delete advance record"
+                                >
+                                  <Trash2 size={11} />
+                                </button>
+                              </div>
                             </div>
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.74rem', color: '#64748b' }}>
                               <span>Given By: <strong style={{ color: '#15803d' }}>{adv.issued_by || 'Owner/Manager'}</strong></span>
@@ -2743,35 +3053,51 @@ export const SimpleFarmViewPage: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {salaryRows.map((row) => {
-                      const { labourer: lab, dailyRate, daysWorked, grossWage, advanceDue, netTakeHome, isSettled } = row;
+                    {salaryRows.length === 0 ? (
+                      <tr>
+                        <td colSpan={7} style={{ textAlign: 'center', padding: '36px 16px', color: '#64748b' }}>
+                          <CreditCard size={32} style={{ opacity: 0.4, margin: '0 auto 8px' }} />
+                          <div style={{ fontWeight: 800, color: '#334155' }}>No Workers or Shifts Recorded for {salaryMonthName} {salaryYear}</div>
+                          <div style={{ fontSize: '0.8rem', marginTop: 4 }}>Add or reactivate crew members to generate settlement sheets.</div>
+                        </td>
+                      </tr>
+                    ) : (
+                      salaryRows.map((row) => {
+                        const { labourer: lab, dailyRate, daysWorked, grossWage, advanceDue, netTakeHome, isSettled } = row;
 
-                      return (
-                        <tr key={lab.id} className="ledger-tr">
-                          <td className="ledger-td">
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                              <div style={{
-                                width: 36,
-                                height: 36,
-                                borderRadius: 12,
-                                background: 'linear-gradient(135deg, #dcfce7, #bbf7d0)',
-                                color: '#15803d',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                fontWeight: 800,
-                                fontSize: '0.9rem',
-                                border: '1.5px solid #86efac',
-                                flexShrink: 0
-                              }}>
-                                {lab.full_name.charAt(0)}
+                        return (
+                          <tr key={lab.id} className="ledger-tr" style={{ opacity: lab.is_active ? 1 : 0.85 }}>
+                            <td className="ledger-td">
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                <div style={{
+                                  width: 36,
+                                  height: 36,
+                                  borderRadius: 12,
+                                  background: lab.is_active ? 'linear-gradient(135deg, #dcfce7, #bbf7d0)' : '#e2e8f0',
+                                  color: lab.is_active ? '#15803d' : '#64748b',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  fontWeight: 800,
+                                  fontSize: '0.9rem',
+                                  border: lab.is_active ? '1.5px solid #86efac' : '1.5px solid #cbd5e1',
+                                  flexShrink: 0
+                                }}>
+                                  {lab.full_name.charAt(0)}
+                                </div>
+                                <div>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                    <span style={{ fontWeight: 800, color: lab.is_active ? '#143823' : '#475569' }}>{lab.full_name}</span>
+                                    {!lab.is_active && (
+                                      <span style={{ background: '#f1f5f9', color: '#64748b', border: '1px solid #cbd5e1', padding: '1px 5px', borderRadius: 4, fontSize: '0.65rem', fontWeight: 800 }}>
+                                        Deactivated
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div style={{ fontSize: '0.72rem', color: '#64748b' }}>{lab.labour_code}</div>
+                                </div>
                               </div>
-                              <div>
-                                <span style={{ fontWeight: 800, color: '#143823' }}>{lab.full_name}</span>
-                                <div style={{ fontSize: '0.72rem', color: '#64748b' }}>{lab.labour_code}</div>
-                              </div>
-                            </div>
-                          </td>
+                            </td>
                           <td className="ledger-td" style={{ color: '#475569', fontWeight: 700 }}>
                             ₹{dailyRate}/day
                           </td>
@@ -2810,7 +3136,8 @@ export const SimpleFarmViewPage: React.FC = () => {
                           </td>
                         </tr>
                       );
-                    })}
+                    })
+                  )}
                   </tbody>
                 </table>
               </div>
@@ -2818,34 +3145,48 @@ export const SimpleFarmViewPage: React.FC = () => {
 
             {/* Mobile Settlement Cards */}
             <div className="ledger-mobile-only">
-              {salaryRows.map((row) => {
-                const { labourer: lab, dailyRate, daysWorked, grossWage, advanceDue, netTakeHome, isSettled } = row;
+              {salaryRows.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '36px 16px', background: '#f8fafc', borderRadius: 16, border: '1.5px dashed #cbd5e1', color: '#64748b', margin: '14px 0' }}>
+                  <CreditCard size={36} style={{ opacity: 0.4, marginBottom: 8 }} />
+                  <div style={{ fontWeight: 800, fontSize: '1rem', color: '#334155' }}>No Workers or Shifts for {salaryMonthName} {salaryYear}</div>
+                  <div style={{ fontSize: '0.8rem', marginTop: 4 }}>Add or reactivate workers to calculate salaries.</div>
+                </div>
+              ) : (
+                salaryRows.map((row) => {
+                  const { labourer: lab, dailyRate, daysWorked, grossWage, advanceDue, netTakeHome, isSettled } = row;
 
-                return (
-                  <div key={lab.id} className="ledger-mobile-row">
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                        <div style={{
-                          width: 36,
-                          height: 36,
-                          borderRadius: 12,
-                          background: 'linear-gradient(135deg, #dcfce7, #bbf7d0)',
-                          color: '#15803d',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          fontWeight: 800,
-                          fontSize: '0.9rem',
-                          border: '1.5px solid #86efac',
-                          flexShrink: 0
-                        }}>
-                          {lab.full_name.charAt(0)}
+                  return (
+                    <div key={lab.id} className="ledger-mobile-row" style={{ opacity: lab.is_active ? 1 : 0.85 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                          <div style={{
+                            width: 36,
+                            height: 36,
+                            borderRadius: 12,
+                            background: lab.is_active ? 'linear-gradient(135deg, #dcfce7, #bbf7d0)' : '#e2e8f0',
+                            color: lab.is_active ? '#15803d' : '#64748b',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontWeight: 800,
+                            fontSize: '0.9rem',
+                            border: lab.is_active ? '1.5px solid #86efac' : '1.5px solid #cbd5e1',
+                            flexShrink: 0
+                          }}>
+                            {lab.full_name.charAt(0)}
+                          </div>
+                          <div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <div style={{ fontWeight: 800, fontSize: '0.95rem', color: lab.is_active ? '#143823' : '#475569' }}>{lab.full_name}</div>
+                              {!lab.is_active && (
+                                <span style={{ background: '#f1f5f9', color: '#64748b', border: '1px solid #cbd5e1', padding: '1px 5px', borderRadius: 4, fontSize: '0.65rem', fontWeight: 800 }}>
+                                  Deactivated
+                                </span>
+                              )}
+                            </div>
+                            <div style={{ fontSize: '0.74rem', color: '#4b6354', fontWeight: 600 }}>₹{dailyRate}/day • {daysWorked} Days Worked</div>
+                          </div>
                         </div>
-                        <div>
-                          <div style={{ fontWeight: 800, fontSize: '0.95rem', color: '#143823' }}>{lab.full_name}</div>
-                          <div style={{ fontSize: '0.74rem', color: '#4b6354', fontWeight: 600 }}>₹{dailyRate}/day • {daysWorked} Days Worked</div>
-                        </div>
-                      </div>
 
                       <div style={{ textAlign: 'right' }}>
                         <div style={{ fontSize: '0.68rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 800 }}>Net Take-Home</div>
@@ -2871,7 +3212,8 @@ export const SimpleFarmViewPage: React.FC = () => {
                     </button>
                   </div>
                 );
-              })}
+              })
+            )}
             </div>
           </div>
         )}
@@ -3287,216 +3629,350 @@ export const SimpleFarmViewPage: React.FC = () => {
         {/* =========================================================================
           SECTION 5: WORKER ROSTER
           ========================================================================= */}
-        {activeSection === 'labours' && (
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14, flexWrap: 'wrap', gap: 10 }}>
-              <div>
-                <h2 style={{ fontSize: '1.3rem', margin: '0 0 3px 0', color: '#143823', fontWeight: 800 }}>
-                  Farm Crew Directory ({labourers.length} Labourers)
-                </h2>
-                <div style={{ fontSize: '0.82rem', color: '#4b6354', fontWeight: 600 }}>
-                  Manage registered workforce, wage rates & view monthly attendance records
+        {activeSection === 'labours' && (() => {
+          const filteredLabourers = allLabourers.filter(l => {
+            if (crewFilter === 'active') return l.is_active;
+            if (crewFilter === 'deactivated') return !l.is_active;
+            return true;
+          });
+          const activeCount = allLabourers.filter(l => l.is_active).length;
+          const deactivatedCount = allLabourers.filter(l => !l.is_active).length;
+
+          return (
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, flexWrap: 'wrap', gap: 10 }}>
+                <div>
+                  <h2 style={{ fontSize: '1.3rem', margin: '0 0 3px 0', color: '#143823', fontWeight: 800 }}>
+                    Farm Crew Directory ({filteredLabourers.length} Shown • {allLabourers.length} Total)
+                  </h2>
+                  <div style={{ fontSize: '0.82rem', color: '#4b6354', fontWeight: 600 }}>
+                    Manage active workforce, inspect deactivated workers, adjust rates & view monthly attendance
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <button
+                    type="button"
+                    onClick={handleExportLabourersPdf}
+                    className="ledger-action-btn ledger-action-btn-secondary"
+                    style={{ padding: '8px 14px', display: 'inline-flex', alignItems: 'center', gap: 5 }}
+                    title="Export Farm Crew Directory to PDF"
+                  >
+                    <FileDown size={15} />
+                    <span>Export Crew PDF</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setIsAddModalOpen(true)}
+                    className="ledger-action-btn ledger-action-btn-primary"
+                    style={{ padding: '8px 14px' }}
+                  >
+                    <UserPlus size={15} />
+                    <span>Add Labourer</span>
+                  </button>
                 </div>
               </div>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              {/* Segmented Filter: All Workers | Active Crew | Deactivated */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
                 <button
                   type="button"
-                  onClick={handleExportLabourersPdf}
-                  className="ledger-action-btn ledger-action-btn-secondary"
-                  style={{ padding: '8px 14px', display: 'inline-flex', alignItems: 'center', gap: 5 }}
-                  title="Export Farm Crew Directory to PDF"
+                  onClick={() => setCrewFilter('all')}
+                  className={`ledger-action-btn ${crewFilter === 'all' ? 'ledger-action-btn-primary' : 'ledger-action-btn-secondary'}`}
+                  style={{ padding: '6px 14px', fontSize: '0.78rem' }}
                 >
-                  <FileDown size={15} />
-                  <span>Export Crew PDF</span>
+                  All Workers ({allLabourers.length})
                 </button>
-
                 <button
                   type="button"
-                  onClick={() => setIsAddModalOpen(true)}
-                  className="ledger-action-btn ledger-action-btn-primary"
-                  style={{ padding: '8px 14px' }}
+                  onClick={() => setCrewFilter('active')}
+                  className={`ledger-action-btn ${crewFilter === 'active' ? 'ledger-action-btn-primary' : 'ledger-action-btn-secondary'}`}
+                  style={{ padding: '6px 14px', fontSize: '0.78rem' }}
                 >
-                  <UserPlus size={15} />
-                  <span>Add Labourer</span>
+                  Active Crew ({activeCount})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCrewFilter('deactivated')}
+                  className={`ledger-action-btn ${crewFilter === 'deactivated' ? 'ledger-action-btn-primary' : 'ledger-action-btn-secondary'}`}
+                  style={{ padding: '6px 14px', fontSize: '0.78rem' }}
+                >
+                  Deactivated ({deactivatedCount})
                 </button>
               </div>
-            </div>
 
-            {labSuccessMsg && (
-              <div style={{ background: '#dcfce7', border: '2px solid #86efac', color: '#14532d', padding: '10px 14px', borderRadius: 12, marginBottom: 14, fontSize: '0.84rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: 8 }}>
-                <CheckCircle2 size={16} color="#16a34a" />
-                <span>{labSuccessMsg}</span>
-              </div>
-            )}
+              {labSuccessMsg && (
+                <div style={{ background: '#dcfce7', border: '2px solid #86efac', color: '#14532d', padding: '10px 14px', borderRadius: 12, marginBottom: 14, fontSize: '0.84rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <CheckCircle2 size={16} color="#16a34a" />
+                  <span>{labSuccessMsg}</span>
+                </div>
+              )}
 
-            {/* Desktop Labourers Table */}
-            <div className="ledger-desktop-only">
-              <div className="ledger-table-wrap">
-                <table className="ledger-table">
-                  <thead>
-                    <tr>
-                      <th className="ledger-th">Code</th>
-                      <th className="ledger-th">Full Name</th>
-                      <th className="ledger-th">Daily Wage</th>
-                      <th className="ledger-th">Phone</th>
-                      <th className="ledger-th">Due</th>
-                      <th className="ledger-th" style={{ textAlign: 'right' }}>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {labourers.map((lab) => {
+              {/* Empty State */}
+              {filteredLabourers.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '36px 16px', background: '#f8fafc', borderRadius: 16, border: '1.5px dashed #cbd5e1', color: '#64748b', margin: '14px 0' }}>
+                  <Users size={36} style={{ opacity: 0.4, marginBottom: 8 }} />
+                  <div style={{ fontWeight: 800, fontSize: '1rem', color: '#334155' }}>
+                    No {crewFilter === 'deactivated' ? 'Deactivated' : (crewFilter === 'active' ? 'Active' : '')} Workers Found
+                  </div>
+                  <div style={{ fontSize: '0.8rem', marginTop: 4 }}>
+                    {crewFilter === 'deactivated' ? 'All registered labourers are currently active in the farm crew.' : 'No crew members found under this filter.'}
+                  </div>
+                </div>
+              ) : (
+                <>
+                  {/* Desktop Labourers Table */}
+                  <div className="ledger-desktop-only">
+                    <div className="ledger-table-wrap">
+                      <table className="ledger-table">
+                        <thead>
+                          <tr>
+                            <th className="ledger-th">Code</th>
+                            <th className="ledger-th">Full Name</th>
+                            <th className="ledger-th">Status</th>
+                            <th className="ledger-th">Daily Wage</th>
+                            <th className="ledger-th">Phone</th>
+                            <th className="ledger-th">Due</th>
+                            <th className="ledger-th" style={{ textAlign: 'right' }}>Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {filteredLabourers.map((lab) => {
+                            const bal = dataService.getLabourerAdvanceBalance(lab.id);
+
+                            return (
+                              <tr key={lab.id} className="ledger-tr" style={{ opacity: lab.is_active ? 1 : 0.82, background: lab.is_active ? 'transparent' : '#f8fafc' }}>
+                                <td className="ledger-td" style={{ fontSize: '0.78rem', color: '#64748b', fontWeight: 800 }}>
+                                  <span style={{ background: '#f1f5f9', padding: '2px 6px', borderRadius: 6, border: '1px solid #cbd5e1' }}>
+                                    {lab.labour_code}
+                                  </span>
+                                </td>
+                                <td className="ledger-td">
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                    <div style={{
+                                      width: 36,
+                                      height: 36,
+                                      borderRadius: 12,
+                                      background: lab.is_active ? 'linear-gradient(135deg, #dcfce7, #bbf7d0)' : '#e2e8f0',
+                                      color: lab.is_active ? '#15803d' : '#64748b',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                      fontWeight: 800,
+                                      fontSize: '0.9rem',
+                                      border: lab.is_active ? '1.5px solid #86efac' : '1.5px solid #cbd5e1',
+                                      flexShrink: 0
+                                    }}>
+                                      {lab.full_name.charAt(0)}
+                                    </div>
+                                    <span style={{ fontWeight: 800, color: lab.is_active ? '#143823' : '#475569' }}>{lab.full_name}</span>
+                                  </div>
+                                </td>
+                                <td className="ledger-td">
+                                  {lab.is_active ? (
+                                    <span style={{ background: '#dcfce7', color: '#15803d', border: '1px solid #86efac', padding: '2px 8px', borderRadius: 6, fontSize: '0.72rem', fontWeight: 800 }}>
+                                      Active
+                                    </span>
+                                  ) : (
+                                    <span style={{ background: '#f1f5f9', color: '#64748b', border: '1px solid #cbd5e1', padding: '2px 8px', borderRadius: 6, fontSize: '0.72rem', fontWeight: 800 }}>
+                                      Deactivated
+                                    </span>
+                                  )}
+                                </td>
+                                <td className="ledger-td" style={{ fontWeight: 800, color: lab.is_active ? '#15803d' : '#64748b' }}>
+                                  ₹{lab.base_rate}/day
+                                </td>
+                                <td className="ledger-td" style={{ fontSize: '0.82rem', color: '#475569', fontWeight: 600 }}>
+                                  {lab.phone || '—'}
+                                </td>
+                                <td className="ledger-td">
+                                  <span style={{
+                                    fontWeight: 800,
+                                    fontSize: '0.8rem',
+                                    padding: '3px 8px',
+                                    borderRadius: 6,
+                                    background: bal.outstanding > 0 ? '#fef3c7' : '#f0fdf4',
+                                    color: bal.outstanding > 0 ? '#b45309' : '#15803d',
+                                    border: `1px solid ${bal.outstanding > 0 ? '#fde68a' : '#bbf7d0'}`
+                                  }}>
+                                    {bal.outstanding > 0 ? `₹${bal.outstanding}` : 'Clear'}
+                                  </span>
+                                </td>
+                                <td className="ledger-td" style={{ textAlign: 'right' }}>
+                                  <div style={{ display: 'inline-flex', gap: 6 }}>
+                                    {lab.is_active && (
+                                      <button
+                                        type="button"
+                                        onClick={() => setSelectedLabourerForCalendar(lab)}
+                                        className="ledger-action-btn ledger-action-btn-secondary"
+                                        style={{ padding: '5px 10px', fontSize: '0.76rem' }}
+                                      >
+                                        <Calendar size={13} color="#15803d" />
+                                        <span>Monthly Calendar</span>
+                                      </button>
+                                    )}
+
+                                    <button
+                                      type="button"
+                                      onClick={() => handleOpenEditLabourer(lab)}
+                                      className="ledger-action-btn ledger-action-btn-secondary"
+                                      style={{ padding: '5px 10px', fontSize: '0.76rem', color: '#0369a1', borderColor: '#bae6fd', background: '#f0f9ff' }}
+                                      title="Edit Worker Details"
+                                    >
+                                      <Edit2 size={13} color="#0284c7" />
+                                      <span>Edit</span>
+                                    </button>
+
+                                    <button
+                                      type="button"
+                                      onClick={() => handleToggleLabourActive(lab.id)}
+                                      className={`ledger-action-btn ${lab.is_active ? 'ledger-action-btn-secondary' : 'ledger-action-btn-primary'}`}
+                                      style={{
+                                        padding: '5px 9px',
+                                        fontSize: '0.74rem',
+                                        color: lab.is_active ? '#b45309' : '#ffffff',
+                                        border: lab.is_active ? '1px solid #fde68a' : 'none'
+                                      }}
+                                      title={lab.is_active ? 'Deactivate this worker from daily attendance' : 'Reactivate this worker into active crew'}
+                                    >
+                                      {lab.is_active ? 'Deactivate' : '⚡ Reactivate'}
+                                    </button>
+
+                                    <button
+                                      type="button"
+                                      onClick={() => setDeleteConfirmLab(lab)}
+                                      className="ledger-action-btn ledger-action-btn-danger"
+                                      style={{ padding: '5px 8px' }}
+                                      title="Delete Worker Permanently"
+                                    >
+                                      <Trash2 size={13} />
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  {/* Mobile Labourers Rows */}
+                  <div className="ledger-mobile-only">
+                    {filteredLabourers.map((lab) => {
                       const bal = dataService.getLabourerAdvanceBalance(lab.id);
 
                       return (
-                        <tr key={lab.id} className="ledger-tr">
-                          <td className="ledger-td" style={{ fontSize: '0.78rem', color: '#64748b', fontWeight: 800 }}>
-                            <span style={{ background: '#f1f5f9', padding: '2px 6px', borderRadius: 6, border: '1px solid #cbd5e1' }}>
-                              {lab.labour_code}
-                            </span>
-                          </td>
-                          <td className="ledger-td">
+                        <div key={lab.id} className="ledger-mobile-row" style={{ opacity: lab.is_active ? 1 : 0.85, background: lab.is_active ? '#ffffff' : '#f8fafc' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                               <div style={{
-                                width: 36,
-                                height: 36,
+                                width: 38,
+                                height: 38,
                                 borderRadius: 12,
-                                background: 'linear-gradient(135deg, #dcfce7, #bbf7d0)',
-                                color: '#15803d',
+                                background: lab.is_active ? 'linear-gradient(135deg, #dcfce7, #bbf7d0)' : '#e2e8f0',
+                                color: lab.is_active ? '#15803d' : '#64748b',
                                 display: 'flex',
                                 alignItems: 'center',
                                 justifyContent: 'center',
                                 fontWeight: 800,
-                                fontSize: '0.9rem',
-                                border: '1.5px solid #86efac',
+                                fontSize: '0.92rem',
+                                border: lab.is_active ? '1.5px solid #86efac' : '1.5px solid #cbd5e1',
                                 flexShrink: 0
                               }}>
                                 {lab.full_name.charAt(0)}
                               </div>
-                              <span style={{ fontWeight: 800, color: '#143823' }}>{lab.full_name}</span>
+                              <div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                  <span style={{ fontWeight: 800, fontSize: '0.95rem', color: lab.is_active ? '#143823' : '#475569' }}>
+                                    {lab.full_name}
+                                  </span>
+                                  {lab.is_active ? (
+                                    <span style={{ background: '#dcfce7', color: '#15803d', border: '1px solid #86efac', padding: '1px 5px', borderRadius: 4, fontSize: '0.65rem', fontWeight: 800 }}>
+                                      Active
+                                    </span>
+                                  ) : (
+                                    <span style={{ background: '#f1f5f9', color: '#64748b', border: '1px solid #cbd5e1', padding: '1px 5px', borderRadius: 4, fontSize: '0.65rem', fontWeight: 800 }}>
+                                      Deactivated
+                                    </span>
+                                  )}
+                                </div>
+                                <div style={{ fontSize: '0.74rem', color: '#4b6354', fontWeight: 600 }}>
+                                  {lab.labour_code} • ₹{lab.base_rate}/day
+                                </div>
+                              </div>
                             </div>
-                          </td>
-                          <td className="ledger-td" style={{ fontWeight: 800, color: '#15803d' }}>
-                            ₹{lab.base_rate}/day
-                          </td>
-                          <td className="ledger-td" style={{ fontSize: '0.82rem', color: '#475569', fontWeight: 600 }}>
-                            {lab.phone || '—'}
-                          </td>
-                          <td className="ledger-td">
+
                             <span style={{
                               fontWeight: 800,
-                              fontSize: '0.8rem',
+                              fontSize: '0.76rem',
                               padding: '3px 8px',
                               borderRadius: 6,
                               background: bal.outstanding > 0 ? '#fef3c7' : '#f0fdf4',
                               color: bal.outstanding > 0 ? '#b45309' : '#15803d',
                               border: `1px solid ${bal.outstanding > 0 ? '#fde68a' : '#bbf7d0'}`
                             }}>
-                              {bal.outstanding > 0 ? `₹${bal.outstanding}` : 'Clear'}
+                              {bal.outstanding > 0 ? `Due: ₹${bal.outstanding}` : 'Clear'}
                             </span>
-                          </td>
-                          <td className="ledger-td" style={{ textAlign: 'right' }}>
-                            <div style={{ display: 'inline-flex', gap: 6 }}>
+                          </div>
+
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: 8, borderTop: '1px dashed #dcfce7', gap: 6, flexWrap: 'wrap' }}>
+                            {lab.is_active && (
                               <button
                                 type="button"
                                 onClick={() => setSelectedLabourerForCalendar(lab)}
                                 className="ledger-action-btn ledger-action-btn-secondary"
-                                style={{ padding: '5px 10px', fontSize: '0.76rem' }}
+                                style={{ padding: '6px 10px', fontSize: '0.74rem' }}
                               >
                                 <Calendar size={13} color="#15803d" />
-                                <span>Monthly Calendar</span>
+                                <span>Monthly Numbers</span>
                               </button>
-                              <button
-                                type="button"
-                                onClick={() => setDeleteConfirmLab(lab)}
-                                className="ledger-action-btn ledger-action-btn-danger"
-                                style={{ padding: '5px 8px' }}
-                                title="Remove Worker"
-                              >
-                                <Trash2 size={13} />
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
+                            )}
 
-            {/* Mobile Labourers Rows */}
-            <div className="ledger-mobile-only">
-              {labourers.map((lab) => {
-                const bal = dataService.getLabourerAdvanceBalance(lab.id);
+                            <button
+                              type="button"
+                              onClick={() => handleOpenEditLabourer(lab)}
+                              className="ledger-action-btn ledger-action-btn-secondary"
+                              style={{ padding: '6px 12px', fontSize: '0.74rem', color: '#0369a1', border: '1px solid #bae6fd', background: '#f0f9ff' }}
+                              title="Edit Worker Details"
+                            >
+                              <Edit2 size={13} color="#0284c7" />
+                              <span>Edit</span>
+                            </button>
 
-                return (
-                  <div key={lab.id} className="ledger-mobile-row">
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                        <div style={{
-                          width: 38,
-                          height: 38,
-                          borderRadius: 12,
-                          background: 'linear-gradient(135deg, #dcfce7, #bbf7d0)',
-                          color: '#15803d',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          fontWeight: 800,
-                          fontSize: '0.92rem',
-                          border: '1.5px solid #86efac',
-                          flexShrink: 0
-                        }}>
-                          {lab.full_name.charAt(0)}
-                        </div>
-                        <div>
-                          <div style={{ fontWeight: 800, fontSize: '0.95rem', color: '#143823' }}>{lab.full_name}</div>
-                          <div style={{ fontSize: '0.74rem', color: '#4b6354', fontWeight: 600 }}>
-                            {lab.labour_code} • ₹{lab.base_rate}/day
+                            <button
+                              type="button"
+                              onClick={() => handleToggleLabourActive(lab.id)}
+                              className={`ledger-action-btn ${lab.is_active ? 'ledger-action-btn-secondary' : 'ledger-action-btn-primary'}`}
+                              style={{
+                                padding: '6px 12px',
+                                fontSize: '0.74rem',
+                                color: lab.is_active ? '#b45309' : '#ffffff'
+                              }}
+                            >
+                              {lab.is_active ? 'Deactivate' : '⚡ Reactivate'}
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => setDeleteConfirmLab(lab)}
+                              className="ledger-action-btn ledger-action-btn-danger"
+                              style={{ padding: '6px 10px', fontSize: '0.76rem' }}
+                              title="Delete Worker Permanently"
+                            >
+                              <Trash2 size={13} />
+                            </button>
                           </div>
                         </div>
-                      </div>
-
-                      <span style={{
-                        fontWeight: 800,
-                        fontSize: '0.76rem',
-                        padding: '3px 8px',
-                        borderRadius: 6,
-                        background: bal.outstanding > 0 ? '#fef3c7' : '#f0fdf4',
-                        color: bal.outstanding > 0 ? '#b45309' : '#15803d',
-                        border: `1px solid ${bal.outstanding > 0 ? '#fde68a' : '#bbf7d0'}`
-                      }}>
-                        {bal.outstanding > 0 ? `Due: ₹${bal.outstanding}` : 'Clear'}
-                      </span>
-                    </div>
-
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: 8, borderTop: '1px dashed #dcfce7' }}>
-                      <button
-                        type="button"
-                        onClick={() => setSelectedLabourerForCalendar(lab)}
-                        className="ledger-action-btn ledger-action-btn-secondary"
-                        style={{ padding: '6px 12px', fontSize: '0.76rem' }}
-                      >
-                        <Calendar size={13} color="#15803d" />
-                        <span>Monthly Calendar & Numbers</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => setDeleteConfirmLab(lab)}
-                        className="ledger-action-btn ledger-action-btn-danger"
-                        style={{ padding: '6px 10px', fontSize: '0.76rem' }}
-                      >
-                        <Trash2 size={13} />
-                      </button>
-                    </div>
+                      );
+                    })}
                   </div>
-                );
-              })}
+                </>
+              )}
             </div>
-          </div>
-        )}
+          );
+        })()}
 
         {/* User Settings & Password Update Routine Section */}
         {activeSection === 'settings' && (
@@ -3697,6 +4173,149 @@ export const SimpleFarmViewPage: React.FC = () => {
                   style={{ flex: 2, padding: '10px' }}
                 >
                   Save & Register
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* =========================================================================
+          EDIT LABOURER MODAL (SUPERVISOR & ADMIN PERMISSION)
+          ========================================================================= */}
+      {editingLabourer && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(15, 23, 42, 0.5)',
+            backdropFilter: 'blur(3px)',
+            zIndex: 150,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 16,
+          }}
+          onClick={() => setEditingLabourer(null)}
+        >
+          <div
+            className="ledger-card"
+            style={{ maxWidth: 450, width: '100%', padding: 22 }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{ width: 36, height: 36, borderRadius: 10, background: '#e0f2fe', color: '#0284c7', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Edit2 size={20} />
+                </div>
+                <div>
+                  <h2 style={{ margin: 0, fontSize: '1.15rem', color: '#0f172a', fontWeight: 800 }}>Edit Worker Details</h2>
+                  <span style={{ fontSize: '0.74rem', color: '#64748b' }}>Code: {editingLabourer.labour_code}</span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingLabourer(null)}
+                style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#64748b' }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleUpdateLabourer}>
+              <div style={{ marginBottom: 12 }}>
+                <label className="ledger-label">Full Name *</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Ramesh Kadam"
+                  value={editLabName}
+                  onChange={(e) => setEditLabName(e.target.value)}
+                  className="ledger-input"
+                  required
+                />
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
+                <div>
+                  <label className="ledger-label">Daily Wage (₹/day) *</label>
+                  <input
+                    type="number"
+                    step="10"
+                    min="50"
+                    placeholder="e.g. 500"
+                    value={editLabRate}
+                    onChange={(e) => setEditLabRate(Number(e.target.value))}
+                    className="ledger-input"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="ledger-label">Worker Code</label>
+                  <input
+                    type="text"
+                    value={editLabCode}
+                    onChange={(e) => setEditLabCode(e.target.value.toUpperCase())}
+                    className="ledger-input"
+                    placeholder="e.g. LAB-001"
+                  />
+                </div>
+              </div>
+
+              <div style={{ marginBottom: 12 }}>
+                <label className="ledger-label">Mobile Phone (Optional)</label>
+                <input
+                  type="tel"
+                  placeholder="e.g. 9876543210"
+                  value={editLabPhone}
+                  onChange={(e) => setEditLabPhone(e.target.value)}
+                  className="ledger-input"
+                />
+              </div>
+
+              <div style={{ marginBottom: 14 }}>
+                <label className="ledger-label">Notes / Task Specialization (Optional)</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Vineyard specialist, Pruning expert"
+                  value={editLabNotes}
+                  onChange={(e) => setEditLabNotes(e.target.value)}
+                  className="ledger-input"
+                />
+              </div>
+
+              <div style={{ marginBottom: 16, padding: '10px 14px', background: '#f8fafc', borderRadius: 8, border: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div>
+                  <div style={{ fontSize: '0.82rem', fontWeight: 700, color: '#334155' }}>Employment Status</div>
+                  <div style={{ fontSize: '0.72rem', color: '#64748b' }}>Active workers appear in daily attendance list</div>
+                </div>
+                <label style={{ display: 'inline-flex', alignItems: 'center', cursor: 'pointer', gap: 6 }}>
+                  <input
+                    type="checkbox"
+                    checked={editLabActive}
+                    onChange={(e) => setEditLabActive(e.target.checked)}
+                    style={{ width: 18, height: 18, accentColor: '#15803d' }}
+                  />
+                  <span style={{ fontSize: '0.82rem', fontWeight: 800, color: editLabActive ? '#15803d' : '#94a3b8' }}>
+                    {editLabActive ? 'Active' : 'Inactive'}
+                  </span>
+                </label>
+              </div>
+
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button
+                  type="button"
+                  onClick={() => setEditingLabourer(null)}
+                  className="ledger-action-btn ledger-action-btn-secondary"
+                  style={{ flex: 1, padding: '10px' }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="ledger-action-btn ledger-action-btn-primary"
+                  style={{ flex: 2, padding: '10px', background: '#0284c7', borderColor: '#0284c7' }}
+                >
+                  Save Changes
                 </button>
               </div>
             </form>

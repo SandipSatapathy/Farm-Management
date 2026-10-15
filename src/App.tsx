@@ -28,14 +28,25 @@ export const AppContent: React.FC = () => {
 
   useEffect(() => {
     dataService.initDatabaseSync();
+    const unsubscribeRealtime = dataService.initRealtimeSync();
 
     const handleDataUpdated = () => {
       setSyncTick(t => t + 1);
     };
 
+    const pollInterval = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        dataService.fetchLiveAll();
+      }
+    }, 3000);
+
     window.addEventListener('farmlog-data-updated', handleDataUpdated);
     return () => {
+      clearInterval(pollInterval);
       window.removeEventListener('farmlog-data-updated', handleDataUpdated);
+      if (typeof unsubscribeRealtime === 'function') {
+        unsubscribeRealtime();
+      }
     };
   }, []);
 

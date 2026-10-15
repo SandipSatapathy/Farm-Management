@@ -293,7 +293,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         viewAccess: currentUser.viewAccess,
         farm,
         refreshData,
-        isReadOnlyPartner: false,
+        isReadOnlyPartner: currentUser.role === 'partner_viewer',
         canMutateOperations: true,
         canFinalizePayroll: currentUser.viewAccess === 'advanced',
         canManageUsers: currentUser.viewAccess === 'advanced',

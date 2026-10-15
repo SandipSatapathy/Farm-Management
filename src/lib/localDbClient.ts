@@ -88,6 +88,8 @@ export function normalizeDbData(data: any) {
     end_date: l.end_date ? formatDate(l.end_date) : undefined
   }));
 
+  const labourerMap = new Map<string, any>(labourers.map((l: any) => [l.id, l]));
+
   const attendance = (data.attendance || []).map((a: any) => ({
     ...a,
     payable_units: Number(a.payable_units || 0),
@@ -96,10 +98,15 @@ export function normalizeDbData(data: any) {
     work_date: formatDate(a.work_date)
   }));
 
-  const advances = (data.advances || []).map((adv: any) => ({
-    ...adv,
-    amount: Number(adv.amount || 0)
-  }));
+  const advances = (data.advances || []).map((adv: any) => {
+    const lab = labourerMap.get(adv.labourer_id);
+    return {
+      ...adv,
+      amount: Number(adv.amount || 0),
+      labourer_name: adv.labourer_name || lab?.full_name || 'Worker',
+      labour_code: adv.labour_code || lab?.labour_code || ''
+    };
+  });
 
   const tractorRentals = (data.tractorRentals || []).map((tr: any) => ({
     ...tr,
@@ -118,23 +125,28 @@ export function normalizeDbData(data: any) {
     end_date: formatDate(p.end_date)
   }));
 
-  const payrollLines = (data.payrollLines || []).map((pl: any) => ({
-    ...pl,
-    rate_snapshot: Number(pl.rate_snapshot || 0),
-    units: Number(pl.units || 0),
-    gross_amount: Number(pl.gross_amount || 0),
-    additions: Number(pl.additions || 0),
-    other_deductions: Number(pl.other_deductions || 0),
-    advance_recovery: Number(pl.advance_recovery || 0),
-    net_payable: Number(pl.net_payable || 0),
-    paid_amount: Number(pl.paid_amount || 0),
-    attendance_snapshot: typeof pl.attendance_snapshot === 'string'
-      ? JSON.parse(pl.attendance_snapshot)
-      : pl.attendance_snapshot || {},
-    calculation_details: typeof pl.calculation_details === 'string'
-      ? JSON.parse(pl.calculation_details)
-      : pl.calculation_details || {}
-  }));
+  const payrollLines = (data.payrollLines || []).map((pl: any) => {
+    const lab = labourerMap.get(pl.labourer_id);
+    return {
+      ...pl,
+      labourer_name: pl.labourer_name || lab?.full_name || 'Worker',
+      labour_code: pl.labour_code || lab?.labour_code || '',
+      rate_snapshot: Number(pl.rate_snapshot || 0),
+      units: Number(pl.units || 0),
+      gross_amount: Number(pl.gross_amount || 0),
+      additions: Number(pl.additions || 0),
+      other_deductions: Number(pl.other_deductions || 0),
+      advance_recovery: Number(pl.advance_recovery || 0),
+      net_payable: Number(pl.net_payable || 0),
+      paid_amount: Number(pl.paid_amount || 0),
+      attendance_snapshot: typeof pl.attendance_snapshot === 'string'
+        ? JSON.parse(pl.attendance_snapshot)
+        : pl.attendance_snapshot || {},
+      calculation_details: typeof pl.calculation_details === 'string'
+        ? JSON.parse(pl.calculation_details)
+        : pl.calculation_details || {}
+    };
+  });
 
   const appUsers = (data.appUsers || []).map((u: any) => ({
     id: u.id,
@@ -187,6 +199,15 @@ export async function syncAllFromLocalDb() {
         supabase.from('app_users').select('*').order('created_at', { ascending: true })
       ]);
 
+      if (labs.error) console.warn('[Supabase] Labourers query warning:', labs.error.message);
+      if (atts.error) console.warn('[Supabase] Attendance query warning:', atts.error.message);
+      if (advs.error) console.warn('[Supabase] Advances query warning:', advs.error.message);
+      if (allocs.error) console.warn('[Supabase] Advance allocations query warning:', allocs.error.message);
+      if (trcs.error) console.warn('[Supabase] Tractor rentals query warning:', trcs.error.message);
+      if (pps.error) console.warn('[Supabase] Payroll periods query warning:', pps.error.message);
+      if (pls.error) console.warn('[Supabase] Payroll lines query warning:', pls.error.message);
+      if (usrs.error) console.warn('[Supabase] App users query warning:', usrs.error.message);
+
       return normalizeDbData({
         labourers: labs.data || [],
         attendance: atts.data || [],
@@ -205,15 +226,46 @@ export async function syncAllFromLocalDb() {
   return null;
 }
 
+// Allowed columns per table in Supabase schema (strips computed / frontend-only properties)
+const TABLE_COLUMNS: Record<string, string[]> = {
+  farms: ['id', 'name', 'address', 'currency_code', 'timezone', 'financial_year_start_month', 'financial_year_start_day', 'settings', 'created_at', 'updated_at'],
+  app_users: ['id', 'farm_id', 'username', 'password_hash', 'full_name', 'email', 'role', 'view_access', 'is_active', 'created_at', 'last_login_at'],
+  farm_memberships: ['id', 'farm_id', 'user_id', 'user_email', 'user_name', 'role', 'is_active', 'created_at'],
+  labourers: ['id', 'farm_id', 'labour_code', 'full_name', 'phone', 'work_category', 'start_date', 'end_date', 'wage_basis', 'base_rate', 'is_active', 'notes', 'created_at', 'updated_at'],
+  attendance: ['id', 'farm_id', 'labourer_id', 'work_date', 'shift_code', 'status', 'payable_units', 'hours_worked', 'piece_quantity', 'task_name', 'field_name', 'supervisor_user_id', 'approval_status', 'correction_reason', 'created_by', 'updated_by', 'created_at', 'updated_at'],
+  advances: ['id', 'farm_id', 'labourer_id', 'issued_at', 'amount', 'purpose', 'payment_method', 'payment_reference', 'status', 'issued_by', 'notes', 'created_at', 'updated_at'],
+  advance_allocations: ['id', 'farm_id', 'advance_id', 'payroll_line_id', 'allocation_date', 'amount', 'allocation_type', 'recorded_by', 'notes', 'created_at'],
+  tractor_rentals: ['id', 'farm_id', 'machinery_id', 'tractor_name', 'vendor_name', 'work_date', 'hours_worked', 'hourly_rate', 'gross_amount', 'advance_amount', 'rest_amount', 'status', 'fuel_provided_litres', 'task_name', 'notes', 'created_at', 'updated_at'],
+  payroll_periods: ['id', 'farm_id', 'period_name', 'start_date', 'end_date', 'status', 'approved_by', 'approved_at', 'finalized_at', 'calculation_version', 'notes', 'created_at', 'updated_at'],
+  payroll_lines: ['id', 'farm_id', 'payroll_period_id', 'labourer_id', 'attendance_snapshot', 'wage_basis', 'rate_snapshot', 'units', 'gross_amount', 'additions', 'other_deductions', 'advance_recovery', 'net_payable', 'paid_amount', 'calculation_details', 'created_at', 'updated_at'],
+  payroll_payments: ['id', 'farm_id', 'payroll_line_id', 'paid_at', 'amount', 'method', 'reference', 'recorded_by', 'notes', 'created_at'],
+  audit_logs: ['id', 'farm_id', 'actor_user_id', 'actor_name', 'actor_role', 'action', 'entity_type', 'entity_id', 'occurred_at', 'reason', 'request_id', 'changes']
+};
+
+export function sanitizeRecordsForTable(table: string, records: any[]): any[] {
+  const allowed = TABLE_COLUMNS[table];
+  if (!allowed) return records;
+  return records.map(r => {
+    const clean: Record<string, any> = {};
+    for (const key of allowed) {
+      if (r[key] !== undefined) {
+        clean[key] = r[key];
+      }
+    }
+    return clean;
+  });
+}
+
 export async function upsertToLocalDb(table: string, records: any[]) {
-  if (records.length === 0) return false;
+  if (!records || records.length === 0) return false;
+  const sanitized = sanitizeRecordsForTable(table, records);
 
   if (isLocalDbEnabled) {
     try {
       const res = await fetch('/api/db/upsert', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ table, records })
+        body: JSON.stringify({ table, records: sanitized })
       });
       const json = await res.json();
       return json.ok === true;
@@ -225,11 +277,14 @@ export async function upsertToLocalDb(table: string, records: any[]) {
 
   if (isSupabaseConfigured && supabase) {
     try {
-      const { error } = await supabase.from(table).upsert(records);
-      if (error) throw error;
+      const { error } = await supabase.from(table).upsert(sanitized);
+      if (error) {
+        console.error(`[Supabase] Upsert error on ${table}:`, error);
+        throw error;
+      }
       return true;
-    } catch (err) {
-      console.warn(`[Supabase] Failed to upsert to ${table}:`, err);
+    } catch (err: any) {
+      console.warn(`[Supabase] Failed to upsert to ${table}:`, err.message || err);
       return false;
     }
   }
@@ -258,13 +313,44 @@ export async function deleteFromLocalDb(table: string, id: string) {
   if (isSupabaseConfigured && supabase) {
     try {
       const { error } = await supabase.from(table).delete().eq('id', id);
-      if (error) throw error;
+      if (error) {
+        console.error(`[Supabase] Delete error on ${table} (${id}):`, error);
+        throw error;
+      }
       return true;
-    } catch (err) {
-      console.warn(`[Supabase] Failed to delete from ${table}:`, err);
+    } catch (err: any) {
+      console.warn(`[Supabase] Failed to delete from ${table}:`, err.message || err);
       return false;
     }
   }
 
   return false;
 }
+
+export function subscribeToRealtimeSync(
+  onTableChange: (table: string, eventType: 'INSERT' | 'UPDATE' | 'DELETE', payload: any) => void
+) {
+  if (!isSupabaseConfigured || !supabase) return () => {};
+
+  const channel = supabase
+    .channel('farmlog-realtime-sync')
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public' },
+      (payload) => {
+        onTableChange(payload.table, payload.eventType as any, payload);
+      }
+    )
+    .subscribe((status) => {
+      if (status === 'SUBSCRIBED') {
+        console.log('[Supabase Realtime] Connected to live database updates');
+      }
+    });
+
+  return () => {
+    if (supabase) {
+      supabase.removeChannel(channel);
+    }
+  };
+}
+
