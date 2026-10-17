@@ -36,10 +36,13 @@ Set-Location $androidDir
 $localProps = Join-Path $androidDir "local.properties"
 "sdk.dir=$($SdkDir.Replace('\', '/'))" | Set-Content -Path $localProps -Encoding ASCII
 
-.\gradlew.bat assembleDebug
-
 $apkPath = Join-Path $androidDir "app\build\outputs\apk\debug\app-debug.apk"
 $destPath = Join-Path $PSScriptRoot "FarmLog-debug.apk"
+
+if (Test-Path $apkPath) { Remove-Item -Path $apkPath -Force }
+if (Test-Path $destPath) { Remove-Item -Path $destPath -Force }
+
+.\gradlew.bat assembleDebug --rerun-tasks
 
 if (Test-Path $apkPath) {
     Copy-Item -Path $apkPath -Destination $destPath -Force
