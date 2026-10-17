@@ -1,7 +1,9 @@
+import { Capacitor } from '@capacitor/core';
 import { isSupabaseConfigured, supabase } from './supabaseClient';
 
 // Unified Database Sync Client
-// Connects to local PostgreSQL in development (/api/db) and Supabase in production
+// Development on PC: Connects to local PostgreSQL (/api/db) to keep test data isolated.
+// Native Mobile (Android APK) and Production: Connects directly to Supabase Cloud Server.
 
 export interface LocalDbHealth {
   ok: boolean;
@@ -13,8 +15,13 @@ export interface LocalDbHealth {
   hint?: string;
 }
 
+// Local PostgreSQL is enabled ONLY when:
+// 1. Not running on a native mobile device (Capacitor native platform is false)
+// 2. Running in Vite local development mode ('npm run dev' on PC)
+// 3. VITE_USE_LOCAL_DB is explicitly true (from .env.development)
 export const isLocalDbEnabled = Boolean(
-  import.meta.env.DEV && 
+  !Capacitor.isNativePlatform() &&
+  import.meta.env.DEV &&
   (import.meta.env.VITE_USE_LOCAL_DB === 'true' || import.meta.env.VITE_USE_LOCAL_DB === true)
 );
 
@@ -24,16 +31,14 @@ export async function checkLocalDbHealth(): Promise<LocalDbHealth> {
   if (isLocalDbEnabled) {
     try {
       const res = await fetch('/api/db/health');
-      if (!res.ok) {
-        return { ok: false, connected: false, error: `HTTP ${res.status}: ${res.statusText}` };
-      }
-      return await res.json();
+      const json = await res.json();
+      return json;
     } catch (err: any) {
       return {
         ok: false,
         connected: false,
-        error: err.message || 'Cannot reach local DB bridge endpoint',
-        hint: 'Ensure Vite dev server is running and PG_PASSWORD is set in .env'
+        error: err.message || 'Local PostgreSQL server unavailable',
+        hint: 'Check if PostgreSQL is running locally on port 5432 and farmlog_dev exists'
       };
     }
   }
@@ -57,12 +62,7 @@ export async function checkLocalDbHealth(): Promise<LocalDbHealth> {
       };
     }
   }
-
-  return {
-    ok: false,
-    connected: false,
-    error: 'No database configured. Using offline browser storage.'
-  };
+  return { ok: false, connected: false, error: 'Database is not configured' };
 }
 
 // Format date to YYYY-MM-DD
@@ -161,6 +161,27 @@ export function normalizeDbData(data: any) {
     roleTitle: u.view_access === 'advanced' ? 'Farm Administrator' : 'Field Operations'
   }));
 
+  const payrollPayments = (data.payrollPayments || []).map((p: any) => ({
+    ...p,
+    amount: Number(p.amount || 0),
+    paid_at: p.paid_at || new Date().toISOString()
+  }));
+
+  const salarySettlements = (data.salarySettlements || []).map((s: any) => ({
+    ...s,
+    days_worked: Number(s.days_worked || 0),
+    daily_rate: Number(s.daily_rate || 0),
+    gross_wage: Number(s.gross_wage || 0),
+    advance_deducted: Number(s.advance_deducted || 0),
+    net_payable: Number(s.net_payable || 0),
+    paid_amount: Number(s.paid_amount || 0),
+    year: Number(s.year || 0),
+    month: Number(s.month || 0),
+    start_date: formatDate(s.start_date),
+    end_date: formatDate(s.end_date),
+    payment_date: formatDate(s.payment_date)
+  }));
+
   return {
     ...data,
     labourers,
@@ -169,6 +190,8 @@ export function normalizeDbData(data: any) {
     tractorRentals,
     payrollPeriods,
     payrollLines,
+    payrollPayments,
+    salarySettlements,
     appUsers
   };
 }
@@ -194,14 +217,26 @@ export async function syncAllFromLocalDb() {
         atts = await supabase.from('attendance_records').select('*').order('work_date', { ascending: false });
       }
 
-      const [labs, advs, allocs, trcs, pps, pls, usrs] = await Promise.all([
+      let settlementsRes: any = { data: [] };
+      try {
+        settlementsRes = await supabase.from('salary_settlements').select('*').order('created_at', { ascending: false });
+        if (settlementsRes.error) {
+          settlementsRes = { data: [] };
+        }
+      } catch {
+        settlementsRes = { data: [] };
+      }
+
+      const [labs, advs, allocs, trcs, pps, pls, pyms, usrs, fms] = await Promise.all([
         supabase.from('labourers').select('*').order('full_name', { ascending: true }),
         supabase.from('advances').select('*').order('issued_at', { ascending: false }),
         supabase.from('advance_allocations').select('*').order('allocation_date', { ascending: false }),
         supabase.from('tractor_rentals').select('*').order('work_date', { ascending: false }),
         supabase.from('payroll_periods').select('*').order('start_date', { ascending: false }),
         supabase.from('payroll_lines').select('*'),
-        supabase.from('app_users').select('*').order('created_at', { ascending: true })
+        supabase.from('payroll_payments').select('*').order('paid_at', { ascending: false }),
+        supabase.from('app_users').select('*').order('created_at', { ascending: true }),
+        supabase.from('farms').select('*').limit(1)
       ]);
 
       if (labs.error) console.warn('[Supabase] Labourers query warning:', labs.error.message);
@@ -211,7 +246,14 @@ export async function syncAllFromLocalDb() {
       if (trcs.error) console.warn('[Supabase] Tractor rentals query warning:', trcs.error.message);
       if (pps.error) console.warn('[Supabase] Payroll periods query warning:', pps.error.message);
       if (pls.error) console.warn('[Supabase] Payroll lines query warning:', pls.error.message);
+      if (pyms.error) console.warn('[Supabase] Payroll payments query warning:', pyms.error.message);
       if (usrs.error) console.warn('[Supabase] App users query warning:', usrs.error.message);
+
+      let finalSettlements = settlementsRes.data || [];
+      // Fallback: If salary_settlements table doesn't exist or is empty, load from farm.settings.salary_settlements
+      if (finalSettlements.length === 0 && fms.data && fms.data[0]?.settings?.salary_settlements) {
+        finalSettlements = fms.data[0].settings.salary_settlements;
+      }
 
       return normalizeDbData({
         labourers: labs.data || [],
@@ -221,6 +263,8 @@ export async function syncAllFromLocalDb() {
         tractorRentals: trcs.data || [],
         payrollPeriods: pps.data || [],
         payrollLines: pls.data || [],
+        payrollPayments: pyms.data || [],
+        salarySettlements: finalSettlements,
         appUsers: usrs.data || []
       });
     } catch (err) {
@@ -247,6 +291,7 @@ const TABLE_COLUMNS: Record<string, string[]> = {
   payroll_periods: ['id', 'farm_id', 'period_name', 'start_date', 'end_date', 'status', 'approved_by', 'approved_at', 'finalized_at', 'calculation_version', 'notes', 'created_at', 'updated_at'],
   payroll_lines: ['id', 'farm_id', 'payroll_period_id', 'labourer_id', 'attendance_snapshot', 'wage_basis', 'rate_snapshot', 'units', 'gross_amount', 'additions', 'other_deductions', 'advance_recovery', 'net_payable', 'paid_amount', 'calculation_details', 'created_at', 'updated_at'],
   payroll_payments: ['id', 'farm_id', 'payroll_line_id', 'paid_at', 'amount', 'method', 'reference', 'recorded_by', 'notes', 'created_at'],
+  salary_settlements: ['id', 'farm_id', 'labourer_id', 'labourer_name', 'labour_code', 'period_type', 'start_date', 'end_date', 'year', 'month', 'week_number', 'days_worked', 'daily_rate', 'gross_wage', 'advance_deducted', 'net_payable', 'paid_amount', 'given_by', 'payment_method', 'payment_date', 'payment_reference', 'notes', 'status', 'created_at', 'updated_at'],
   machinery: ['id', 'farm_id', 'asset_code', 'name', 'asset_type', 'ownership_type', 'registration_reference', 'make', 'model', 'meter_type', 'initial_meter', 'is_active', 'notes', 'created_at', 'updated_at'],
   machinery_usage: ['id', 'farm_id', 'machinery_id', 'work_date', 'operator_name', 'operator_user_id', 'field_name', 'task_name', 'start_time', 'end_time', 'start_meter', 'end_meter', 'duration_minutes', 'work_quantity', 'fuel_quantity', 'notes', 'created_by', 'created_at', 'updated_at'],
   machinery_expenses: ['id', 'farm_id', 'machinery_id', 'usage_id', 'expense_date', 'category', 'amount', 'quantity', 'unit', 'vendor', 'payment_method', 'payment_reference', 'receipt_path', 'notes', 'created_by', 'created_at', 'updated_at'],
@@ -297,6 +342,30 @@ export async function upsertToLocalDb(table: string, records: any[]) {
       if (res.error && table === 'attendance') {
         res = await supabase.from('attendance_records').upsert(sanitized);
       }
+      if (res.error && table === 'salary_settlements') {
+        // Fallback: If salary_settlements table does not exist yet in Supabase,
+        // persist to farms.settings.salary_settlements as immediate reliable cloud mirror
+        try {
+          const { data: fData } = await supabase.from('farms').select('id, settings').limit(1);
+          if (fData && fData[0]) {
+            const currentFarm = fData[0];
+            const curSettings = currentFarm.settings || {};
+            const existingList = Array.isArray(curSettings.salary_settlements) ? curSettings.salary_settlements : [];
+            const updatedList = [...existingList];
+            for (const rec of sanitized) {
+              const idx = updatedList.findIndex((item: any) => item.id === rec.id);
+              if (idx >= 0) updatedList[idx] = rec;
+              else updatedList.push(rec);
+            }
+            await supabase.from('farms').update({
+              settings: { ...curSettings, salary_settlements: updatedList }
+            }).eq('id', currentFarm.id);
+            return true;
+          }
+        } catch (fallbackErr) {
+          console.warn('[Supabase] Failed fallback saving to farm settings:', fallbackErr);
+        }
+      }
       if (res.error) {
         console.error(`[Supabase] Upsert error on ${table}:`, res.error);
         throw res.error;
@@ -334,6 +403,22 @@ export async function deleteFromLocalDb(table: string, id: string) {
       let res = await supabase.from(table).delete().eq('id', id);
       if (res.error && table === 'attendance') {
         res = await supabase.from('attendance_records').delete().eq('id', id);
+      }
+      if (res.error && table === 'salary_settlements') {
+        // Fallback: Delete from farms.settings.salary_settlements
+        try {
+          const { data: fData } = await supabase.from('farms').select('id, settings').limit(1);
+          if (fData && fData[0]) {
+            const currentFarm = fData[0];
+            const curSettings = currentFarm.settings || {};
+            const existingList = Array.isArray(curSettings.salary_settlements) ? curSettings.salary_settlements : [];
+            const updatedList = existingList.filter((item: any) => item.id !== id);
+            await supabase.from('farms').update({
+              settings: { ...curSettings, salary_settlements: updatedList }
+            }).eq('id', currentFarm.id);
+            return true;
+          }
+        } catch {}
       }
       if (res.error) {
         console.error(`[Supabase] Delete error on ${table} (${id}):`, res.error);

@@ -261,6 +261,41 @@ CREATE TABLE IF NOT EXISTS audit_logs (
 
 CREATE INDEX IF NOT EXISTS idx_audit_occurred ON audit_logs(occurred_at);
 
+-- -----------------------------------------------------------------------------
+-- 12. SALARY SETTLEMENTS (FIELD PAYOUTS & DISBURSEMENTS) TABLE
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS salary_settlements (
+    id VARCHAR(64) PRIMARY KEY,
+    farm_id VARCHAR(64) NOT NULL REFERENCES farms(id) ON DELETE CASCADE,
+    labourer_id VARCHAR(64) NOT NULL REFERENCES labourers(id) ON DELETE CASCADE,
+    labourer_name VARCHAR(255) NOT NULL,
+    labour_code VARCHAR(50),
+    period_type VARCHAR(30) DEFAULT 'monthly',
+    start_date DATE NOT NULL,
+    end_date DATE NOT NULL,
+    year INTEGER NOT NULL,
+    month INTEGER NOT NULL,
+    week_number INTEGER,
+    days_worked NUMERIC(6, 2) NOT NULL DEFAULT 0,
+    daily_rate NUMERIC(10, 2) NOT NULL DEFAULT 0,
+    gross_wage NUMERIC(10, 2) NOT NULL DEFAULT 0,
+    advance_deducted NUMERIC(10, 2) NOT NULL DEFAULT 0,
+    net_payable NUMERIC(10, 2) NOT NULL DEFAULT 0,
+    paid_amount NUMERIC(10, 2) NOT NULL DEFAULT 0,
+    given_by VARCHAR(255),
+    payment_method VARCHAR(50) DEFAULT 'cash',
+    payment_date DATE NOT NULL DEFAULT CURRENT_DATE,
+    payment_reference VARCHAR(100),
+    notes TEXT,
+    status VARCHAR(30) DEFAULT 'paid',
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_salary_settlements_farm_id ON salary_settlements(farm_id);
+CREATE INDEX IF NOT EXISTS idx_salary_settlements_labourer ON salary_settlements(labourer_id);
+CREATE INDEX IF NOT EXISTS idx_salary_settlements_dates ON salary_settlements(start_date, end_date);
+
 -- =============================================================================
 -- HELPER VIEW: WORKER ADVANCE BALANCE SUMMARY
 -- =============================================================================

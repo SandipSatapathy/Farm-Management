@@ -61,6 +61,7 @@ export function localPgPlugin(): Plugin {
     'payroll_periods',
     'payroll_lines',
     'payroll_payments',
+    'salary_settlements',
     'machinery',
     'machinery_usage',
     'machinery_expenses',
@@ -69,6 +70,48 @@ export function localPgPlugin(): Plugin {
     'farms',
     'farm_memberships',
   ]);
+
+  let tablesEnsured = false;
+  const ensureTables = async (db: any) => {
+    if (tablesEnsured) return;
+    try {
+      await db.query(`
+        CREATE TABLE IF NOT EXISTS salary_settlements (
+          id VARCHAR(64) PRIMARY KEY,
+          farm_id VARCHAR(64) NOT NULL,
+          labourer_id VARCHAR(64) NOT NULL,
+          labourer_name VARCHAR(255) NOT NULL,
+          labour_code VARCHAR(50),
+          period_type VARCHAR(30) DEFAULT 'monthly',
+          start_date DATE NOT NULL,
+          end_date DATE NOT NULL,
+          year INTEGER NOT NULL,
+          month INTEGER NOT NULL,
+          week_number INTEGER,
+          days_worked NUMERIC(6, 2) NOT NULL DEFAULT 0,
+          daily_rate NUMERIC(10, 2) NOT NULL DEFAULT 0,
+          gross_wage NUMERIC(10, 2) NOT NULL DEFAULT 0,
+          advance_deducted NUMERIC(10, 2) NOT NULL DEFAULT 0,
+          net_payable NUMERIC(10, 2) NOT NULL DEFAULT 0,
+          paid_amount NUMERIC(10, 2) NOT NULL DEFAULT 0,
+          given_by VARCHAR(255),
+          payment_method VARCHAR(50) DEFAULT 'cash',
+          payment_date DATE NOT NULL DEFAULT CURRENT_DATE,
+          payment_reference VARCHAR(100),
+          notes TEXT,
+          status VARCHAR(30) DEFAULT 'paid',
+          created_at TIMESTAMPTZ DEFAULT NOW(),
+          updated_at TIMESTAMPTZ DEFAULT NOW()
+        );
+      `);
+      await db.query(`
+        ALTER TABLE labourers ADD COLUMN IF NOT EXISTS pay_frequency VARCHAR(30) DEFAULT 'monthly';
+      `);
+      tablesEnsured = true;
+    } catch {
+      // Ignore if table already exists or permission issues
+    }
+  };
 
   return {
     name: 'vite-plugin-local-pg',
@@ -85,6 +128,7 @@ export function localPgPlugin(): Plugin {
 
         try {
           const db = getPool();
+          await ensureTables(db);
 
           // Health Check Endpoint
           if (pathname === '/api/db/health') {
@@ -120,6 +164,17 @@ export function localPgPlugin(): Plugin {
               const tractorRentals = (await db.query('SELECT * FROM tractor_rentals ORDER BY work_date DESC')).rows;
               const payrollPeriods = (await db.query('SELECT * FROM payroll_periods ORDER BY start_date DESC')).rows;
               const payrollLines = (await db.query('SELECT * FROM payroll_lines')).rows;
+
+              let payrollPayments: any[] = [];
+              try {
+                payrollPayments = (await db.query('SELECT * FROM payroll_payments ORDER BY paid_at DESC')).rows;
+              } catch {}
+
+              let salarySettlements: any[] = [];
+              try {
+                salarySettlements = (await db.query('SELECT * FROM salary_settlements ORDER BY created_at DESC')).rows;
+              } catch {}
+
               const auditLogs = (await db.query('SELECT * FROM audit_logs ORDER BY occurred_at DESC LIMIT 200')).rows;
               const appUsers = (await db.query('SELECT id, farm_id, username, password_hash, full_name, email, role, view_access, is_active FROM app_users ORDER BY created_at ASC')).rows;
 
@@ -133,6 +188,8 @@ export function localPgPlugin(): Plugin {
                   tractorRentals,
                   payrollPeriods,
                   payrollLines,
+                  payrollPayments,
+                  salarySettlements,
                   auditLogs,
                   appUsers
                 }

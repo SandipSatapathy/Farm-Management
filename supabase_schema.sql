@@ -313,5 +313,37 @@ CREATE POLICY "Allow anon read-write payroll_lines" ON payroll_lines FOR ALL USI
 CREATE POLICY "Allow anon read-write payroll_payments" ON payroll_payments FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow anon read-write audit_logs" ON audit_logs FOR ALL USING (true) WITH CHECK (true);
 
+-- 12. SALARY SETTLEMENTS TABLE
+CREATE TABLE IF NOT EXISTS public.salary_settlements (
+    id VARCHAR(64) PRIMARY KEY,
+    farm_id VARCHAR(64) NOT NULL REFERENCES farms(id) ON DELETE CASCADE,
+    labourer_id VARCHAR(64) NOT NULL REFERENCES labourers(id) ON DELETE CASCADE,
+    labourer_name VARCHAR(255),
+    labour_code VARCHAR(50),
+    period_type VARCHAR(30) DEFAULT 'monthly',
+    start_date DATE,
+    end_date DATE,
+    year INTEGER NOT NULL,
+    month INTEGER NOT NULL,
+    week_number INTEGER,
+    days_worked NUMERIC(6, 2) DEFAULT 0,
+    daily_rate NUMERIC(10, 2) DEFAULT 0,
+    gross_wage NUMERIC(10, 2) DEFAULT 0,
+    advance_deducted NUMERIC(10, 2) DEFAULT 0,
+    net_payable NUMERIC(10, 2) DEFAULT 0,
+    paid_amount NUMERIC(10, 2) NOT NULL,
+    given_by VARCHAR(255) DEFAULT 'Owner',
+    payment_method VARCHAR(30) DEFAULT 'cash',
+    payment_date DATE DEFAULT CURRENT_DATE,
+    payment_reference VARCHAR(100),
+    notes TEXT,
+    status VARCHAR(30) DEFAULT 'settled',
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE public.salary_settlements ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow anon read-write salary_settlements" ON salary_settlements FOR ALL USING (true) WITH CHECK (true);
+
 -- Enable Realtime for live updates across devices
-ALTER PUBLICATION supabase_realtime ADD TABLE labourers, attendance, advances, tractor_rentals, payroll_periods, payroll_lines, app_users;
+ALTER PUBLICATION supabase_realtime ADD TABLE labourers, attendance, advances, tractor_rentals, payroll_periods, payroll_lines, app_users, salary_settlements;

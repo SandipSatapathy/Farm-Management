@@ -196,7 +196,32 @@ export const dataService = {
       store.tractorRentals = dbData.tractorRentals || [];
       store.payrollPeriods = dbData.payrollPeriods || [];
       store.payrollLines = dbData.payrollLines || [];
-      if (dbData.salarySettlements) store.salarySettlements = dbData.salarySettlements;
+      if (dbData.payrollPayments) store.payrollPayments = dbData.payrollPayments || [];
+
+      // Smart merge salary settlements: retain cloud authoritative state while preserving and auto-uploading any local unsynced payouts
+      if (dbData.salarySettlements !== undefined) {
+        const cloudList = dbData.salarySettlements || [];
+        const localList = store.salarySettlements || [];
+        const tombstones = getTombstones();
+        const mergedMap = new Map<string, any>();
+
+        // 1. Add all cloud records
+        cloudList.forEach((s: any) => {
+          if (!tombstones.has(s.id)) {
+            mergedMap.set(s.id, s);
+          }
+        });
+
+        // 2. Add local records that aren't in cloud yet and auto-upload them to Supabase
+        localList.forEach((s: any) => {
+          if (!mergedMap.has(s.id) && !tombstones.has(s.id)) {
+            mergedMap.set(s.id, s);
+            upsertToLocalDb('salary_settlements', [s]).catch(() => {});
+          }
+        });
+
+        store.salarySettlements = Array.from(mergedMap.values());
+      }
 
       if (dbData.appUsers && dbData.appUsers.length > 0) {
         try {
@@ -297,6 +322,33 @@ export const dataService = {
         if (idx >= 0) store.tractorRentals[idx] = item;
         else store.tractorRentals.push(item);
       }
+    } else if (table === 'salary_settlements') {
+      if (eventType === 'DELETE' && oldRecord?.id) {
+        store.salarySettlements = (store.salarySettlements || []).filter(s => s.id !== oldRecord.id);
+        addTombstone(oldRecord.id);
+      } else if (newRecord) {
+        const item: SalarySettlement = {
+          ...newRecord,
+          days_worked: Number(newRecord.days_worked || 0),
+          daily_rate: Number(newRecord.daily_rate || 0),
+          gross_wage: Number(newRecord.gross_wage || 0),
+          advance_deducted: Number(newRecord.advance_deducted || 0),
+          net_payable: Number(newRecord.net_payable || 0),
+          paid_amount: Number(newRecord.paid_amount || 0),
+          year: Number(newRecord.year || 0),
+          month: Number(newRecord.month || 0)
+        };
+        if (!store.salarySettlements) store.salarySettlements = [];
+        const idx = store.salarySettlements.findIndex(s => s.id === item.id);
+        if (idx >= 0) store.salarySettlements[idx] = item;
+        else store.salarySettlements.push(item);
+      }
+    } else if (table === 'farms') {
+      if (newRecord?.settings?.salary_settlements && Array.isArray(newRecord.settings.salary_settlements)) {
+        store.salarySettlements = newRecord.settings.salary_settlements;
+      }
+    } else if (table === 'payroll_lines' || table === 'payroll_payments') {
+      dataService.fetchLiveAll().catch(() => {});
     }
 
     saveStore(store);
@@ -1243,6 +1295,108 @@ export const dataService = {
 
     dataService.logAudit('SETTLE_SALARY', 'payroll', settlement.id, `Settled salary ₹${settlement.paid_amount} for ${labName} (${labelPeriod}) - Given by: ${settlement.given_by}`);
     saveStore(store);
+
+    // 1. Sync directly to Supabase cloud (uses salary_settlements table or farm settings fallback)
+    await upsertToLocalDb('salary_settlements', [settlement]);
+
+    // 2. Dual-write bridge to payroll_periods / payroll_lines / payroll_payments
+    // Ensures Web Desktop Payroll page, Financial Year close, and Reports immediately reflect this payout
+    try {
+      const periodName = pType === 'weekly'
+        ? `Week ${startDate} to ${endDate}`
+        : `${new Date(data.year, data.month - 1).toLocaleString('default', { month: 'long' })} ${data.year}`;
+
+      let period = store.payrollPeriods.find(p => p.start_date === startDate && p.end_date === endDate);
+      if (!period) {
+        period = {
+          id: `pp-${startDate}-${endDate}`,
+          farm_id: store.farm.id,
+          period_name: periodName,
+          start_date: startDate,
+          end_date: endDate,
+          status: 'finalized',
+          calculation_version: 'v1',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        };
+        store.payrollPeriods.push(period);
+        upsertToLocalDb('payroll_periods', [period]).catch(() => {});
+      }
+
+      let existingLine = store.payrollLines.find(l => l.payroll_period_id === period!.id && l.labourer_id === data.labourer_id);
+      let line: PayrollLine;
+      if (!existingLine) {
+        line = {
+          id: `pl-${period.id}-${data.labourer_id}`,
+          farm_id: store.farm.id,
+          payroll_period_id: period.id,
+          labourer_id: data.labourer_id,
+          labourer_name: labName,
+          labour_code: labCode,
+          attendance_snapshot: {
+            present_days: data.days_worked,
+            half_days: 0,
+            absent_days: 0,
+            leave_days: 0,
+            holiday_days: 0,
+            total_payable_units: data.days_worked,
+            total_hours: data.days_worked * 8
+          },
+          wage_basis: 'daily',
+          rate_snapshot: data.daily_rate,
+          units: data.days_worked,
+          gross_amount: data.gross_wage,
+          additions: 0,
+          other_deductions: 0,
+          advance_recovery: data.advance_deducted,
+          net_payable: data.net_payable,
+          paid_amount: data.paid_amount,
+          calculation_details: {},
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        };
+        store.payrollLines.push(line);
+      } else {
+        existingLine.paid_amount = round2(data.paid_amount);
+        existingLine.units = round2(data.days_worked);
+        existingLine.gross_amount = round2(data.gross_wage);
+        existingLine.advance_recovery = round2(data.advance_deducted);
+        existingLine.net_payable = round2(data.net_payable);
+        existingLine.updated_at = new Date().toISOString();
+        line = existingLine;
+      }
+
+      const targetLine = line;
+      upsertToLocalDb('payroll_lines', [targetLine]).catch(() => {});
+
+        let payment = (store.payrollPayments || []).find(p => p.payroll_line_id === targetLine.id);
+        if (!payment) {
+          payment = {
+            id: `pay-${targetLine.id}`,
+            farm_id: store.farm.id,
+            payroll_line_id: targetLine.id,
+            paid_at: new Date().toISOString(),
+            amount: round2(data.paid_amount),
+            method: data.payment_method || 'cash',
+            reference: data.payment_reference || '',
+            recorded_by: data.given_by || 'Owner',
+            given_by: data.given_by || 'Owner',
+            notes: data.notes || '',
+            created_at: new Date().toISOString()
+          };
+          if (!store.payrollPayments) store.payrollPayments = [];
+          store.payrollPayments.push(payment);
+        } else {
+          payment.amount = round2(data.paid_amount);
+          payment.recorded_by = data.given_by || 'Owner';
+          payment.given_by = data.given_by || 'Owner';
+          payment.method = data.payment_method || 'cash';
+        }
+        upsertToLocalDb('payroll_payments', [payment]).catch(() => {});
+    } catch (bridgeErr) {
+      console.warn('[DataService] Payroll bridge warning:', bridgeErr);
+    }
+
     dataService.queueBackgroundSync();
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('farmlog-data-updated'));
@@ -1283,6 +1437,24 @@ export const dataService = {
     store.salarySettlements[index] = updated;
     dataService.logAudit('UPDATE_SALARY_SETTLEMENT', 'payroll', id, `Updated salary settlement ₹${updated.paid_amount} for ${updated.labourer_name} - Given by: ${updated.given_by}`);
     saveStore(store);
+
+    await upsertToLocalDb('salary_settlements', [updated]);
+
+    // Update payroll bridge
+    const line = store.payrollLines.find(l => l.labourer_id === updated.labourer_id && l.payroll_period_id?.includes(updated.start_date));
+    if (line) {
+      line.paid_amount = round2(updated.paid_amount);
+      upsertToLocalDb('payroll_lines', [line]).catch(() => {});
+      const p = (store.payrollPayments || []).find(pay => pay.payroll_line_id === line.id);
+      if (p) {
+        p.amount = round2(updated.paid_amount);
+        p.recorded_by = updated.given_by;
+        p.given_by = updated.given_by;
+        p.method = updated.payment_method || 'cash';
+        upsertToLocalDb('payroll_payments', [p]).catch(() => {});
+      }
+    }
+
     dataService.queueBackgroundSync();
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('farmlog-data-updated'));
@@ -1296,9 +1468,25 @@ export const dataService = {
     const existing = store.salarySettlements.find(s => s.id === id);
     if (!existing) return false;
 
+    addTombstone(id);
     store.salarySettlements = store.salarySettlements.filter(s => s.id !== id);
     dataService.logAudit('DELETE_SALARY_SETTLEMENT', 'payroll', id, `Reopened/deleted salary settlement for ${existing.labourer_name} (${existing.month}/${existing.year})`);
     saveStore(store);
+
+    await deleteFromLocalDb('salary_settlements', id);
+
+    // Revert payroll bridge: mark line unpaid and delete payment
+    const line = store.payrollLines.find(l => l.labourer_id === existing.labourer_id && l.payroll_period_id?.includes(existing.start_date));
+    if (line) {
+      line.paid_amount = 0;
+      upsertToLocalDb('payroll_lines', [line]).catch(() => {});
+      const p = (store.payrollPayments || []).find(pay => pay.payroll_line_id === line.id);
+      if (p) {
+        store.payrollPayments = (store.payrollPayments || []).filter(pay => pay.id !== p.id);
+        deleteFromLocalDb('payroll_payments', p.id).catch(() => {});
+      }
+    }
+
     dataService.queueBackgroundSync();
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('farmlog-data-updated'));

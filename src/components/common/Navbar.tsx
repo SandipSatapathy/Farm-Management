@@ -10,9 +10,7 @@ export const Navbar: React.FC = () => {
   const [showDbModal, setShowDbModal] = useState(false);
 
   useEffect(() => {
-    if (isLocalDbEnabled) {
-      checkLocalDbHealth().then(setDbHealth);
-    }
+    checkLocalDbHealth().then(setDbHealth);
   }, []);
 
   return (
@@ -86,23 +84,22 @@ export const Navbar: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setShowDbModal(true)}
-                  title={dbHealth?.connected ? `Connected to PostgreSQL (${dbHealth.database})` : dbHealth?.hint || dbHealth?.error}
                   style={{
-                    background: dbHealth?.connected ? '#eff6ff' : '#fef3c7',
-                    color: dbHealth?.connected ? '#1e40af' : '#92400e',
+                    background: '#eff6ff',
+                    color: '#1d4ed8',
                     fontSize: '0.68rem',
                     fontWeight: 800,
                     padding: '2px 8px',
                     borderRadius: 9999,
-                    border: `1px solid ${dbHealth?.connected ? '#bfdbfe' : '#fde68a'}`,
+                    border: '1px solid #bfdbfe',
                     display: 'inline-flex',
                     alignItems: 'center',
                     gap: 4,
                     cursor: 'pointer'
                   }}
                 >
-                  <Database size={11} color={dbHealth?.connected ? '#2563eb' : '#d97706'} />
-                  {dbHealth?.connected ? 'Postgres 18' : 'Postgres (Setup PW)'}
+                  <Database size={11} color="#2563eb" />
+                  Local Dev DB (PostgreSQL)
                 </button>
               ) : isSupabaseConfigured ? (
                 <button
@@ -123,7 +120,7 @@ export const Navbar: React.FC = () => {
                   }}
                 >
                   <Database size={11} color="#16a34a" />
-                  Supabase
+                  Supabase Cloud (Live)
                 </button>
               ) : null}
             </div>
@@ -165,8 +162,8 @@ export const Navbar: React.FC = () => {
             >
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <div style={{ width: 36, height: 36, borderRadius: 10, background: '#dcfce7', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <Database size={20} color="#15803d" />
+                  <div style={{ width: 36, height: 36, borderRadius: 10, background: isLocalDbEnabled ? '#dbeafe' : '#dcfce7', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <Database size={20} color={isLocalDbEnabled ? '#1d4ed8' : '#15803d'} />
                   </div>
                   <div>
                     <h3 style={{ margin: 0, fontSize: '1.1rem', color: '#0f172a' }}>Database Diagnostics</h3>
@@ -182,31 +179,27 @@ export const Navbar: React.FC = () => {
                 </button>
               </div>
 
-              <div style={{ background: '#f8fafc', borderRadius: 14, padding: 14, marginBottom: 14, border: '1px solid #e2e8f0' }}>
-                <div style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: 2 }}>CONNECTED BACKEND</div>
-                <div style={{ fontSize: '1rem', fontWeight: 800, color: '#15803d' }}>
-                  {isLocalDbEnabled ? '🐘 Local PostgreSQL 18' : '⚡ Supabase Cloud (PostgreSQL)'}
+              <div style={{ background: isLocalDbEnabled ? '#eff6ff' : '#f8fafc', borderRadius: 14, padding: 14, marginBottom: 14, border: isLocalDbEnabled ? '1px solid #bfdbfe' : '1px solid #e2e8f0' }}>
+                <div style={{ fontSize: '0.8rem', color: isLocalDbEnabled ? '#1e40af' : '#64748b', marginBottom: 2, fontWeight: 700 }}>
+                  {isLocalDbEnabled ? 'LOCAL DEVELOPMENT DATABASE' : 'CONNECTED BACKEND'}
+                </div>
+                <div style={{ fontSize: '1rem', fontWeight: 800, color: isLocalDbEnabled ? '#1d4ed8' : '#15803d' }}>
+                  {isLocalDbEnabled ? '💻 Local PostgreSQL (farmlog_dev)' : '⚡ Supabase Cloud Server (PostgreSQL)'}
                 </div>
                 <div style={{ fontSize: '0.78rem', color: '#475569', marginTop: 4 }}>
-                  {isLocalDbEnabled 
-                    ? `Host: localhost:5432 • Database: ${dbHealth?.database || 'farmlog_dev'}`
-                    : `URL: ${import.meta.env.VITE_SUPABASE_URL?.replace(/^https?:\/\//, '') || 'Supabase Cloud'}`}
+                  {isLocalDbEnabled ? 'Host: localhost:5432 | DB: farmlog_dev' : `URL: ${import.meta.env.VITE_SUPABASE_URL?.replace(/^https?:\/\//, '') || 'Supabase Cloud'}`}
                 </div>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 16 }}>
-                <div style={{ background: '#f0fdf4', padding: 10, borderRadius: 10, border: '1px solid #bbf7d0' }}>
-                  <div style={{ fontSize: '0.72rem', color: '#15803d', fontWeight: 700 }}>CLOUD SYNC</div>
-                  <div style={{ fontSize: '0.9rem', fontWeight: 800, color: '#166534' }}>Active & Live</div>
+              <div style={{ background: isLocalDbEnabled ? '#f8fafc' : '#f0fdf4', padding: 14, borderRadius: 12, border: isLocalDbEnabled ? '1px solid #e2e8f0' : '1px solid #bbf7d0', marginBottom: 18 }}>
+                <div style={{ fontSize: '0.75rem', color: isLocalDbEnabled ? '#475569' : '#15803d', fontWeight: 800 }}>
+                  {isLocalDbEnabled ? 'DEVELOPER TESTING ISOLATION' : 'LIVE SERVER DATABASE'}
                 </div>
-                <div style={{ background: '#f0f9ff', padding: 10, borderRadius: 10, border: '1px solid #bae6fd' }}>
-                  <div style={{ fontSize: '0.72rem', color: '#0369a1', fontWeight: 700 }}>OFFLINE READY</div>
-                  <div style={{ fontSize: '0.9rem', fontWeight: 800, color: '#075985' }}>Device Storage</div>
+                <div style={{ fontSize: '0.85rem', color: isLocalDbEnabled ? '#334155' : '#166534', marginTop: 4, lineHeight: 1.4 }}>
+                  {isLocalDbEnabled
+                    ? 'All testing records, dummy workers, attendance, and settlements are safely saved only to your local PC PostgreSQL database (farmlog_dev). Live Supabase production data is protected and never contaminated.'
+                    : 'All labour shifts, advances, payouts, and tractor khata records are read and written directly to your central Supabase Cloud Server in real-time across all phones and web.'}
                 </div>
-              </div>
-
-              <div style={{ fontSize: '0.82rem', color: '#475569', lineHeight: 1.4, marginBottom: 18 }}>
-                Your mobile app automatically saves all records offline to your device, and synchronizes with your <strong>Supabase Cloud Database</strong> whenever connected.
               </div>
 
               <button
@@ -214,7 +207,7 @@ export const Navbar: React.FC = () => {
                 onClick={() => setShowDbModal(false)}
                 style={{
                   width: '100%',
-                  background: 'linear-gradient(135deg, #16a34a, #15803d)',
+                  background: isLocalDbEnabled ? 'linear-gradient(135deg, #2563eb, #1d4ed8)' : 'linear-gradient(135deg, #16a34a, #15803d)',
                   color: '#ffffff',
                   border: 'none',
                   borderRadius: 12,
