@@ -988,8 +988,6 @@ export const SimpleFarmViewPage: React.FC = () => {
     const dailyRate = lab.base_rate;
     const grossWage = summary.grossEarned;
     const advanceDue = advanceInfo.outstanding;
-    const advanceDeducted = round2(Math.min(advanceDue, grossWage));
-    const calculatedNet = round2(Math.max(0, grossWage - advanceDeducted));
 
     // Match all overlapping settlements for this worker within effectiveSalaryStartDate to effectiveSalaryEndDate
     const labSettlements = salarySettlements.filter((s) => {
@@ -1005,71 +1003,71 @@ export const SimpleFarmViewPage: React.FC = () => {
       return overlapsByDate || overlapsByMonth;
     });
 
-    // 1. Exact match settlement for this active period
-    const exactSettlement = labSettlements.find((s) => {
-      if (salaryPeriodType === 'monthly') {
-        return (s.period_type === 'monthly' && s.year === salaryYear && s.month === salaryMonth) ||
-               (!s.period_type && s.year === salaryYear && s.month === salaryMonth) ||
-               (s.start_date === effectiveSalaryStartDate && s.end_date === effectiveSalaryEndDate);
-      } else if (salaryPeriodType === 'weekly') {
-        return s.period_type === 'weekly' && s.start_date === effectiveSalaryStartDate && s.end_date === effectiveSalaryEndDate;
-      } else {
-        return s.start_date === effectiveSalaryStartDate && s.end_date === effectiveSalaryEndDate;
-      }
-    });
+    // 1. Total disbursed in cash/UPI across all settlements for this worker in this period
+    const alreadyPaid = round2(labSettlements.reduce((sum, s) => sum + (Number(s.paid_amount) || 0), 0));
 
-    // 2. Parent settlement covering this sub-period (e.g. whole month was paid, now viewing weekly)
-    const parentPeriodSettlement = !exactSettlement ? labSettlements.find((s) => {
+    // 2. Advance deduction:
+    const advanceDeductedFromSettlements = round2(labSettlements.reduce((sum, s) => sum + (Number(s.advance_deducted) || 0), 0));
+    
+    // If settlements exist, they have already deducted advanceDeductedFromSettlements.
+    // Any remaining gross wage can deduct up to the remaining advance balance.
+    const eligibleAdditionalAdvance = round2(Math.min(advanceDue, Math.max(0, grossWage - advanceDeductedFromSettlements - alreadyPaid)));
+    const advanceDeducted = round2(advanceDeductedFromSettlements + (labSettlements.length === 0 ? Math.min(advanceDue, grossWage) : eligibleAdditionalAdvance));
+
+    // 3. Calculated Net take-home after advance:
+    const calculatedNet = round2(Math.max(0, grossWage - advanceDeducted));
+
+    // 4. Remaining cash take-home due:
+    const remainingNet = round2(Math.max(0, calculatedNet - alreadyPaid));
+
+    // Parent settlement check (e.g. whole month was paid, now viewing weekly)
+    const parentPeriodSettlement = labSettlements.find((s) => {
       const sStart = s.start_date || `${s.year}-${String(s.month).padStart(2, '0')}-01`;
       const sEnd = s.end_date || `${s.year}-${String(s.month).padStart(2, '0')}-31`;
       return (s.period_type === 'monthly' && salaryPeriodType !== 'monthly' && sStart <= effectiveSalaryStartDate && sEnd >= effectiveSalaryEndDate) ||
              (s.period_type === 'monthly' && salaryPeriodType === 'weekly' && s.year === salaryYear && s.month === salaryMonth);
-    }) : undefined;
-
-    // 3. Sub-period settlements (e.g. weekly payouts inside a monthly view)
-    const subPeriodSettlements = labSettlements.filter((s) => {
-      if (exactSettlement && s.id === exactSettlement.id) return false;
-      if (parentPeriodSettlement && s.id === parentPeriodSettlement.id) return false;
-      return true;
     });
 
-    const totalSubPeriodPaid = round2(subPeriodSettlements.reduce((sum, s) => sum + (Number(s.paid_amount) || 0), 0));
-    const totalSubPeriodDays = round2(subPeriodSettlements.reduce((sum, s) => sum + (Number(s.days_worked) || 0), 0));
+    // Sub-period settlements (e.g. weekly payouts inside monthly view)
+    const subPeriodSettlements = labSettlements.filter(s => s.period_type === 'weekly' || (s.start_date && s.end_date && (s.start_date !== effectiveSalaryStartDate || s.end_date !== effectiveSalaryEndDate)));
 
     let isSettled = false;
     let isPartiallyPaid = false;
-    let alreadyPaid = 0;
-    let remainingNet = calculatedNet;
     let settlementType: 'exact' | 'parent' | 'subperiods' | 'partial' | 'unpaid' = 'unpaid';
     let statusLabel = 'Unpaid';
-    const activeSettlement = exactSettlement || parentPeriodSettlement || (subPeriodSettlements.length === 1 ? subPeriodSettlements[0] : undefined);
 
-    if (exactSettlement) {
+    if (parentPeriodSettlement && remainingNet <= 0) {
       isSettled = true;
-      alreadyPaid = exactSettlement.paid_amount;
-      remainingNet = 0;
-      settlementType = 'exact';
-      statusLabel = `✓ Paid ₹${exactSettlement.paid_amount.toLocaleString('en-IN')}`;
-    } else if (parentPeriodSettlement) {
-      isSettled = true;
-      alreadyPaid = calculatedNet;
-      remainingNet = 0;
       settlementType = 'parent';
       statusLabel = `✓ Paid (Covered by Monthly Payout)`;
-    } else if (totalSubPeriodPaid > 0) {
-      alreadyPaid = totalSubPeriodPaid;
-      remainingNet = round2(Math.max(0, calculatedNet - totalSubPeriodPaid));
-
-      if (remainingNet <= 0 || (daysWorked > 0 && totalSubPeriodDays >= daysWorked)) {
-        isSettled = true;
-        settlementType = 'subperiods';
-        statusLabel = `✓ Paid via ${subPeriodSettlements.length} Weekly Payout${subPeriodSettlements.length > 1 ? 's' : ''} (₹${totalSubPeriodPaid.toLocaleString('en-IN')})`;
+    } else if (daysWorked > 0 && remainingNet <= 0 && (alreadyPaid > 0 || advanceDeducted >= grossWage)) {
+      isSettled = true;
+      if (alreadyPaid > 0) {
+        if (labSettlements.length === 1) {
+          settlementType = 'exact';
+          statusLabel = `✓ Paid ₹${alreadyPaid.toLocaleString('en-IN')}`;
+        } else {
+          settlementType = 'subperiods';
+          statusLabel = `✓ Paid via ${labSettlements.length} Payouts (₹${alreadyPaid.toLocaleString('en-IN')})`;
+        }
       } else {
-        isPartiallyPaid = true;
-        settlementType = 'partial';
-        statusLabel = `⏳ ₹${totalSubPeriodPaid.toLocaleString('en-IN')} Paid (${subPeriodSettlements.length} Payout${subPeriodSettlements.length > 1 ? 's' : ''}) • ₹${remainingNet.toLocaleString('en-IN')} Due`;
+        settlementType = 'exact';
+        statusLabel = `✓ Settled via Advance (₹${advanceDeducted.toLocaleString('en-IN')})`;
       }
+    } else if (alreadyPaid > 0 && remainingNet > 0) {
+      isPartiallyPaid = true;
+      settlementType = 'partial';
+      statusLabel = `⏳ ₹${alreadyPaid.toLocaleString('en-IN')} Paid (${labSettlements.length} Payout${labSettlements.length > 1 ? 's' : ''}) • ₹${remainingNet.toLocaleString('en-IN')} Due`;
+    } else if (daysWorked > 0 && calculatedNet === 0 && advanceDeducted >= grossWage && labSettlements.length === 0) {
+      isSettled = false;
+      isPartiallyPaid = false;
+      settlementType = 'unpaid';
+      statusLabel = `Advance Covered (₹${advanceDeducted.toLocaleString('en-IN')})`;
+    } else if (daysWorked === 0) {
+      statusLabel = 'No Shifts';
     }
+
+    const activeSettlement = labSettlements.length > 0 ? labSettlements[labSettlements.length - 1] : undefined;
 
     return {
       labourer: lab,
@@ -1081,13 +1079,14 @@ export const SimpleFarmViewPage: React.FC = () => {
       calculatedNet,
       alreadyPaid,
       remainingNet,
-      netTakeHome: isSettled ? (exactSettlement ? exactSettlement.paid_amount : alreadyPaid || calculatedNet) : remainingNet,
+      netTakeHome: isSettled ? (alreadyPaid > 0 ? alreadyPaid : calculatedNet) : remainingNet,
       isSettled,
       isPartiallyPaid,
       settlementType,
       statusLabel,
       settlement: activeSettlement,
-      subPeriodSettlements,
+      labSettlements,
+      subPeriodSettlements: subPeriodSettlements.length > 0 ? subPeriodSettlements : labSettlements,
       presentDays: summary.presentDays,
       halfDays: summary.halfDays
     };
@@ -1097,7 +1096,7 @@ export const SimpleFarmViewPage: React.FC = () => {
   const totalGrossWages = round2(salaryRows.reduce((sum, r) => sum + r.grossWage, 0));
   const totalAdvancesDeducted = round2(salaryRows.reduce((sum, r) => sum + r.advanceDeducted, 0));
   const totalAlreadyPaid = round2(salaryRows.reduce((sum, r) => sum + r.alreadyPaid, 0));
-  const totalRemainingDue = round2(salaryRows.reduce((sum, r) => sum + (r.isSettled ? 0 : r.remainingNet), 0));
+  const totalRemainingDue = round2(salaryRows.reduce((sum, r) => sum + r.remainingNet, 0));
   const totalNetTakeHome = totalRemainingDue;
 
   // Salary History Calculations & Filtering
@@ -3939,7 +3938,25 @@ export const SimpleFarmViewPage: React.FC = () => {
                       </tr>
                     ) : (
                       salaryRows.map((row) => {
-                        const { labourer: lab, dailyRate, daysWorked, grossWage, advanceDue, netTakeHome, remainingNet, alreadyPaid, isSettled, isPartiallyPaid, settlementType, statusLabel, settlement, subPeriodSettlements } = row;
+                        const {
+                          labourer: lab,
+                          dailyRate,
+                          daysWorked,
+                          grossWage,
+                          advanceDue,
+                          advanceDeducted,
+                          calculatedNet,
+                          netTakeHome,
+                          remainingNet,
+                          alreadyPaid,
+                          isSettled,
+                          isPartiallyPaid,
+                          settlementType,
+                          statusLabel,
+                          settlement,
+                          labSettlements,
+                          subPeriodSettlements
+                        } = row;
 
                         return (
                           <tr key={lab.id} className="ledger-tr" style={{ opacity: lab.is_active ? 1 : 0.85 }}>
@@ -4015,17 +4032,28 @@ export const SimpleFarmViewPage: React.FC = () => {
                                 <span style={{ fontSize: '1.05rem', fontWeight: 900, color: '#15803d', fontFamily: 'Outfit, Plus Jakarta Sans, sans-serif' }}>
                                   ₹0 (Paid)
                                 </span>
-                              ) : (
+                              ) : isPartiallyPaid ? (
                                 <div>
-                                  <span style={{ fontSize: '1.18rem', fontWeight: 900, color: isPartiallyPaid ? '#b45309' : '#15803d', fontFamily: 'Outfit, Plus Jakarta Sans, sans-serif' }}>
+                                  <span style={{ fontSize: '1.18rem', fontWeight: 900, color: '#b45309', fontFamily: 'Outfit, Plus Jakarta Sans, sans-serif' }}>
                                     ₹{remainingNet.toLocaleString('en-IN')}
                                   </span>
-                                  {isPartiallyPaid && (
-                                    <div style={{ fontSize: '0.7rem', color: '#b45309', fontWeight: 700 }}>
-                                      Remaining Due
-                                    </div>
-                                  )}
+                                  <div style={{ fontSize: '0.7rem', color: '#b45309', fontWeight: 700 }}>
+                                    Remaining Due
+                                  </div>
                                 </div>
+                              ) : (advanceDeducted >= grossWage && grossWage > 0) ? (
+                                <div>
+                                  <span style={{ fontSize: '1.05rem', fontWeight: 900, color: '#15803d', fontFamily: 'Outfit, Plus Jakarta Sans, sans-serif' }}>
+                                    ₹0
+                                  </span>
+                                  <div style={{ fontSize: '0.7rem', color: '#b45309', fontWeight: 700 }}>
+                                    (₹{advanceDeducted.toLocaleString('en-IN')} Adv Deducted)
+                                  </div>
+                                </div>
+                              ) : (
+                                <span style={{ fontSize: '1.18rem', fontWeight: 900, color: '#15803d', fontFamily: 'Outfit, Plus Jakarta Sans, sans-serif' }}>
+                                  ₹{remainingNet.toLocaleString('en-IN')}
+                                </span>
                               )}
                             </td>
                             <td className="ledger-td">
@@ -4042,9 +4070,9 @@ export const SimpleFarmViewPage: React.FC = () => {
                                   border: '1px solid #86efac',
                                   fontSize: '0.78rem'
                                 }}>
-                                  👤 {settlement?.given_by || salaryGivenBy || currentUser?.name || 'Owner'}
+                                  👤 {Array.from(new Set((labSettlements || []).map((s: SalarySettlement) => s.given_by).filter((g): g is string => Boolean(g)))).join(', ') || settlement?.given_by || salaryGivenBy || currentUser?.name || 'Owner'}
                                 </span>
-                              ) : isPartiallyPaid && subPeriodSettlements && subPeriodSettlements.length > 0 ? (
+                              ) : isPartiallyPaid && labSettlements && labSettlements.length > 0 ? (
                                 <span style={{
                                   display: 'inline-flex',
                                   alignItems: 'center',
@@ -4057,7 +4085,7 @@ export const SimpleFarmViewPage: React.FC = () => {
                                   border: '1px solid #bfdbfe',
                                   fontSize: '0.75rem'
                                 }}>
-                                  👤 {subPeriodSettlements[0].given_by || 'Paid'}
+                                  👤 {Array.from(new Set(labSettlements.map((s: SalarySettlement) => s.given_by).filter((g): g is string => Boolean(g)))).join(', ') || 'Paid'} (Prior)
                                 </span>
                               ) : (
                                 <span style={{ color: '#94a3b8', fontSize: '0.8rem' }}>—</span>
@@ -4080,45 +4108,30 @@ export const SimpleFarmViewPage: React.FC = () => {
                                   }}>
                                     {statusLabel}
                                   </span>
-                                  {settlement && settlementType === 'exact' && (
-                                    <>
+                                  {labSettlements && labSettlements.length > 0 && labSettlements.map((s: SalarySettlement) => (
+                                    <div key={s.id} style={{ display: 'inline-flex', gap: 4 }}>
                                       <button
                                         type="button"
-                                        onClick={() => handleOpenEditSalary(settlement)}
+                                        onClick={() => handleOpenEditSalary(s)}
                                         className="ledger-action-btn ledger-action-btn-secondary"
                                         style={{ padding: '5px 8px', display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: '0.75rem' }}
-                                        title="Edit Salary Settlement (Amount, Given By, Date)"
+                                        title={`Edit Salary Settlement of ₹${s.paid_amount} (${s.payment_date || ''})`}
                                       >
                                         <Edit2 size={12} />
-                                        <span>Edit</span>
+                                        {labSettlements.length > 1 && <span>₹{s.paid_amount}</span>}
+                                        {labSettlements.length === 1 && <span>Edit</span>}
                                       </button>
                                       <button
                                         type="button"
-                                        onClick={() => handleDeleteSalarySettlement(settlement.id)}
+                                        onClick={() => handleDeleteSalarySettlement(s.id)}
                                         className="ledger-action-btn ledger-action-btn-danger"
                                         style={{ padding: '5px 7px' }}
-                                        title="Revert to Unpaid"
+                                        title={`Revert payout of ₹${s.paid_amount} to Unpaid`}
                                       >
                                         <RotateCcw size={12} />
                                       </button>
-                                    </>
-                                  )}
-                                  {subPeriodSettlements && subPeriodSettlements.length > 0 && settlementType === 'subperiods' && (
-                                    <div style={{ display: 'flex', gap: 4 }}>
-                                      {subPeriodSettlements.map((s: SalarySettlement) => (
-                                        <button
-                                          key={s.id}
-                                          type="button"
-                                          onClick={() => handleDeleteSalarySettlement(s.id)}
-                                          className="ledger-action-btn ledger-action-btn-danger"
-                                          style={{ padding: '3px 6px', fontSize: '0.68rem' }}
-                                          title={`Revert weekly payout of ₹${s.paid_amount} (${s.start_date || ''})`}
-                                        >
-                                          Revert ₹{s.paid_amount}
-                                        </button>
-                                      ))}
                                     </div>
-                                  )}
+                                  ))}
                                 </div>
                               ) : isPartiallyPaid ? (
                                 <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
@@ -4130,17 +4143,27 @@ export const SimpleFarmViewPage: React.FC = () => {
                                   >
                                     Pay Remaining (₹{remainingNet.toLocaleString('en-IN')})
                                   </button>
-                                  {subPeriodSettlements && subPeriodSettlements.map((s: SalarySettlement) => (
-                                    <button
-                                      key={s.id}
-                                      type="button"
-                                      onClick={() => handleDeleteSalarySettlement(s.id)}
-                                      className="ledger-action-btn ledger-action-btn-danger"
-                                      style={{ padding: '4px 6px', fontSize: '0.7rem' }}
-                                      title={`Revert weekly payout of ₹${s.paid_amount}`}
-                                    >
-                                      Revert ₹{s.paid_amount}
-                                    </button>
+                                  {labSettlements && labSettlements.map((s: SalarySettlement) => (
+                                    <div key={s.id} style={{ display: 'inline-flex', gap: 3 }}>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleOpenEditSalary(s)}
+                                        className="ledger-action-btn ledger-action-btn-secondary"
+                                        style={{ padding: '4px 6px', fontSize: '0.7rem' }}
+                                        title={`Edit prior payout of ₹${s.paid_amount} by ${s.given_by}`}
+                                      >
+                                        <Edit2 size={11} />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleDeleteSalarySettlement(s.id)}
+                                        className="ledger-action-btn ledger-action-btn-danger"
+                                        style={{ padding: '4px 6px', fontSize: '0.7rem' }}
+                                        title={`Revert prior payout of ₹${s.paid_amount}`}
+                                      >
+                                        Revert ₹{s.paid_amount}
+                                      </button>
+                                    </div>
                                   ))}
                                 </div>
                               ) : (
@@ -4149,9 +4172,16 @@ export const SimpleFarmViewPage: React.FC = () => {
                                     type="button"
                                     onClick={() => handleOpenSettleModal(row)}
                                     className="ledger-action-btn ledger-action-btn-primary"
-                                    style={{ padding: '6px 14px', fontSize: '0.8rem' }}
+                                    style={{
+                                      padding: '6px 14px',
+                                      fontSize: '0.8rem',
+                                      background: (advanceDeducted >= grossWage && grossWage > 0) ? '#0284c7' : undefined,
+                                      borderColor: (advanceDeducted >= grossWage && grossWage > 0) ? '#0369a1' : undefined
+                                    }}
                                   >
-                                    Pay Cash / UPI
+                                    {advanceDeducted >= grossWage && grossWage > 0
+                                      ? `Settle Adv (₹${advanceDeducted.toLocaleString('en-IN')})`
+                                      : 'Pay Cash / UPI'}
                                   </button>
                                   <button
                                     type="button"
@@ -4201,6 +4231,7 @@ export const SimpleFarmViewPage: React.FC = () => {
                     settlementType,
                     statusLabel,
                     settlement,
+                    labSettlements,
                     subPeriodSettlements
                   } = row;
                   const pastSettlement = salarySettlements.find((s) => s.labourer_id === lab.id);
@@ -4240,11 +4271,16 @@ export const SimpleFarmViewPage: React.FC = () => {
 
                         <div style={{ textAlign: 'right' }}>
                           <div style={{ fontSize: '0.68rem', color: isSettled ? '#15803d' : (isPartiallyPaid ? '#b45309' : '#64748b'), textTransform: 'uppercase', fontWeight: 800 }}>
-                            {isSettled ? 'Remaining Due' : (isPartiallyPaid ? 'Remaining Due' : 'Net Take-Home')}
+                            {isSettled ? 'Remaining Due' : (isPartiallyPaid ? 'Remaining Due' : (advanceDeducted >= grossWage && grossWage > 0 ? 'Advance Covered' : 'Net Take-Home'))}
                           </div>
                           <div style={{ fontSize: '1.25rem', fontWeight: 900, color: isSettled ? '#15803d' : (isPartiallyPaid ? '#d97706' : '#15803d'), fontFamily: 'Outfit, sans-serif' }}>
-                            ₹{isSettled ? '0' : (isPartiallyPaid ? remainingNet.toLocaleString('en-IN') : calculatedNet.toLocaleString('en-IN'))}
+                            ₹{isSettled ? '0' : (isPartiallyPaid ? remainingNet.toLocaleString('en-IN') : (advanceDeducted >= grossWage && grossWage > 0 ? '0' : remainingNet.toLocaleString('en-IN')))}
                           </div>
+                          {advanceDeducted >= grossWage && grossWage > 0 && !isSettled && (
+                            <div style={{ fontSize: '0.68rem', color: '#b45309', fontWeight: 700 }}>
+                              ₹{advanceDeducted.toLocaleString('en-IN')} Adv Ded
+                            </div>
+                          )}
                         </div>
                       </div>
 
@@ -4256,7 +4292,7 @@ export const SimpleFarmViewPage: React.FC = () => {
                         </div>
                         {(isSettled || isPartiallyPaid) && (
                           <div style={{ fontSize: '0.74rem', color: '#15803d', fontWeight: 800 }}>
-                            Given By: <strong>👤 {settlement?.given_by || (subPeriodSettlements && subPeriodSettlements[0]?.given_by) || salaryGivenBy || 'Owner'}</strong>
+                            Given By: <strong>👤 {Array.from(new Set((labSettlements || []).map((s: SalarySettlement) => s.given_by).filter((g): g is string => Boolean(g)))).join(', ') || settlement?.given_by || salaryGivenBy || 'Owner'}</strong>
                           </div>
                         )}
                       </div>
@@ -4279,11 +4315,11 @@ export const SimpleFarmViewPage: React.FC = () => {
                           }}>
                             <CheckCircle2 size={16} /> {statusLabel}
                           </div>
-                          {settlement && settlementType === 'exact' && (
-                            <>
+                          {labSettlements && labSettlements.length > 0 && labSettlements.map((s: SalarySettlement) => (
+                            <div key={s.id} style={{ display: 'flex', gap: 6, flex: 1 }}>
                               <button
                                 type="button"
-                                onClick={() => handleOpenEditSalary(settlement)}
+                                onClick={() => handleOpenEditSalary(s)}
                                 style={{
                                   flex: 1,
                                   padding: '10px 14px',
@@ -4302,11 +4338,11 @@ export const SimpleFarmViewPage: React.FC = () => {
                                 }}
                               >
                                 <Edit2 size={15} />
-                                <span>Edit Payout</span>
+                                <span>Edit {labSettlements.length > 1 ? `₹${s.paid_amount}` : 'Payout'}</span>
                               </button>
                               <button
                                 type="button"
-                                onClick={() => handleDeleteSalarySettlement(settlement.id)}
+                                onClick={() => handleDeleteSalarySettlement(s.id)}
                                 style={{
                                   padding: '10px 14px',
                                   borderRadius: 10,
@@ -4325,27 +4361,8 @@ export const SimpleFarmViewPage: React.FC = () => {
                                 <RotateCcw size={14} />
                                 <span>Revert</span>
                               </button>
-                            </>
-                          )}
-                          {subPeriodSettlements && subPeriodSettlements.length > 0 && settlementType === 'subperiods' && (
-                            <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 6, marginTop: 4 }}>
-                              <div style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 700 }}>Individual Weekly Payouts:</div>
-                              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                                {subPeriodSettlements.map((s: SalarySettlement) => (
-                                  <button
-                                    key={s.id}
-                                    type="button"
-                                    onClick={() => handleDeleteSalarySettlement(s.id)}
-                                    className="ledger-action-btn ledger-action-btn-danger"
-                                    style={{ padding: '4px 8px', fontSize: '0.72rem' }}
-                                    title={`Revert weekly payout of ₹${s.paid_amount} (${s.start_date || ''})`}
-                                  >
-                                    Revert ₹{s.paid_amount}
-                                  </button>
-                                ))}
-                              </div>
                             </div>
-                          )}
+                          ))}
                           <button
                             type="button"
                             onClick={() => handleOpenEditLabourer(lab)}
@@ -4378,23 +4395,33 @@ export const SimpleFarmViewPage: React.FC = () => {
                           >
                             Pay Remaining Balance (₹{remainingNet.toLocaleString('en-IN')})
                           </button>
-                          {subPeriodSettlements && subPeriodSettlements.length > 0 && (
+                          {labSettlements && labSettlements.length > 0 && (
                             <div style={{ background: '#fffbeb', border: '1px solid #fef3c7', padding: '8px 10px', borderRadius: 10 }}>
                               <div style={{ fontSize: '0.72rem', color: '#92400e', fontWeight: 800, marginBottom: 4 }}>
-                                Prior Weekly Payouts (₹{alreadyPaid.toLocaleString('en-IN')} paid):
+                                Prior Payouts (₹{alreadyPaid.toLocaleString('en-IN')} paid):
                               </div>
                               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                                {subPeriodSettlements.map((s: SalarySettlement) => (
-                                  <button
-                                    key={s.id}
-                                    type="button"
-                                    onClick={() => handleDeleteSalarySettlement(s.id)}
-                                    className="ledger-action-btn ledger-action-btn-danger"
-                                    style={{ padding: '4px 8px', fontSize: '0.72rem' }}
-                                    title={`Revert weekly payout of ₹${s.paid_amount}`}
-                                  >
-                                    Revert ₹{s.paid_amount}
-                                  </button>
+                                {labSettlements.map((s: SalarySettlement) => (
+                                  <div key={s.id} style={{ display: 'inline-flex', gap: 4 }}>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleOpenEditSalary(s)}
+                                      className="ledger-action-btn ledger-action-btn-secondary"
+                                      style={{ padding: '4px 6px', fontSize: '0.72rem' }}
+                                      title="Edit payout"
+                                    >
+                                      <Edit2 size={11} />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDeleteSalarySettlement(s.id)}
+                                      className="ledger-action-btn ledger-action-btn-danger"
+                                      style={{ padding: '4px 8px', fontSize: '0.72rem' }}
+                                      title={`Revert payout of ₹${s.paid_amount}`}
+                                    >
+                                      Revert ₹{s.paid_amount}
+                                    </button>
+                                  </div>
                                 ))}
                               </div>
                             </div>
@@ -4430,9 +4457,19 @@ export const SimpleFarmViewPage: React.FC = () => {
                             type="button"
                             onClick={() => handleOpenSettleModal(row)}
                             className="ledger-action-btn ledger-action-btn-primary"
-                            style={{ width: '100%', padding: '11px', fontSize: '0.88rem', borderRadius: 12, fontWeight: 800 }}
+                            style={{
+                              width: '100%',
+                              padding: '11px',
+                              fontSize: '0.88rem',
+                              borderRadius: 12,
+                              fontWeight: 800,
+                              background: (advanceDeducted >= grossWage && grossWage > 0) ? '#0284c7' : undefined,
+                              borderColor: (advanceDeducted >= grossWage && grossWage > 0) ? '#0369a1' : undefined
+                            }}
                           >
-                            Pay Cash / UPI (₹{netTakeHome.toLocaleString('en-IN')})
+                            {advanceDeducted >= grossWage && grossWage > 0
+                              ? `Settle from Advance (₹${advanceDeducted.toLocaleString('en-IN')})`
+                              : `Pay Cash / UPI (₹${remainingNet.toLocaleString('en-IN')})`}
                           </button>
                           <div style={{ display: 'flex', gap: 8 }}>
                             <button
@@ -6930,7 +6967,9 @@ export const SimpleFarmViewPage: React.FC = () => {
                   className="ledger-action-btn ledger-action-btn-primary"
                   style={{ padding: '8px 20px' }}
                 >
-                  Confirm Payout (₹{settleAmount.toLocaleString('en-IN')})
+                  {settleAmount > 0
+                    ? `Confirm Payout (₹${settleAmount.toLocaleString('en-IN')})`
+                    : `Confirm Advance Deduction (₹${settleAdvanceDeduct.toLocaleString('en-IN')})`}
                 </button>
               </div>
             </form>

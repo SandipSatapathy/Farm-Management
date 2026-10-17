@@ -1217,18 +1217,9 @@ export const dataService = {
     const startDate = data.start_date || `${monthPrefix}-01`;
     const endDate = data.end_date || `${monthPrefix}-${String(daysInM).padStart(2, '0')}`;
 
-    const existingIndex = store.salarySettlements.findIndex(s => {
-      if (s.labourer_id !== data.labourer_id) return false;
-      const existingPeriod = s.period_type || 'monthly';
-      if (pType !== existingPeriod) return false;
-      if (pType === 'weekly' || pType === 'custom') {
-        return s.start_date === startDate && s.end_date === endDate;
-      }
-      return s.year === data.year && s.month === data.month;
-    });
-
+    const settlementId = genId();
     const settlement: SalarySettlement = {
-      id: existingIndex >= 0 ? store.salarySettlements[existingIndex].id : genId(),
+      id: settlementId,
       farm_id: store.farm.id,
       labourer_id: data.labourer_id,
       labourer_name: labName,
@@ -1251,14 +1242,39 @@ export const dataService = {
       payment_reference: data.payment_reference || '',
       notes: data.notes || '',
       status: 'settled',
-      created_at: existingIndex >= 0 ? store.salarySettlements[existingIndex].created_at : new Date().toISOString(),
+      created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     };
 
-    if (existingIndex >= 0) {
-      store.salarySettlements[existingIndex] = settlement;
-    } else {
-      store.salarySettlements.push(settlement);
+    store.salarySettlements.push(settlement);
+
+    // If advance was deducted, record allocation against outstanding posted advances
+    if (data.advance_deducted > 0) {
+      if (!store.allocations) store.allocations = [];
+      let remainingToDeduct = round2(data.advance_deducted);
+      const postedAdvances = (store.advances || []).filter(a => a.labourer_id === data.labourer_id && a.status === 'posted');
+      for (const adv of postedAdvances) {
+        if (remainingToDeduct <= 0) break;
+        const advAllocs = (store.allocations || []).filter(al => al.advance_id === adv.id);
+        const alreadyRecovered = advAllocs.reduce((sum, al) => sum + al.amount, 0);
+        const unrecovered = round2(adv.amount - alreadyRecovered);
+        if (unrecovered > 0) {
+          const allocAmount = round2(Math.min(remainingToDeduct, unrecovered));
+          const alloc: AdvanceAllocation = {
+            id: genId(),
+            farm_id: store.farm.id,
+            advance_id: adv.id,
+            allocation_date: data.payment_date || new Date().toISOString().split('T')[0],
+            amount: allocAmount,
+            allocation_type: 'payroll_recovery',
+            notes: `Auto-deducted via Salary Settlement (${pType} ${startDate} - ${endDate}) [settlement:${settlement.id}]`,
+            created_at: new Date().toISOString()
+          };
+          store.allocations.push(alloc);
+          upsertToLocalDb('advance_allocations', [alloc]).catch(() => {});
+          remainingToDeduct = round2(remainingToDeduct - allocAmount);
+        }
+      }
     }
 
     const labelPeriod = pType === 'weekly'
@@ -1441,8 +1457,15 @@ export const dataService = {
     if (!existing) return false;
 
     addTombstone(id);
-    store.salarySettlements = store.salarySettlements.filter(s => s.id !== id);
-    dataService.logAudit('DELETE_SALARY_SETTLEMENT', 'payroll', id, `Reopened/deleted salary settlement for ${existing.labourer_name} (${existing.month}/${existing.year})`);
+    // Revert any advance allocations created by this settlement
+    const linkedAllocs = (store.allocations || []).filter(al => al.notes?.includes(id));
+    if (linkedAllocs.length > 0) {
+      store.allocations = store.allocations.filter(al => !al.notes?.includes(id));
+      for (const al of linkedAllocs) {
+        deleteFromLocalDb('advance_allocations', al.id).catch(() => {});
+      }
+    }
+
     saveStore(store);
 
     await deleteFromLocalDb('salary_settlements', id);
