@@ -371,7 +371,7 @@ export const UserSettingsPage: React.FC<UserSettingsPageProps> = ({ onClose, com
                   <Database size={12} /> STORAGE
                 </div>
                 <div style={{ fontSize: '0.86rem', fontWeight: 800, color: '#166534', marginTop: 2 }}>
-                  Cloud + Offline
+                  Supabase Cloud (Live)
                 </div>
               </div>
             </div>

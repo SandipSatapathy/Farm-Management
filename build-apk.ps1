@@ -2,9 +2,9 @@
 $ErrorActionPreference = "Stop"
 $ProgressPreference = 'SilentlyContinue'
 
-$JavaHome = "C:\Program Files\Microsoft\jdk-17.0.20.101-hotspot"
+$JavaHome = "C:\Program Files\Microsoft\jdk-21.0.12.101-hotspot"
 if (-not (Test-Path $JavaHome)) {
-    $found = Get-ChildItem "C:\Program Files\Microsoft\jdk*" -ErrorAction SilentlyContinue | Select-Object -First 1
+    $found = Get-ChildItem "C:\Program Files\Microsoft\jdk-21*" -ErrorAction SilentlyContinue | Select-Object -First 1
     if ($found) { $JavaHome = $found.FullName }
 }
 
@@ -28,17 +28,6 @@ if ($LASTEXITCODE -ne 0) {
 
 Write-Host "`nSyncing web assets to Android container..."
 & npx.cmd cap sync android
-
-# Ensure Java 17 compatibility
-$capBuildGradle = Join-Path $PSScriptRoot "android\app\capacitor.build.gradle"
-if (Test-Path $capBuildGradle) {
-    (Get-Content $capBuildGradle) -replace 'VERSION_21', 'VERSION_17' | Set-Content $capBuildGradle
-}
-
-$capLibGradle = Join-Path $PSScriptRoot "node_modules\@capacitor\android\capacitor\build.gradle"
-if (Test-Path $capLibGradle) {
-    (Get-Content $capLibGradle) -replace 'VERSION_21', 'VERSION_17' | Set-Content $capLibGradle
-}
 
 Write-Host "`nBuilding FarmLog Debug APK..."
 $androidDir = Join-Path $PSScriptRoot "android"

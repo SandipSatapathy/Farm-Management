@@ -81,6 +81,8 @@ export interface FarmMembership {
   created_at: string;
 }
 
+export type PayFrequency = 'weekly' | 'monthly';
+
 export interface Labourer {
   id: string;
   farm_id: string;
@@ -92,6 +94,7 @@ export interface Labourer {
   end_date?: string;
   wage_basis: WageBasis;
   base_rate: number;
+  pay_frequency?: PayFrequency;
   is_active: boolean;
   notes?: string;
   created_at: string;
@@ -174,8 +177,39 @@ export interface PayrollPayment {
   method: PaymentMethod;
   reference?: string;
   recorded_by?: string;
+  given_by?: string;
   notes?: string;
   created_at: string;
+}
+
+export type SalaryPeriodType = 'monthly' | 'weekly' | 'custom';
+
+export interface SalarySettlement {
+  id: string;
+  farm_id: string;
+  labourer_id: string;
+  labourer_name: string;
+  labour_code?: string;
+  period_type: SalaryPeriodType;
+  start_date: string;
+  end_date: string;
+  year: number;
+  month: number;
+  week_number?: number;
+  days_worked: number;
+  daily_rate: number;
+  gross_wage: number;
+  advance_deducted: number;
+  net_payable: number;
+  paid_amount: number;
+  given_by: string;
+  payment_method: PaymentMethod;
+  payment_date: string;
+  payment_reference?: string;
+  notes?: string;
+  status: 'settled';
+  created_at: string;
+  updated_at: string;
 }
 
 export interface Advance {

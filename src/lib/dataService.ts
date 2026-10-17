@@ -6,6 +6,7 @@ import {
   PayrollPeriod,
   PayrollLine,
   PayrollPayment,
+  SalarySettlement,
   Advance,
   AdvanceAllocation,
   Machinery,
@@ -19,14 +20,16 @@ import {
   ApprovalStatus,
   PaymentMethod,
   TractorRentalLog,
-  MonthlyAttendanceSummary
+  MonthlyAttendanceSummary,
+  SalaryPeriodType,
+  PayFrequency
 } from '../types';
 import { 
   upsertToLocalDb, 
   deleteFromLocalDb, 
   syncAllFromLocalDb, 
   subscribeToRealtimeSync,
-  isDbSyncActive 
+  isDbSyncActive
 } from './localDbClient';
 
 const STORAGE_KEY = 'kisanops_farm_data_v2';
@@ -101,6 +104,7 @@ interface FarmDataStore {
   payrollPeriods: PayrollPeriod[];
   payrollLines: PayrollLine[];
   payrollPayments: PayrollPayment[];
+  salarySettlements: SalarySettlement[];
   advances: Advance[];
   allocations: AdvanceAllocation[];
   machinery: Machinery[];
@@ -137,6 +141,7 @@ const getStore = (): FarmDataStore => {
       if (!parsed.payrollPeriods) parsed.payrollPeriods = [];
       if (!parsed.payrollLines) parsed.payrollLines = [];
       if (!parsed.payrollPayments) parsed.payrollPayments = [];
+      if (!parsed.salarySettlements) parsed.salarySettlements = [];
       if (!parsed.closeManifests) parsed.closeManifests = [];
       return parsed;
     } catch {
@@ -152,6 +157,7 @@ const getStore = (): FarmDataStore => {
     payrollPeriods: [],
     payrollLines: [],
     payrollPayments: [],
+    salarySettlements: [],
     advances: initialAdvances,
     allocations: initialAllocations,
     machinery: initialMachinery,
@@ -190,6 +196,7 @@ export const dataService = {
       store.tractorRentals = dbData.tractorRentals || [];
       store.payrollPeriods = dbData.payrollPeriods || [];
       store.payrollLines = dbData.payrollLines || [];
+      if (dbData.salarySettlements) store.salarySettlements = dbData.salarySettlements;
 
       if (dbData.appUsers && dbData.appUsers.length > 0) {
         try {
@@ -347,7 +354,12 @@ export const dataService = {
   saveLabourer: async (labourer: Partial<Labourer> & { full_name: string; base_rate: number; wage_basis?: any; labour_code?: string }): Promise<Labourer> => {
     const store = getStore();
     if (labourer.id) {
-      store.labourers = store.labourers.map(l => l.id === labourer.id ? { ...l, ...labourer, updated_at: new Date().toISOString() } as Labourer : l);
+      store.labourers = store.labourers.map(l => l.id === labourer.id ? { 
+        ...l, 
+        ...labourer, 
+        updated_at: new Date().toISOString() 
+      } as Labourer : l);
+
       dataService.logAudit('UPDATE_LABOURER', 'labourers', labourer.id, `Updated labourer ${labourer.full_name}`);
       saveStore(store);
       const updated = store.labourers.find(l => l.id === labourer.id)!;
@@ -367,8 +379,10 @@ export const dataService = {
       if (store.labourers.some(l => l.labour_code.toLowerCase() === code!.toLowerCase())) {
         code = `LAB-${Date.now().toString().slice(-4)}`;
       }
+
+      const assignedId = genId();
       const newLabourer: Labourer = {
-        id: genId(),
+        id: assignedId,
         farm_id: store.farm.id,
         labour_code: code,
         full_name: labourer.full_name,
@@ -377,8 +391,9 @@ export const dataService = {
         start_date: labourer.start_date || new Date().toISOString().split('T')[0],
         wage_basis: labourer.wage_basis || 'daily',
         base_rate: round2(labourer.base_rate),
+        pay_frequency: 'monthly',
         is_active: labourer.is_active !== undefined ? labourer.is_active : true,
-        notes: labourer.notes || '',
+        notes: (labourer.notes || '').replace(/\[routine:(weekly|monthly)\]/g, '').trim(),
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       };
@@ -585,6 +600,81 @@ export const dataService = {
     return { records: recordMap, summary };
   },
 
+  getLabourerDateRangeAttendance: (
+    labourerId: string,
+    startDate: string,
+    endDate: string
+  ): { records: Record<string, AttendanceRecord>; summary: MonthlyAttendanceSummary } => {
+    const store = getStore();
+    const labourer = store.labourers.find(l => l.id === labourerId);
+
+    const matchingRecords = store.attendance.filter(
+      a => a.labourer_id === labourerId && a.work_date >= startDate && a.work_date <= endDate
+    );
+
+    const recordMap: Record<string, AttendanceRecord> = {};
+    matchingRecords.forEach(r => {
+      recordMap[r.work_date] = r;
+    });
+
+    let presentDays = 0;
+    let halfDays = 0;
+    let absentDays = 0;
+    let weeklyOffDays = 0;
+    let unmarkedDays = 0;
+
+    const todayStr = new Date().toLocaleDateString('en-CA');
+    const start = new Date(startDate + 'T00:00:00');
+    const end = new Date(endDate + 'T00:00:00');
+
+    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+      const dateStr = d.toLocaleDateString('en-CA');
+      const isSunday = d.getDay() === 0;
+      const rec = recordMap[dateStr];
+
+      if (dateStr > todayStr && !rec) {
+        if (isSunday) weeklyOffDays++;
+        else unmarkedDays++;
+      } else if (rec) {
+        if (rec.status === 'present') {
+          presentDays++;
+        } else if (rec.status === 'half_day') {
+          halfDays++;
+        } else if (rec.status === 'leave' || rec.status === 'absent') {
+          if (isSunday || rec.task_name?.includes('Sunday')) {
+            weeklyOffDays++;
+          } else {
+            absentDays++;
+          }
+        }
+      } else {
+        if (isSunday) weeklyOffDays++;
+        else unmarkedDays++;
+      }
+    }
+
+    const effectiveDays = round2(presentDays + (halfDays * 0.5));
+    const dailyRate = labourer ? labourer.base_rate : 450;
+    const grossEarned = round2(effectiveDays * dailyRate);
+    const advanceInfo = labourerId ? dataService.getLabourerAdvanceBalance(labourerId) : { outstanding: 0 };
+    const netPayable = round2(Math.max(0, grossEarned - advanceInfo.outstanding));
+
+    const summary: MonthlyAttendanceSummary = {
+      presentDays,
+      halfDays,
+      absentDays,
+      weeklyOffDays,
+      unmarkedDays,
+      effectiveDays,
+      dailyRate,
+      grossEarned,
+      advanceOutstanding: advanceInfo.outstanding,
+      netPayable
+    };
+
+    return { records: recordMap, summary };
+  },
+
   updateSingleDayAttendance: (
     labourerId: string,
     work_date: string,
@@ -680,6 +770,56 @@ export const dataService = {
       window.dispatchEvent(new CustomEvent('farmlog-data-updated'));
     }
     return true;
+  },
+  updateAdvance: async (
+    id: string,
+    updates: {
+      amount?: number;
+      issued_at?: string;
+      labourer_id?: string;
+      purpose?: string;
+      payment_method?: PaymentMethod;
+      payment_reference?: string;
+      issued_by?: string;
+      notes?: string;
+    }
+  ): Promise<Advance> => {
+    const store = getStore();
+    if (!store.advances) store.advances = [];
+    const index = store.advances.findIndex(a => a.id === id);
+    if (index === -1) throw new Error('Advance record not found');
+
+    const existing = store.advances[index];
+    let labName = existing.labourer_name;
+    let labCode = existing.labour_code;
+
+    if (updates.labourer_id && updates.labourer_id !== existing.labourer_id) {
+      const lab = store.labourers.find(l => l.id === updates.labourer_id);
+      if (lab) {
+        labName = lab.full_name;
+        labCode = lab.labour_code;
+      }
+    }
+
+    const updatedAdv: Advance = {
+      ...existing,
+      ...updates,
+      labourer_name: labName,
+      labour_code: labCode,
+      amount: updates.amount !== undefined ? round2(updates.amount) : existing.amount,
+      issued_by: updates.issued_by !== undefined ? updates.issued_by.trim() : existing.issued_by,
+      updated_at: new Date().toISOString()
+    };
+
+    store.advances[index] = updatedAdv;
+    dataService.logAudit('UPDATE_ADVANCE', 'advances', id, `Updated advance ₹${updatedAdv.amount} for ${updatedAdv.labourer_name} (Given by: ${updatedAdv.issued_by})`);
+    saveStore(store);
+    await upsertToLocalDb('advances', [updatedAdv]);
+    dataService.queueBackgroundSync();
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('farmlog-data-updated'));
+    }
+    return updatedAdv;
   },
   recordDirectAdvanceRepayment: (advanceId: string, amount: number, notes?: string): AdvanceAllocation => {
     const store = getStore();
@@ -874,7 +1014,10 @@ export const dataService = {
   getPayrollLinesForPeriod: (periodId: string): PayrollLine[] => {
     return getStore().payrollLines.filter(pl => pl.payroll_period_id === periodId);
   },
-  recordPayrollPayment: (payrollLineId: string, amount: number, method: PaymentMethod, reference?: string): PayrollPayment => {
+  getPayrollPaymentsForLine: (payrollLineId: string): PayrollPayment[] => {
+    return (getStore().payrollPayments || []).filter(p => p.payroll_line_id === payrollLineId);
+  },
+  recordPayrollPayment: (payrollLineId: string, amount: number, method: PaymentMethod, reference?: string, givenBy?: string): PayrollPayment => {
     const store = getStore();
     const line = store.payrollLines.find(l => l.id === payrollLineId);
     if (!line) throw new Error('Payroll line not found');
@@ -887,6 +1030,7 @@ export const dataService = {
     line.paid_amount = newPaid;
     line.updated_at = new Date().toISOString();
 
+    const paymentPayer = givenBy?.trim() || 'Owner';
     const payment: PayrollPayment = {
       id: genId(),
       farm_id: store.farm.id,
@@ -895,14 +1039,271 @@ export const dataService = {
       amount: round2(amount),
       method,
       reference,
+      recorded_by: paymentPayer,
+      given_by: paymentPayer,
       notes: `Disbursement to ${line.labourer_name}`,
       created_at: new Date().toISOString()
     };
 
     store.payrollPayments.push(payment);
-    dataService.logAudit('PAYROLL_PAYMENT', 'payroll', payrollLineId, `Recorded payment ₹${amount} (${method}) for ${line.labourer_name}`);
+    dataService.logAudit('PAYROLL_PAYMENT', 'payroll', payrollLineId, `Recorded payment ₹${amount} (${method}) for ${line.labourer_name} (Given by: ${paymentPayer})`);
     saveStore(store);
+    upsertToLocalDb('payroll_payments', [payment]).catch(() => {});
+    upsertToLocalDb('payroll_lines', [line]).catch(() => {});
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('farmlog-data-updated'));
+    }
     return payment;
+  },
+  updatePayrollPayment: (
+    paymentId: string,
+    updates: {
+      amount?: number;
+      method?: PaymentMethod;
+      payment_method?: PaymentMethod;
+      reference?: string;
+      given_by?: string;
+      notes?: string;
+    }
+  ): PayrollPayment => {
+    const store = getStore();
+    const payment = (store.payrollPayments || []).find(p => p.id === paymentId);
+    if (!payment) throw new Error('Payment record not found');
+    const line = store.payrollLines.find(l => l.id === payment.payroll_line_id);
+
+    if (updates.amount !== undefined && line) {
+      const otherPayments = (store.payrollPayments || []).filter(p => p.payroll_line_id === payment.payroll_line_id && p.id !== paymentId);
+      const otherSum = otherPayments.reduce((s, p) => s + p.amount, 0);
+      const newTotal = round2(otherSum + updates.amount);
+      if (newTotal > line.net_payable) {
+        throw new Error(`Total payments (₹${newTotal}) cannot exceed Net Payable (₹${line.net_payable}).`);
+      }
+      line.paid_amount = newTotal;
+      line.updated_at = new Date().toISOString();
+      payment.amount = round2(updates.amount);
+    }
+    if (updates.method) payment.method = updates.method;
+    if (updates.payment_method) payment.method = updates.payment_method;
+    if (updates.reference !== undefined) payment.reference = updates.reference;
+    if (updates.given_by !== undefined) {
+      payment.recorded_by = updates.given_by.trim();
+      payment.given_by = updates.given_by.trim();
+    }
+    if (updates.notes !== undefined) payment.notes = updates.notes;
+
+    saveStore(store);
+    upsertToLocalDb('payroll_payments', [payment]).catch(() => {});
+    if (line) upsertToLocalDb('payroll_lines', [line]).catch(() => {});
+    dataService.logAudit('UPDATE_PAYMENT', 'payroll', paymentId, `Updated payment ₹${payment.amount} for line ${payment.payroll_line_id}`);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('farmlog-data-updated'));
+    }
+    return payment;
+  },
+  deletePayrollPayment: (paymentId: string): boolean => {
+    const store = getStore();
+    const payment = (store.payrollPayments || []).find(p => p.id === paymentId);
+    if (!payment) return false;
+    const line = store.payrollLines.find(l => l.id === payment.payroll_line_id);
+    if (line) {
+      line.paid_amount = round2(Math.max(0, line.paid_amount - payment.amount));
+      line.updated_at = new Date().toISOString();
+      upsertToLocalDb('payroll_lines', [line]).catch(() => {});
+    }
+    store.payrollPayments = store.payrollPayments.filter(p => p.id !== paymentId);
+    saveStore(store);
+    deleteFromLocalDb('payroll_payments', paymentId).catch(() => {});
+    dataService.logAudit('DELETE_PAYMENT', 'payroll', paymentId, `Deleted payment ₹${payment.amount} for line ${payment.payroll_line_id}`);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('farmlog-data-updated'));
+    }
+    return true;
+  },
+
+  // Monthly / Weekly / Custom Salary Settlements (Simple Farm Routine & Direct Khata)
+  getSalarySettlements: (
+    filterOrYear?: {
+      year?: number;
+      month?: number;
+      period_type?: SalaryPeriodType;
+      start_date?: string;
+      end_date?: string;
+      labourer_id?: string;
+    } | number,
+    monthArg?: number
+  ): SalarySettlement[] => {
+    const list = getStore().salarySettlements || [];
+    if (typeof filterOrYear === 'number') {
+      const year = filterOrYear;
+      const month = monthArg;
+      if (year !== undefined && month !== undefined) {
+        return list.filter(s => s.year === year && s.month === month && (s.period_type === 'monthly' || !s.period_type));
+      }
+      if (year !== undefined) {
+        return list.filter(s => s.year === year);
+      }
+      return list;
+    }
+
+    if (filterOrYear && typeof filterOrYear === 'object') {
+      const { year, month, period_type, start_date, end_date, labourer_id } = filterOrYear;
+      return list.filter(s => {
+        if (labourer_id && s.labourer_id !== labourer_id) return false;
+        if (period_type && (s.period_type || 'monthly') !== period_type) return false;
+        if (start_date && s.start_date !== start_date) return false;
+        if (end_date && s.end_date !== end_date) return false;
+        if (year !== undefined && s.year !== year) return false;
+        if (month !== undefined && s.month !== month) return false;
+        return true;
+      });
+    }
+
+    return list;
+  },
+
+  settleSalary: async (data: {
+    labourer_id: string;
+    period_type?: SalaryPeriodType;
+    start_date?: string;
+    end_date?: string;
+    year: number;
+    month: number;
+    week_number?: number;
+    days_worked: number;
+    daily_rate: number;
+    gross_wage: number;
+    advance_deducted: number;
+    net_payable: number;
+    paid_amount: number;
+    given_by: string;
+    payment_method?: PaymentMethod;
+    payment_date?: string;
+    payment_reference?: string;
+    notes?: string;
+  }): Promise<SalarySettlement> => {
+    const store = getStore();
+    if (!store.salarySettlements) store.salarySettlements = [];
+    const lab = store.labourers.find(l => l.id === data.labourer_id);
+    const labName = lab?.full_name || 'Worker';
+    const labCode = lab?.labour_code || '';
+
+    const pType: SalaryPeriodType = data.period_type || 'monthly';
+    const monthPrefix = `${data.year}-${String(data.month).padStart(2, '0')}`;
+    const daysInM = new Date(data.year, data.month, 0).getDate();
+    const startDate = data.start_date || `${monthPrefix}-01`;
+    const endDate = data.end_date || `${monthPrefix}-${String(daysInM).padStart(2, '0')}`;
+
+    const existingIndex = store.salarySettlements.findIndex(s => {
+      if (s.labourer_id !== data.labourer_id) return false;
+      const existingPeriod = s.period_type || 'monthly';
+      if (pType !== existingPeriod) return false;
+      if (pType === 'weekly' || pType === 'custom') {
+        return s.start_date === startDate && s.end_date === endDate;
+      }
+      return s.year === data.year && s.month === data.month;
+    });
+
+    const settlement: SalarySettlement = {
+      id: existingIndex >= 0 ? store.salarySettlements[existingIndex].id : genId(),
+      farm_id: store.farm.id,
+      labourer_id: data.labourer_id,
+      labourer_name: labName,
+      labour_code: labCode,
+      period_type: pType,
+      start_date: startDate,
+      end_date: endDate,
+      year: data.year,
+      month: data.month,
+      week_number: data.week_number,
+      days_worked: round2(data.days_worked),
+      daily_rate: round2(data.daily_rate),
+      gross_wage: round2(data.gross_wage),
+      advance_deducted: round2(data.advance_deducted),
+      net_payable: round2(data.net_payable),
+      paid_amount: round2(data.paid_amount),
+      given_by: data.given_by.trim() || 'Owner',
+      payment_method: data.payment_method || 'cash',
+      payment_date: data.payment_date || new Date().toISOString().split('T')[0],
+      payment_reference: data.payment_reference || '',
+      notes: data.notes || '',
+      status: 'settled',
+      created_at: existingIndex >= 0 ? store.salarySettlements[existingIndex].created_at : new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+
+    if (existingIndex >= 0) {
+      store.salarySettlements[existingIndex] = settlement;
+    } else {
+      store.salarySettlements.push(settlement);
+    }
+
+    const labelPeriod = pType === 'weekly'
+      ? `Week ${startDate} to ${endDate}`
+      : `${data.month}/${data.year}`;
+
+    dataService.logAudit('SETTLE_SALARY', 'payroll', settlement.id, `Settled salary ₹${settlement.paid_amount} for ${labName} (${labelPeriod}) - Given by: ${settlement.given_by}`);
+    saveStore(store);
+    dataService.queueBackgroundSync();
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('farmlog-data-updated'));
+    }
+    return settlement;
+  },
+
+  updateSalarySettlement: async (
+    id: string,
+    updates: {
+      paid_amount?: number;
+      advance_deducted?: number;
+      days_worked?: number;
+      gross_wage?: number;
+      net_payable?: number;
+      given_by?: string;
+      payment_method?: PaymentMethod;
+      payment_date?: string;
+      payment_reference?: string;
+      notes?: string;
+    }
+  ): Promise<SalarySettlement> => {
+    const store = getStore();
+    if (!store.salarySettlements) store.salarySettlements = [];
+    const index = store.salarySettlements.findIndex(s => s.id === id);
+    if (index === -1) throw new Error('Salary settlement record not found');
+
+    const existing = store.salarySettlements[index];
+    const updated: SalarySettlement = {
+      ...existing,
+      ...updates,
+      advance_deducted: updates.advance_deducted !== undefined ? round2(updates.advance_deducted) : existing.advance_deducted,
+      paid_amount: updates.paid_amount !== undefined ? round2(updates.paid_amount) : existing.paid_amount,
+      given_by: updates.given_by !== undefined ? updates.given_by.trim() : existing.given_by,
+      updated_at: new Date().toISOString()
+    };
+
+    store.salarySettlements[index] = updated;
+    dataService.logAudit('UPDATE_SALARY_SETTLEMENT', 'payroll', id, `Updated salary settlement ₹${updated.paid_amount} for ${updated.labourer_name} - Given by: ${updated.given_by}`);
+    saveStore(store);
+    dataService.queueBackgroundSync();
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('farmlog-data-updated'));
+    }
+    return updated;
+  },
+
+  deleteSalarySettlement: async (id: string): Promise<boolean> => {
+    const store = getStore();
+    if (!store.salarySettlements) store.salarySettlements = [];
+    const existing = store.salarySettlements.find(s => s.id === id);
+    if (!existing) return false;
+
+    store.salarySettlements = store.salarySettlements.filter(s => s.id !== id);
+    dataService.logAudit('DELETE_SALARY_SETTLEMENT', 'payroll', id, `Reopened/deleted salary settlement for ${existing.labourer_name} (${existing.month}/${existing.year})`);
+    saveStore(store);
+    dataService.queueBackgroundSync();
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('farmlog-data-updated'));
+    }
+    return true;
   },
 
   // Machinery & Usage

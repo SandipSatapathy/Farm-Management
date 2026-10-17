@@ -83,6 +83,7 @@ export function normalizeDbData(data: any) {
 
   const labourers = (data.labourers || []).map((l: any) => ({
     ...l,
+    pay_frequency: l.pay_frequency || 'monthly',
     base_rate: Number(l.base_rate || 0),
     start_date: formatDate(l.start_date),
     end_date: l.end_date ? formatDate(l.end_date) : undefined
@@ -237,7 +238,7 @@ const TABLE_COLUMNS: Record<string, string[]> = {
   farms: ['id', 'name', 'address', 'currency_code', 'timezone', 'financial_year_start_month', 'financial_year_start_day', 'settings', 'created_at', 'updated_at'],
   app_users: ['id', 'farm_id', 'username', 'password_hash', 'full_name', 'email', 'role', 'view_access', 'is_active', 'created_at', 'last_login_at'],
   farm_memberships: ['id', 'farm_id', 'user_id', 'user_email', 'user_name', 'role', 'is_active', 'created_at'],
-  labourers: ['id', 'farm_id', 'labour_code', 'full_name', 'phone', 'work_category', 'start_date', 'end_date', 'wage_basis', 'base_rate', 'is_active', 'notes', 'created_at', 'updated_at'],
+  labourers: ['id', 'farm_id', 'labour_code', 'full_name', 'phone', 'work_category', 'start_date', 'end_date', 'wage_basis', 'base_rate', 'pay_frequency', 'is_active', 'notes', 'created_at', 'updated_at'],
   attendance: ATTENDANCE_COLS,
   attendance_records: ATTENDANCE_COLS,
   advances: ['id', 'farm_id', 'labourer_id', 'issued_at', 'amount', 'purpose', 'payment_method', 'payment_reference', 'status', 'issued_by', 'notes', 'created_at', 'updated_at'],
@@ -288,6 +289,11 @@ export async function upsertToLocalDb(table: string, records: any[]) {
   if (isSupabaseConfigured && supabase) {
     try {
       let res = await supabase.from(table).upsert(sanitized);
+      if (res.error && table === 'labourers' && String(res.error.message || '').includes('pay_frequency')) {
+        // Fallback: Supabase table doesn't have pay_frequency column yet, strip it and upsert standard columns
+        const fallback = sanitized.map(({ pay_frequency, ...rest }) => rest);
+        res = await supabase.from(table).upsert(fallback);
+      }
       if (res.error && table === 'attendance') {
         res = await supabase.from('attendance_records').upsert(sanitized);
       }

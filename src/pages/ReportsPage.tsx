@@ -122,8 +122,8 @@ export const ReportsPage: React.FC = () => {
 
   const report = getReportData();
 
-  const handleExportPDF = () => {
-    generateReportPDF({
+  const handleExportPDF = async () => {
+    await generateReportPDF({
       title: report.title,
       dateRange: `${startDate} to ${endDate}`,
       farm,

@@ -76,7 +76,7 @@ export const LoginPage: React.FC = () => {
             FarmLog Farm Portal
           </h1>
           <p style={{ margin: '0 0 10px 0', color: 'var(--color-text-muted)', fontSize: '0.92rem' }}>
-            {farm.name} • Authorized Farm Access
+            {farm?.name || 'Farm Operations'} • Authorized Farm Access
           </p>
           <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: '#f0fdf4', color: '#15803d', border: '1px solid #bbf7d0', borderRadius: 9999, padding: '3px 10px', fontSize: '0.74rem', fontWeight: 700 }}>
             <span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: '#16a34a' }} />

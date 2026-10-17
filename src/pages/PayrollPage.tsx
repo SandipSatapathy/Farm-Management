@@ -16,11 +16,13 @@ import {
   FileText,
   Lock,
   ArrowRight,
-  TrendingDown
+  TrendingDown,
+  Edit2,
+  Trash2
 } from 'lucide-react';
 
 export const PayrollPage: React.FC = () => {
-  const { isReadOnlyPartner, canFinalizePayroll } = useAuth();
+  const { isReadOnlyPartner, canFinalizePayroll, currentUser } = useAuth();
   
   // Date period state for preview
   const [startDate, setStartDate] = useState('2026-10-01');
@@ -35,9 +37,18 @@ export const PayrollPage: React.FC = () => {
   // Payment Recording Modal
   const [paymentLine, setPaymentLine] = useState<PayrollLine | null>(null);
   const [paymentAmount, setPaymentAmount] = useState<number>(0);
+  const [paymentGivenBy, setPaymentGivenBy] = useState<string>(currentUser?.name || '');
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
   const [paymentRef, setPaymentRef] = useState('');
   const [paymentError, setPaymentError] = useState('');
+
+  // Payment Edit Modal
+  const [editingPayment, setEditingPayment] = useState<any | null>(null);
+  const [editPaymentAmount, setEditPaymentAmount] = useState<number>(0);
+  const [editPaymentGivenBy, setEditPaymentGivenBy] = useState<string>(currentUser?.name || '');
+  const [editPaymentMethod, setEditPaymentMethod] = useState<PaymentMethod>('cash');
+  const [editPaymentRef, setEditPaymentRef] = useState('');
+  const [editPaymentError, setEditPaymentError] = useState('');
 
   const loadData = () => {
     const periods = dataService.getPayrollPeriods();
@@ -92,6 +103,7 @@ export const PayrollPage: React.FC = () => {
     setPaymentLine(line);
     const balanceDue = round2(line.net_payable - line.paid_amount);
     setPaymentAmount(balanceDue);
+    setPaymentGivenBy(currentUser?.name || '');
     setPaymentMethod('cash');
     setPaymentRef('');
     setPaymentError('');
@@ -110,12 +122,54 @@ export const PayrollPage: React.FC = () => {
         paymentLine.id,
         paymentAmount,
         paymentMethod,
-        paymentRef
+        paymentRef,
+        paymentGivenBy.trim() || currentUser?.name || 'Owner'
       );
       setPaymentLine(null);
       loadData();
     } catch (err: any) {
       setPaymentError(err.message || 'Payment failed.');
+    }
+  };
+
+  const handleOpenEditPayment = (payment: any) => {
+    setEditingPayment(payment);
+    setEditPaymentAmount(payment.amount);
+    setEditPaymentGivenBy(payment.given_by || payment.recorded_by || currentUser?.name || '');
+    setEditPaymentMethod(payment.payment_method || 'cash');
+    setEditPaymentRef(payment.notes || '');
+    setEditPaymentError('');
+  };
+
+  const handleUpdatePayment = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingPayment) return;
+    if (editPaymentAmount <= 0) {
+      setEditPaymentError('Payment amount must be greater than zero.');
+      return;
+    }
+
+    try {
+      dataService.updatePayrollPayment(editingPayment.id, {
+        amount: editPaymentAmount,
+        given_by: editPaymentGivenBy.trim() || currentUser?.name || 'Owner',
+        payment_method: editPaymentMethod,
+        notes: editPaymentRef
+      });
+      setEditingPayment(null);
+      loadData();
+    } catch (err: any) {
+      setEditPaymentError(err.message || 'Update failed.');
+    }
+  };
+
+  const handleDeletePayment = (paymentId: string) => {
+    if (!window.confirm('Delete this payment record? The balance due will be restored.')) return;
+    try {
+      dataService.deletePayrollPayment(paymentId);
+      loadData();
+    } catch (err: any) {
+      alert(err.message || 'Delete failed.');
     }
   };
 
@@ -315,6 +369,7 @@ export const PayrollPage: React.FC = () => {
                 {periodLines.map((line) => {
                   const balanceDue = round2(line.net_payable - line.paid_amount);
                   const isFullyPaid = balanceDue <= 0;
+                  const linePayments = dataService.getPayrollPaymentsForLine(line.id);
 
                   return (
                     <tr key={line.id}>
@@ -328,8 +383,52 @@ export const PayrollPage: React.FC = () => {
                       <td style={{ fontWeight: 800, color: '#15803d' }}>
                         ₹{line.net_payable.toLocaleString('en-IN')}
                       </td>
-                      <td style={{ fontWeight: 700, color: '#0369a1' }}>
-                        ₹{line.paid_amount.toLocaleString('en-IN')}
+                      <td>
+                        <div style={{ fontWeight: 700, color: '#0369a1' }}>
+                          ₹{line.paid_amount.toLocaleString('en-IN')}
+                        </div>
+                        {linePayments.length > 0 && (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 4 }}>
+                            {linePayments.map((p) => (
+                              <div
+                                key={p.id}
+                                style={{
+                                  fontSize: '0.72rem',
+                                  background: '#f0fdf4',
+                                  border: '1px solid #86efac',
+                                  borderRadius: 6,
+                                  padding: '2px 6px',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'space-between',
+                                  gap: 6
+                                }}
+                              >
+                                <span>₹{p.amount} ({p.given_by ? `👤 ${p.given_by}` : (p.recorded_by ? `👤 ${p.recorded_by}` : 'Paid')})</span>
+                                {canFinalizePayroll && !isReadOnlyPartner && (
+                                  <div style={{ display: 'inline-flex', gap: 3 }}>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleOpenEditPayment(p)}
+                                      style={{ border: 'none', background: 'transparent', cursor: 'pointer', padding: 2, color: '#0284c7' }}
+                                      title="Edit Payment"
+                                    >
+                                      <Edit2 size={11} />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDeletePayment(p.id)}
+                                      style={{ border: 'none', background: 'transparent', cursor: 'pointer', padding: 2, color: '#dc2626' }}
+                                      title="Delete Payment"
+                                    >
+                                      <Trash2 size={11} />
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </td>
                       <td style={{ fontWeight: 700, color: isFullyPaid ? '#15803d' : '#dc2626' }}>
                         ₹{balanceDue.toLocaleString('en-IN')}
@@ -419,6 +518,23 @@ export const PayrollPage: React.FC = () => {
               </div>
             </div>
 
+            {/* Given By Field */}
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                <label className="clay-label" style={{ margin: 0 }}>Given By (Disbursed By)</label>
+                <span style={{ fontSize: '0.72rem', color: '#64748b' }}>Who is paying the wages</span>
+              </div>
+              <input
+                type="text"
+                placeholder="e.g. Supervisor name"
+                value={paymentGivenBy}
+                onChange={(e) => setPaymentGivenBy(e.target.value)}
+                className="clay-input"
+                style={{ fontWeight: 700 }}
+                required
+              />
+            </div>
+
             <div style={{ marginBottom: 20 }}>
               <label className="clay-label">Payment Reference / Note</label>
               <input
@@ -437,6 +553,98 @@ export const PayrollPage: React.FC = () => {
               <ClayButton variant="primary" type="submit">
                 Record Payment
               </ClayButton>
+            </div>
+          </form>
+        </ClayModal>
+      )}
+
+      {/* Edit Payment Modal */}
+      {editingPayment && (
+        <ClayModal
+          isOpen={Boolean(editingPayment)}
+          onClose={() => setEditingPayment(null)}
+          title="Edit Wage Payment Record"
+        >
+          <form onSubmit={handleUpdatePayment}>
+            {editPaymentError && (
+              <div style={{ background: '#fee2e2', color: '#b91c1c', padding: 10, borderRadius: 10, fontSize: '0.85rem', marginBottom: 16 }}>
+                {editPaymentError}
+              </div>
+            )}
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
+              <div>
+                <label className="clay-label">Payment Amount (₹)</label>
+                <input
+                  type="number"
+                  min="1"
+                  step="1"
+                  value={editPaymentAmount}
+                  onChange={(e) => setEditPaymentAmount(Number(e.target.value))}
+                  className="clay-input"
+                  style={{ fontWeight: 800, fontSize: '1.05rem', color: '#15803d' }}
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="clay-label">Disbursement Mode</label>
+                <select
+                  value={editPaymentMethod}
+                  onChange={(e) => setEditPaymentMethod(e.target.value as PaymentMethod)}
+                  className="clay-input"
+                >
+                  <option value="cash">Cash in Hand</option>
+                  <option value="upi">UPI / GPay / PhonePe</option>
+                  <option value="bank_transfer">Direct Bank Transfer</option>
+                  <option value="cheque">Cheque</option>
+                </select>
+              </div>
+            </div>
+
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                <label className="clay-label" style={{ margin: 0 }}>Given By (Disbursed By)</label>
+                <span style={{ fontSize: '0.72rem', color: '#64748b' }}>Who is paying the wages</span>
+              </div>
+              <input
+                type="text"
+                placeholder="e.g. Supervisor name"
+                value={editPaymentGivenBy}
+                onChange={(e) => setEditPaymentGivenBy(e.target.value)}
+                className="clay-input"
+                style={{ fontWeight: 700 }}
+                required
+              />
+            </div>
+
+            <div style={{ marginBottom: 20 }}>
+              <label className="clay-label">Payment Reference / Note</label>
+              <input
+                type="text"
+                placeholder="e.g. UPI Ref / Cash voucher number"
+                value={editPaymentRef}
+                onChange={(e) => setEditPaymentRef(e.target.value)}
+                className="clay-input"
+              />
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <ClayButton
+                variant="danger"
+                type="button"
+                onClick={() => handleDeletePayment(editingPayment.id)}
+              >
+                Delete Payment
+              </ClayButton>
+              <div style={{ display: 'flex', gap: 12 }}>
+                <ClayButton variant="secondary" type="button" onClick={() => setEditingPayment(null)}>
+                  Cancel
+                </ClayButton>
+                <ClayButton variant="primary" type="submit">
+                  Save Changes
+                </ClayButton>
+              </div>
             </div>
           </form>
         </ClayModal>

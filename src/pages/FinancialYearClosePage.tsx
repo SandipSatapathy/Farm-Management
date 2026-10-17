@@ -41,9 +41,9 @@ export const FinancialYearClosePage: React.FC = () => {
     setActiveStep(1);
   }, [selectedFY]);
 
-  const handleGenerateAnnualPdf = () => {
+  const handleGenerateAnnualPdf = async () => {
     if (!preview) return;
-    generateReportPDF({
+    await generateReportPDF({
       title: `Annual Close Archive Pack — ${preview.fyLabel}`,
       subtitle: `Official Statutory Close Report (1 April ${selectedFY} to 31 March ${selectedFY + 1})`,
       dateRange: `${preview.startDate} to ${preview.endDate}`,

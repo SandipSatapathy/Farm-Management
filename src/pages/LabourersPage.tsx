@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { dataService, round2 } from '../lib/dataService';
-import { Labourer, WageBasis } from '../types';
+import { Labourer, WageBasis, PayFrequency } from '../types';
 import { ClayCard } from '../components/common/ClayCard';
 import { ClayButton } from '../components/common/ClayButton';
 import { ClayBadge } from '../components/common/ClayBadge';
@@ -39,6 +39,7 @@ export const LabourersPage: React.FC = () => {
     phone: '',
     wage_basis: 'daily' as WageBasis,
     base_rate: 500,
+    pay_frequency: 'monthly' as PayFrequency,
     notes: '',
   });
   const [formError, setFormError] = useState('');
@@ -68,6 +69,7 @@ export const LabourersPage: React.FC = () => {
       phone: '',
       wage_basis: 'daily',
       base_rate: 500,
+      pay_frequency: 'monthly',
       notes: '',
     });
     setFormError('');
@@ -82,6 +84,7 @@ export const LabourersPage: React.FC = () => {
       phone: lab.phone || '',
       wage_basis: lab.wage_basis,
       base_rate: lab.base_rate,
+      pay_frequency: lab.pay_frequency || 'monthly',
       notes: lab.notes || '',
     });
     setFormError('');
@@ -107,6 +110,7 @@ export const LabourersPage: React.FC = () => {
         phone: formData.phone.trim(),
         wage_basis: formData.wage_basis,
         base_rate: Number(formData.base_rate),
+        pay_frequency: formData.pay_frequency,
         notes: formData.notes.trim(),
       });
       setIsModalOpen(false);
@@ -202,6 +206,20 @@ export const LabourersPage: React.FC = () => {
                     }}
                   >
                     {lab.labour_code}
+                  </span>
+                  <span
+                    style={{
+                      fontSize: '0.72rem',
+                      fontWeight: 800,
+                      color: lab.pay_frequency === 'weekly' ? '#0369a1' : '#15803d',
+                      background: lab.pay_frequency === 'weekly' ? '#f0f9ff' : '#f0fdf4',
+                      border: lab.pay_frequency === 'weekly' ? '1px solid #bae6fd' : '1px solid #86efac',
+                      padding: '2px 7px',
+                      borderRadius: 6,
+                      marginLeft: 6
+                    }}
+                  >
+                    {lab.pay_frequency === 'weekly' ? '🗓️ Weekly' : '📅 Monthly'}
                   </span>
                   <h3 style={{ margin: '6px 0 2px 0', fontSize: '1.15rem' }}>{lab.full_name}</h3>
                 </div>
@@ -376,6 +394,44 @@ export const LabourersPage: React.FC = () => {
                 className="clay-input"
                 required
               />
+            </div>
+          </div>
+
+          <div style={{ marginBottom: 14 }}>
+            <label className="clay-label">Pay Routine / Frequency</label>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+              <button
+                type="button"
+                onClick={() => setFormData({ ...formData, pay_frequency: 'monthly' })}
+                style={{
+                  padding: '8px 12px',
+                  borderRadius: 10,
+                  border: formData.pay_frequency === 'monthly' ? '2px solid #16a34a' : '1px solid #cbd5e1',
+                  background: formData.pay_frequency === 'monthly' ? '#f0fdf4' : '#ffffff',
+                  color: formData.pay_frequency === 'monthly' ? '#14532d' : '#475569',
+                  fontWeight: 800,
+                  fontSize: '0.82rem',
+                  cursor: 'pointer'
+                }}
+              >
+                📅 Monthly Payee
+              </button>
+              <button
+                type="button"
+                onClick={() => setFormData({ ...formData, pay_frequency: 'weekly' })}
+                style={{
+                  padding: '8px 12px',
+                  borderRadius: 10,
+                  border: formData.pay_frequency === 'weekly' ? '2px solid #16a34a' : '1px solid #cbd5e1',
+                  background: formData.pay_frequency === 'weekly' ? '#f0fdf4' : '#ffffff',
+                  color: formData.pay_frequency === 'weekly' ? '#14532d' : '#475569',
+                  fontWeight: 800,
+                  fontSize: '0.82rem',
+                  cursor: 'pointer'
+                }}
+              >
+                🗓️ Weekly Payee
+              </button>
             </div>
           </div>
 

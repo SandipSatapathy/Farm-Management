@@ -2,9 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useAuth } from '../context/AuthContext';
 import { dataService, round2 } from '../lib/dataService';
-import { Labourer, AttendanceStatus, TractorRentalLog, Advance } from '../types';
+import { Labourer, AttendanceStatus, TractorRentalLog, Advance, SalarySettlement, PaymentMethod, SalaryPeriodType, PayFrequency } from '../types';
 import { LabourAttendanceCalendarModal } from '../components/common/LabourAttendanceCalendarModal';
-import { generateReportPDF } from '../lib/pdfGenerator';
+import { generateReportPDF, PDFGenerationResult } from '../lib/pdfGenerator';
+import { Capacitor } from '@capacitor/core';
+import { Share } from '@capacitor/share';
 import confetti from 'canvas-confetti';
 import {
   CalendarCheck,
@@ -31,7 +33,11 @@ import {
   Download,
   Sliders,
   UserCog,
-  Edit2
+  Edit2,
+  RotateCcw,
+  FileText,
+  Share2,
+  ExternalLink
 } from 'lucide-react';
 import { UserSettingsPage } from './UserSettingsPage';
 
@@ -77,18 +83,88 @@ export const SimpleFarmViewPage: React.FC = () => {
   const [advLabId, setAdvLabId] = useState('');
   const [advAmount, setAdvAmount] = useState<number>(500);
   const [advDate, setAdvDate] = useState<string>(today);
-  const [advGivenBy, setAdvGivenBy] = useState<string>(currentUser?.name || 'Sandip');
+  const [advGivenBy, setAdvGivenBy] = useState<string>(currentUser?.name || '');
   const [advSuccess, setAdvSuccess] = useState(false);
   const [recentAdvances, setRecentAdvances] = useState<Advance[]>([]);
   const [advFilterYear, setAdvFilterYear] = useState<number>(currentYear);
   const [advFilterMonth, setAdvFilterMonth] = useState<number | 'all'>(currentMonth);
 
+  // Edit Advance state
+  const [editingAdv, setEditingAdv] = useState<Advance | null>(null);
+  const [editAdvLabId, setEditAdvLabId] = useState('');
+  const [editAdvAmount, setEditAdvAmount] = useState<number>(500);
+  const [editAdvDate, setEditAdvDate] = useState<string>(today);
+  const [editAdvGivenBy, setEditAdvGivenBy] = useState<string>(currentUser?.name || '');
+  const [editAdvPurpose, setEditAdvPurpose] = useState<string>('Field work cash advance');
+  const [editAdvMethod, setEditAdvMethod] = useState<PaymentMethod>('cash');
+  const [editAdvRef, setEditAdvRef] = useState<string>('');
+
   // Settlement state
   const [settledLabId, setSettledLabId] = useState<string | null>(null);
+  const [salaryPeriodType, setSalaryPeriodType] = useState<SalaryPeriodType>('monthly');
+  const [salaryWorkerFilter, setSalaryWorkerFilter] = useState<'all' | 'monthly' | 'weekly'>('all');
   const [salaryYear, setSalaryYear] = useState<number>(currentYear);
   const [salaryMonth, setSalaryMonth] = useState<number>(currentMonth);
-  const [settledLabIds, setSettledLabIds] = useState<string[]>([]);
+
+  // Helper date functions for Weekly & Range Payouts
+  const getMondayDateStr = (dateObj: Date): string => {
+    const d = new Date(dateObj);
+    const day = d.getDay();
+    const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+    d.setDate(diff);
+    return d.toLocaleDateString('en-CA');
+  };
+  const addDaysToDateStr = (dateStr: string, days: number): string => {
+    const d = new Date(dateStr + 'T00:00:00');
+    d.setDate(d.getDate() + days);
+    return d.toLocaleDateString('en-CA');
+  };
+
+  const [salaryWeekStart, setSalaryWeekStart] = useState<string>(() => {
+    const d = new Date();
+    const day = d.getDay();
+    const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+    d.setDate(diff);
+    return d.toLocaleDateString('en-CA');
+  });
+  const [salaryCustomStart, setSalaryCustomStart] = useState<string>(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 6);
+    return d.toLocaleDateString('en-CA');
+  });
+  const [salaryCustomEnd, setSalaryCustomEnd] = useState<string>(today);
+  const [salaryGivenBy, setSalaryGivenBy] = useState<string>(currentUser?.name || '');
+  const [salarySettlements, setSalarySettlements] = useState<SalarySettlement[]>([]);
   const [salarySettledSuccessMsg, setSalarySettledSuccessMsg] = useState('');
+
+  // Settle Salary Modal state
+  const [settleModalLab, setSettleModalLab] = useState<{
+    lab: Labourer;
+    periodType: SalaryPeriodType;
+    startDate: string;
+    endDate: string;
+    periodLabel: string;
+    netPay: number;
+    grossWage: number;
+    advanceDue: number;
+    advanceDeducted: number;
+    daysWorked: number;
+    dailyRate: number;
+  } | null>(null);
+  const [settleAdvanceDeduct, setSettleAdvanceDeduct] = useState<number>(0);
+  const [settleAmount, setSettleAmount] = useState<number>(0);
+  const [settleGivenBy, setSettleGivenBy] = useState<string>(currentUser?.name || '');
+  const [settleMethod, setSettleMethod] = useState<PaymentMethod>('cash');
+  const [settleDate, setSettleDate] = useState<string>(today);
+  const [settleNotes, setSettleNotes] = useState<string>('');
+
+  // Edit Salary Settlement Modal state
+  const [editingSalarySettlement, setEditingSalarySettlement] = useState<SalarySettlement | null>(null);
+  const [editSalaryAmount, setEditSalaryAmount] = useState<number>(0);
+  const [editSalaryGivenBy, setEditSalaryGivenBy] = useState<string>(currentUser?.name || '');
+  const [editSalaryMethod, setEditSalaryMethod] = useState<PaymentMethod>('cash');
+  const [editSalaryDate, setEditSalaryDate] = useState<string>(today);
+  const [editSalaryNotes, setEditSalaryNotes] = useState<string>('');
 
   // Hired Tractor Rental State (Purely Hired / Rented — Zero Owned Tractors)
   const [tractorRentals, setTractorRentals] = useState<TractorRentalLog[]>([]);
@@ -123,6 +199,32 @@ export const SimpleFarmViewPage: React.FC = () => {
   const [sheetsSyncMsg, setSheetsSyncMsg] = useState('');
   const [isPdfExportModalOpen, setIsPdfExportModalOpen] = useState(false);
   const [pdfSuccessMsg, setPdfSuccessMsg] = useState('');
+  const [pdfPreviewResult, setPdfPreviewResult] = useState<PDFGenerationResult | null>(null);
+
+  // Modal navigation lock: when ANY popup, modal or card is opened, the user cannot move to different tabs or navigation
+  const isAnyModalOpen = Boolean(
+    isAddModalOpen ||
+    isNewRentalOpen ||
+    isPdfExportModalOpen ||
+    settleModalLab ||
+    editingAdv ||
+    editingSalarySettlement ||
+    editingLabourer ||
+    deleteConfirmLab ||
+    selectedLabourerForCalendar ||
+    pdfPreviewResult
+  );
+
+  useEffect(() => {
+    if (isAnyModalOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [isAnyModalOpen]);
 
   const handleManualSyncSheets = async () => {
     setIsSyncingSheets(true);
@@ -166,6 +268,7 @@ export const SimpleFarmViewPage: React.FC = () => {
 
     setTractorRentals(dataService.getTractorRentals(tractorDateFilter));
     setRecentAdvances(dataService.getAdvances());
+    setSalarySettlements(dataService.getSalarySettlements());
     refreshCalMonthRecords();
   };
 
@@ -230,6 +333,10 @@ export const SimpleFarmViewPage: React.FC = () => {
   useEffect(() => {
     setTractorRentals(dataService.getTractorRentals(tractorDateFilter));
   }, [tractorDateFilter]);
+
+  useEffect(() => {
+    setSalarySettlements(dataService.getSalarySettlements());
+  }, [salaryYear, salaryMonth, salaryPeriodType, salaryWeekStart, salaryCustomStart, salaryCustomEnd]);
 
   // Attendance Handlers
   const handleToggleStatus = (labId: string, status: AttendanceStatus) => {
@@ -402,7 +509,7 @@ export const SimpleFarmViewPage: React.FC = () => {
     e.preventDefault();
     if (advAmount <= 0) return;
 
-    const person = advGivenBy.trim() || currentUser?.name || 'Sandip';
+    const person = advGivenBy.trim() || currentUser?.name || 'Owner';
 
     try {
       await dataService.issueAdvance({
@@ -433,6 +540,78 @@ export const SimpleFarmViewPage: React.FC = () => {
     }
   };
 
+  const handleOpenEditAdvance = (adv: Advance) => {
+    setEditingAdv(adv);
+    setEditAdvLabId(adv.labourer_id);
+    setEditAdvAmount(adv.amount);
+    setEditAdvDate(adv.issued_at ? adv.issued_at.slice(0, 10) : today);
+    setEditAdvGivenBy(adv.issued_by || advGivenBy || currentUser?.name || '');
+    setEditAdvPurpose(adv.purpose || 'Field work cash advance');
+    setEditAdvMethod(adv.payment_method || 'cash');
+    setEditAdvRef(adv.payment_reference || '');
+  };
+
+  const handleSaveEditAdvance = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingAdv) return;
+    if (editAdvAmount <= 0) {
+      alert('Advance amount must be greater than zero');
+      return;
+    }
+
+    try {
+      await dataService.updateAdvance(editingAdv.id, {
+        labourer_id: editAdvLabId,
+        amount: editAdvAmount,
+        issued_at: editAdvDate ? `${editAdvDate}T12:00:00.000Z` : undefined,
+        issued_by: editAdvGivenBy.trim() || currentUser?.name || 'Owner',
+        purpose: editAdvPurpose,
+        payment_method: editAdvMethod,
+        payment_reference: editAdvRef
+      });
+      setEditingAdv(null);
+      loadData();
+    } catch (err: any) {
+      alert(err.message || 'Error updating advance');
+    }
+  };
+
+  const formatWeekLabel = (startDateStr: string, endDateStr: string): string => {
+    try {
+      const d1 = new Date(startDateStr + 'T00:00:00');
+      const d2 = new Date(endDateStr + 'T00:00:00');
+      const s1 = d1.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+      const s2 = d2.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+      return `${s1} – ${s2}`;
+    } catch {
+      return `${startDateStr} to ${endDateStr}`;
+    }
+  };
+
+  // Salary Period & Date Range Calculations
+  const salaryWeekEnd = addDaysToDateStr(salaryWeekStart, 6);
+  const salaryMonthDays = new Date(salaryYear, salaryMonth, 0).getDate();
+  const salaryMonthStartDate = `${salaryYear}-${String(salaryMonth).padStart(2, '0')}-01`;
+  const salaryMonthEndDate = `${salaryYear}-${String(salaryMonth).padStart(2, '0')}-${String(salaryMonthDays).padStart(2, '0')}`;
+
+  const effectiveSalaryStartDate = salaryPeriodType === 'monthly'
+    ? salaryMonthStartDate
+    : (salaryPeriodType === 'weekly' ? salaryWeekStart : salaryCustomStart);
+
+  const effectiveSalaryEndDate = salaryPeriodType === 'monthly'
+    ? salaryMonthEndDate
+    : (salaryPeriodType === 'weekly' ? salaryWeekEnd : salaryCustomEnd);
+
+  const salaryMonthName = new Date(salaryYear, salaryMonth - 1, 1).toLocaleString('default', { month: 'long' });
+
+  const effectivePeriodLabel = salaryPeriodType === 'monthly'
+    ? `${salaryMonthName} ${salaryYear}`
+    : (salaryPeriodType === 'weekly' ? formatWeekLabel(salaryWeekStart, salaryWeekEnd) : `${salaryCustomStart} to ${salaryCustomEnd}`);
+
+  const effectivePeriodSubtitle = salaryPeriodType === 'monthly'
+    ? `Monthly Cycle: 1 ${salaryMonthName} – ${salaryMonthDays} ${salaryMonthName} ${salaryYear}`
+    : (salaryPeriodType === 'weekly' ? `Weekly Cycle: ${effectivePeriodLabel}` : `Custom Range: ${effectivePeriodLabel}`);
+
   // Salary Settlement Handlers
   const handleSalaryPrevMonth = () => {
     if (salaryMonth === 1) {
@@ -458,21 +637,139 @@ export const SimpleFarmViewPage: React.FC = () => {
     setSalaryMonth(n.getMonth() + 1);
   };
 
-  const handleSettleSalary = (lab: Labourer, netPay: number) => {
-    const key = `${salaryYear}-${salaryMonth}-${lab.id}`;
-    setSettledLabIds((prev) => (prev.includes(key) ? prev : [...prev, key]));
-    setSettledLabId(lab.id);
-    const mName = new Date(salaryYear, salaryMonth - 1, 1).toLocaleString('default', { month: 'long' });
-    setSalarySettledSuccessMsg(`Salary payout of ₹${netPay.toLocaleString('en-IN')} marked as paid for ${lab.full_name} (${mName} ${salaryYear}).`);
-    confetti({
-      particleCount: 50,
-      spread: 60,
-      origin: { y: 0.8 }
+  const handleSalaryPrevWeek = () => {
+    setSalaryWeekStart((prev) => addDaysToDateStr(prev, -7));
+  };
+
+  const handleSalaryNextWeek = () => {
+    setSalaryWeekStart((prev) => addDaysToDateStr(prev, 7));
+  };
+
+  const handleSalaryCurrentWeek = () => {
+    setSalaryWeekStart(getMondayDateStr(new Date()));
+  };
+
+  const handleSalaryLastWeek = () => {
+    const curMon = getMondayDateStr(new Date());
+    setSalaryWeekStart(addDaysToDateStr(curMon, -7));
+  };
+
+  const handleOpenSettleModal = (row: any) => {
+    setSettleModalLab({
+      lab: row.labourer,
+      periodType: salaryPeriodType,
+      startDate: effectiveSalaryStartDate,
+      endDate: effectiveSalaryEndDate,
+      periodLabel: effectivePeriodLabel,
+      netPay: row.netTakeHome,
+      grossWage: row.grossWage,
+      advanceDue: row.advanceDue,
+      advanceDeducted: row.advanceDeducted,
+      daysWorked: row.daysWorked,
+      dailyRate: row.dailyRate
     });
-    setTimeout(() => {
-      setSettledLabId(null);
-      setSalarySettledSuccessMsg('');
-    }, 3500);
+    setSettleAdvanceDeduct(row.advanceDeducted);
+    setSettleAmount(row.netTakeHome);
+    setSettleGivenBy(salaryGivenBy || currentUser?.name || '');
+    setSettleMethod('cash');
+    setSettleDate(today);
+    setSettleNotes('');
+  };
+
+  const handleConfirmSettleSalary = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!settleModalLab) return;
+    if (settleAmount < 0) {
+      alert('Payout amount cannot be negative');
+      return;
+    }
+
+    try {
+      const payer = settleGivenBy.trim() || salaryGivenBy || currentUser?.name || 'Owner';
+      await dataService.settleSalary({
+        labourer_id: settleModalLab.lab.id,
+        period_type: settleModalLab.periodType,
+        start_date: settleModalLab.startDate,
+        end_date: settleModalLab.endDate,
+        year: salaryYear,
+        month: salaryMonth,
+        days_worked: settleModalLab.daysWorked,
+        daily_rate: settleModalLab.dailyRate,
+        gross_wage: settleModalLab.grossWage,
+        advance_deducted: settleAdvanceDeduct,
+        net_payable: settleAmount,
+        paid_amount: settleAmount,
+        given_by: payer,
+        payment_method: settleMethod,
+        payment_date: settleDate,
+        notes: settleNotes
+      });
+
+      setSettledLabId(settleModalLab.lab.id);
+      setSalarySettledSuccessMsg(`Payout of ₹${settleAmount.toLocaleString('en-IN')} marked as paid for ${settleModalLab.lab.full_name} (${settleModalLab.periodLabel}) — Given by: ${payer}`);
+      confetti({
+        particleCount: 50,
+        spread: 60,
+        origin: { y: 0.8 }
+      });
+      setSettleModalLab(null);
+      loadData();
+      setTimeout(() => {
+        setSettledLabId(null);
+        setSalarySettledSuccessMsg('');
+      }, 4000);
+    } catch (err: any) {
+      alert(err.message || 'Error recording salary payout');
+    }
+  };
+
+  const handleOpenEditSalary = (settlement: SalarySettlement) => {
+    setEditingSalarySettlement(settlement);
+    setEditSalaryAmount(settlement.paid_amount);
+    setEditSalaryGivenBy(settlement.given_by || salaryGivenBy || currentUser?.name || '');
+    setEditSalaryMethod(settlement.payment_method || 'cash');
+    setEditSalaryDate(settlement.payment_date || today);
+    setEditSalaryNotes(settlement.notes || '');
+  };
+
+  const handleUpdateSalarySettlement = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingSalarySettlement) return;
+    if (editSalaryAmount < 0) {
+      alert('Payout amount cannot be negative');
+      return;
+    }
+
+    try {
+      await dataService.updateSalarySettlement(editingSalarySettlement.id, {
+        paid_amount: editSalaryAmount,
+        given_by: editSalaryGivenBy.trim() || currentUser?.name || 'Owner',
+        payment_method: editSalaryMethod,
+        payment_date: editSalaryDate,
+        notes: editSalaryNotes
+      });
+      setEditingSalarySettlement(null);
+      loadData();
+      setSalarySettledSuccessMsg(`Updated salary settlement for ${editingSalarySettlement.labourer_name}`);
+      setTimeout(() => setSalarySettledSuccessMsg(''), 3000);
+    } catch (err: any) {
+      alert(err.message || 'Error updating salary settlement');
+    }
+  };
+
+  const handleDeleteSalarySettlement = async (settlementId: string) => {
+    if (!window.confirm('Revert this salary payout to Unpaid? This will reopen the payment for this worker.')) return;
+    try {
+      await dataService.deleteSalarySettlement(settlementId);
+      if (editingSalarySettlement?.id === settlementId) {
+        setEditingSalarySettlement(null);
+      }
+      loadData();
+      setSalarySettledSuccessMsg('Salary settlement reverted to Unpaid.');
+      setTimeout(() => setSalarySettledSuccessMsg(''), 3000);
+    } catch (err: any) {
+      alert(err.message || 'Error deleting salary settlement');
+    }
   };
 
   // Tractor Handlers
@@ -650,26 +947,43 @@ export const SimpleFarmViewPage: React.FC = () => {
   };
   const singleWorkerRecords = singleWorkerData?.records || {};
 
-  // Monthly Salary Calculations
-  const salaryMonthName = new Date(salaryYear, salaryMonth - 1, 1).toLocaleString('default', { month: 'long' });
-
+  // Salary Calculations (Option 1: View-Level Cycle Toggle - Weekly, Monthly, or Custom Range)
   const eligibleSalaryLabourers = allLabourers.filter((lab) => {
     if (lab.is_active) return true;
-    const { summary } = dataService.getLabourerMonthlyAttendance(lab.id, salaryYear, salaryMonth);
+    const { summary } = dataService.getLabourerDateRangeAttendance(lab.id, effectiveSalaryStartDate, effectiveSalaryEndDate);
     const advanceInfo = dataService.getLabourerAdvanceBalance(lab.id);
     return summary.effectiveDays > 0 || advanceInfo.outstanding > 0;
   });
 
-  const salaryRows = (eligibleSalaryLabourers.length > 0 ? eligibleSalaryLabourers : (allLabourers.length > 0 ? allLabourers : labourers)).map((lab) => {
-    const { summary } = dataService.getLabourerMonthlyAttendance(lab.id, salaryYear, salaryMonth);
+  const displaySalaryLabourers = eligibleSalaryLabourers.length > 0
+    ? eligibleSalaryLabourers
+    : (allLabourers.length > 0 ? allLabourers : labourers);
+
+  const salaryRows = displaySalaryLabourers.map((lab) => {
+    const { summary } = dataService.getLabourerDateRangeAttendance(lab.id, effectiveSalaryStartDate, effectiveSalaryEndDate);
     const advanceInfo = dataService.getLabourerAdvanceBalance(lab.id);
     const daysWorked = summary.effectiveDays;
     const dailyRate = lab.base_rate;
     const grossWage = summary.grossEarned;
     const advanceDue = advanceInfo.outstanding;
     const advanceDeducted = round2(Math.min(advanceDue, grossWage));
-    const netTakeHome = round2(Math.max(0, grossWage - advanceDeducted));
-    const isSettled = settledLabIds.includes(`${salaryYear}-${salaryMonth}-${lab.id}`);
+    const calculatedNet = round2(Math.max(0, grossWage - advanceDeducted));
+
+    // Match settlement by period_type and corresponding dates / month
+    const settlement = salarySettlements.find((s) => {
+      if (s.labourer_id !== lab.id) return false;
+      if (salaryPeriodType === 'monthly') {
+        return (s.period_type === 'monthly' && s.year === salaryYear && s.month === salaryMonth) ||
+               (!s.period_type && s.year === salaryYear && s.month === salaryMonth) ||
+               (s.start_date === effectiveSalaryStartDate && s.end_date === effectiveSalaryEndDate);
+      } else if (salaryPeriodType === 'weekly') {
+        return s.period_type === 'weekly' && s.start_date === effectiveSalaryStartDate && s.end_date === effectiveSalaryEndDate;
+      } else {
+        return s.period_type === 'custom' && s.start_date === effectiveSalaryStartDate && s.end_date === effectiveSalaryEndDate;
+      }
+    });
+
+    const isSettled = Boolean(settlement);
 
     return {
       labourer: lab,
@@ -678,8 +992,10 @@ export const SimpleFarmViewPage: React.FC = () => {
       grossWage,
       advanceDue,
       advanceDeducted,
-      netTakeHome,
+      calculatedNet,
+      netTakeHome: settlement ? settlement.paid_amount : calculatedNet,
       isSettled,
+      settlement,
       presentDays: summary.presentDays,
       halfDays: summary.halfDays
     };
@@ -727,8 +1043,9 @@ export const SimpleFarmViewPage: React.FC = () => {
     : `${advMonthNames[(advFilterMonth as number) - 1]} ${advFilterYear}`;
 
   // PDF Export Handlers for Simple View
-  const triggerPdfSuccess = (name: string) => {
-    setPdfSuccessMsg(`Downloaded PDF: ${name}`);
+  const triggerPdfSuccess = (res: PDFGenerationResult) => {
+    setPdfPreviewResult(res);
+    setPdfSuccessMsg(`Exported PDF: ${res.filename}`);
     confetti({
       particleCount: 80,
       spread: 70,
@@ -737,7 +1054,7 @@ export const SimpleFarmViewPage: React.FC = () => {
     setTimeout(() => setPdfSuccessMsg(''), 4500);
   };
 
-  const handleExportDailyAttendancePdf = (targetDate: string = attendanceDate) => {
+  const handleExportDailyAttendancePdf = async (targetDate: string = attendanceDate) => {
     const dayAtt = dataService.getAttendanceForDate(targetDate);
     let pCount = 0;
     let hCount = 0;
@@ -780,7 +1097,7 @@ export const SimpleFarmViewPage: React.FC = () => {
       ];
     });
 
-    const res = generateReportPDF({
+    const res = await generateReportPDF({
       title: `Daily Labour Attendance Register`,
       subtitle: `Official Field Muster Roll & Daily Wage Distribution Estimate`,
       dateRange: targetDate,
@@ -796,10 +1113,10 @@ export const SimpleFarmViewPage: React.FC = () => {
       ]
     });
 
-    triggerPdfSuccess(res.filename);
+    triggerPdfSuccess(res);
   };
 
-  const handleExportMonthlyAttendancePdf = (year: number = calYear, month: number = calMonth) => {
+  const handleExportMonthlyAttendancePdf = async (year: number = calYear, month: number = calMonth) => {
     const mName = new Date(year, month - 1, 1).toLocaleString('default', { month: 'long' });
     const dInMonth = new Date(year, month, 0).getDate();
     let totalEffShifts = 0;
@@ -822,7 +1139,7 @@ export const SimpleFarmViewPage: React.FC = () => {
       ];
     });
 
-    const res = generateReportPDF({
+    const res = await generateReportPDF({
       title: `Monthly Labour Attendance Register — ${mName} ${year}`,
       subtitle: `Consolidated Monthly Labour Muster Roll & Accumulated Gross Earnings`,
       dateRange: `01-${month}-${year} to ${dInMonth}-${month}-${year}`,
@@ -836,10 +1153,10 @@ export const SimpleFarmViewPage: React.FC = () => {
       ]
     });
 
-    triggerPdfSuccess(res.filename);
+    triggerPdfSuccess(res);
   };
 
-  const handleExportAdvancesPdf = () => {
+  const handleExportAdvancesPdf = async () => {
     const isAll = advFilterMonth === 'all';
     const periodLabel = isAll ? `All Months (${advFilterYear})` : `${advMonthNames[(advFilterMonth as number) - 1]} ${advFilterYear}`;
 
@@ -858,7 +1175,7 @@ export const SimpleFarmViewPage: React.FC = () => {
       ];
     });
 
-    const res = generateReportPDF({
+    const res = await generateReportPDF({
       title: `Worker Advances & Khata Ledger`,
       subtitle: `Wage Advances Disbursed, Deductions Settled & Current Outstanding Dues`,
       dateRange: periodLabel,
@@ -872,12 +1189,10 @@ export const SimpleFarmViewPage: React.FC = () => {
       ]
     });
 
-    triggerPdfSuccess(res.filename);
+    triggerPdfSuccess(res);
   };
 
-  const handleExportSalaryPdf = (year: number = salaryYear, month: number = salaryMonth) => {
-    const mName = new Date(year, month - 1, 1).toLocaleString('default', { month: 'long' });
-
+  const handleExportSalaryPdf = async () => {
     let sumDays = 0;
     let sumGross = 0;
     let sumAdvDeducted = 0;
@@ -897,16 +1212,21 @@ export const SimpleFarmViewPage: React.FC = () => {
         `Rs. ${r.grossWage.toLocaleString('en-IN')}`,
         `Rs. ${r.advanceDeducted.toLocaleString('en-IN')}`,
         `Rs. ${r.netTakeHome.toLocaleString('en-IN')}`,
+        r.settlement?.given_by || '—',
         r.isSettled ? 'SETTLED' : 'PENDING'
       ];
     });
 
-    const res = generateReportPDF({
-      title: `Monthly Labour Payroll & Settlement Sheet`,
-      subtitle: `Monthly Earnings, Advance Adjustments & Net Wages Take-Home`,
-      dateRange: `${mName} ${year}`,
+    const titlePrefix = salaryPeriodType === 'weekly'
+      ? `Weekly Labour Wages Sheet (${effectivePeriodLabel})`
+      : (salaryPeriodType === 'monthly' ? `Monthly Labour Payroll — ${effectivePeriodLabel}` : `Custom Labour Wage Sheet (${effectivePeriodLabel})`);
+
+    const res = await generateReportPDF({
+      title: titlePrefix,
+      subtitle: `Official Wage Calculations, Advance Adjustments & Net Wages Take-Home (${effectivePeriodSubtitle})`,
+      dateRange: effectivePeriodLabel,
       farm: farm || { id: 'default', name: 'My Farm Operations', address: 'Agricultural Operations Hub' },
-      headers: ['#', 'Worker Name', 'Days Worked', 'Rate', 'Gross Wage', 'Advance Ded.', 'Net Payable', 'Status'],
+      headers: ['#', 'Worker Name', 'Days Worked', 'Rate', 'Gross Wage', 'Advance Ded.', 'Net Payable', 'Given By', 'Status'],
       rows,
       summaryTotals: [
         { label: 'Total Crew Days Worked', value: `${round2(sumDays)} shifts` },
@@ -916,10 +1236,10 @@ export const SimpleFarmViewPage: React.FC = () => {
       ]
     });
 
-    triggerPdfSuccess(res.filename);
+    triggerPdfSuccess(res);
   };
 
-  const handleExportTractorPdf = () => {
+  const handleExportTractorPdf = async () => {
     const totals = dataService.getTractorRentalTotals(tractorDateFilter);
     const todayFormatted = new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
     const dateLabel = tractorDateFilter === 'all' ? 'All Recorded Runs' : (tractorDateFilter === today ? `Today (${todayFormatted})` : tractorDateFilter);
@@ -937,7 +1257,7 @@ export const SimpleFarmViewPage: React.FC = () => {
       `Rs. ${r.rest_amount.toLocaleString('en-IN')}`
     ]);
 
-    const res = generateReportPDF({
+    const res = await generateReportPDF({
       title: `Hired Tractor Rentals & Vendor Dues`,
       subtitle: `Commercial Equipment Runs, Fuel/Service Hourly Billings & Vendor Outstandings`,
       dateRange: dateLabel,
@@ -952,10 +1272,10 @@ export const SimpleFarmViewPage: React.FC = () => {
       ]
     });
 
-    triggerPdfSuccess(res.filename);
+    triggerPdfSuccess(res);
   };
 
-  const handleExportLabourersPdf = () => {
+  const handleExportLabourersPdf = async () => {
     const rows = labourers.map((lab, index) => {
       const bal = dataService.getLabourerAdvanceBalance(lab.id);
       return [
@@ -968,7 +1288,7 @@ export const SimpleFarmViewPage: React.FC = () => {
       ];
     });
 
-    const res = generateReportPDF({
+    const res = await generateReportPDF({
       title: `Master Farm Labour Crew Register`,
       subtitle: `Registered Workforce Directory, Standard Daily Rates & Outstanding Liabilities`,
       dateRange: `Active Registry — ${new Date().toLocaleDateString('en-IN')}`,
@@ -981,32 +1301,32 @@ export const SimpleFarmViewPage: React.FC = () => {
       ]
     });
 
-    triggerPdfSuccess(res.filename);
+    triggerPdfSuccess(res);
   };
 
-  const handleExportCurrentViewPdf = () => {
+  const handleExportCurrentViewPdf = async () => {
     switch (activeSection) {
       case 'attendance':
         if (attendanceViewMode === 'calendar') {
-          handleExportMonthlyAttendancePdf();
+          await handleExportMonthlyAttendancePdf();
         } else {
-          handleExportDailyAttendancePdf();
+          await handleExportDailyAttendancePdf();
         }
         break;
       case 'advance':
-        handleExportAdvancesPdf();
+        await handleExportAdvancesPdf();
         break;
       case 'payday':
-        handleExportSalaryPdf();
+        await handleExportSalaryPdf();
         break;
       case 'tractor':
-        handleExportTractorPdf();
+        await handleExportTractorPdf();
         break;
       case 'labours':
-        handleExportLabourersPdf();
+        await handleExportLabourersPdf();
         break;
       default:
-        handleExportDailyAttendancePdf();
+        await handleExportDailyAttendancePdf();
     }
   };
 
@@ -1125,7 +1445,8 @@ export const SimpleFarmViewPage: React.FC = () => {
           <button
             type="button"
             className={`desktop-ledger-tab-btn ${activeSection === 'attendance' ? 'active' : ''}`}
-            onClick={() => setActiveSection('attendance')}
+            disabled={isAnyModalOpen}
+            onClick={() => !isAnyModalOpen && setActiveSection('attendance')}
           >
             <CalendarCheck size={16} />
             <span>Attendance</span>
@@ -1137,7 +1458,8 @@ export const SimpleFarmViewPage: React.FC = () => {
           <button
             type="button"
             className={`desktop-ledger-tab-btn ${activeSection === 'advance' ? 'active' : ''}`}
-            onClick={() => setActiveSection('advance')}
+            disabled={isAnyModalOpen}
+            onClick={() => !isAnyModalOpen && setActiveSection('advance')}
           >
             <Wallet size={16} />
             <span>Advance</span>
@@ -1146,7 +1468,8 @@ export const SimpleFarmViewPage: React.FC = () => {
           <button
             type="button"
             className={`desktop-ledger-tab-btn ${activeSection === 'payday' ? 'active' : ''}`}
-            onClick={() => setActiveSection('payday')}
+            disabled={isAnyModalOpen}
+            onClick={() => !isAnyModalOpen && setActiveSection('payday')}
           >
             <CreditCard size={16} />
             <span>Salary</span>
@@ -1155,7 +1478,8 @@ export const SimpleFarmViewPage: React.FC = () => {
           <button
             type="button"
             className={`desktop-ledger-tab-btn ${activeSection === 'tractor' ? 'active' : ''}`}
-            onClick={() => setActiveSection('tractor')}
+            disabled={isAnyModalOpen}
+            onClick={() => !isAnyModalOpen && setActiveSection('tractor')}
           >
             <Tractor size={16} />
             <span>Tractors</span>
@@ -1169,7 +1493,8 @@ export const SimpleFarmViewPage: React.FC = () => {
           <button
             type="button"
             className={`desktop-ledger-tab-btn ${activeSection === 'labours' ? 'active' : ''}`}
-            onClick={() => setActiveSection('labours')}
+            disabled={isAnyModalOpen}
+            onClick={() => !isAnyModalOpen && setActiveSection('labours')}
           >
             <Users size={16} />
             <span>Workers</span>
@@ -1181,7 +1506,8 @@ export const SimpleFarmViewPage: React.FC = () => {
           <button
             type="button"
             className={`desktop-ledger-tab-btn ${activeSection === 'settings' ? 'active' : ''}`}
-            onClick={() => setActiveSection('settings')}
+            disabled={isAnyModalOpen}
+            onClick={() => !isAnyModalOpen && setActiveSection('settings')}
           >
             <Sliders size={16} />
             <span>Settings</span>
@@ -2485,32 +2811,11 @@ export const SimpleFarmViewPage: React.FC = () => {
                       type="text"
                       value={advGivenBy}
                       onChange={(e) => setAdvGivenBy(e.target.value)}
-                      placeholder="Enter name (e.g. Sandip, Manager, Munshi)"
+                      placeholder="Enter name"
                       className="ledger-input"
                       style={{ fontWeight: 700 }}
                       required
                     />
-                    <div style={{ display: 'flex', gap: 6, marginTop: 5, flexWrap: 'wrap' }}>
-                      {['Sandip', 'Manager', 'Munshi'].map((presetName) => (
-                        <button
-                          key={presetName}
-                          type="button"
-                          onClick={() => setAdvGivenBy(presetName)}
-                          style={{
-                            padding: '2px 8px',
-                            borderRadius: 6,
-                            border: advGivenBy === presetName ? '1.5px solid #16a34a' : '1px solid #dcebe0',
-                            background: advGivenBy === presetName ? '#dcfce7' : '#f8fafc',
-                            color: advGivenBy === presetName ? '#15803d' : '#475569',
-                            fontSize: '0.72rem',
-                            fontWeight: 700,
-                            cursor: 'pointer'
-                          }}
-                        >
-                          {presetName}
-                        </button>
-                      ))}
-                    </div>
                   </div>
 
                   <div style={{ marginBottom: 12 }}>
@@ -2666,15 +2971,36 @@ export const SimpleFarmViewPage: React.FC = () => {
                                 </span>
                               </td>
                               <td className="ledger-td" style={{ textAlign: 'right' }}>
-                                <button
-                                  type="button"
-                                  onClick={() => setSelectedLabourerForCalendar(l)}
-                                  className="ledger-action-btn ledger-action-btn-secondary"
-                                  style={{ padding: '5px 10px', fontSize: '0.76rem' }}
-                                >
-                                  <Calendar size={13} color="#15803d" />
-                                  <span>Calendar</span>
-                                </button>
+                                <div style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+                                  {(() => {
+                                    const workerAdvances = recentAdvances.filter((a) => a.labourer_id === l.id);
+                                    return (
+                                      <>
+                                        {workerAdvances.length > 0 && (
+                                          <button
+                                            type="button"
+                                            onClick={() => handleOpenEditAdvance(workerAdvances[0])}
+                                            className="ledger-action-btn ledger-action-btn-secondary"
+                                            style={{ padding: '5px 10px', fontSize: '0.76rem', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                                            title={`Edit latest advance for ${l.full_name}`}
+                                          >
+                                            <Edit2 size={13} color="#0284c7" />
+                                            <span>Edit Adv</span>
+                                          </button>
+                                        )}
+                                        <button
+                                          type="button"
+                                          onClick={() => setSelectedLabourerForCalendar(l)}
+                                          className="ledger-action-btn ledger-action-btn-secondary"
+                                          style={{ padding: '5px 10px', fontSize: '0.76rem' }}
+                                        >
+                                          <Calendar size={13} color="#15803d" />
+                                          <span>Calendar</span>
+                                        </button>
+                                      </>
+                                    );
+                                  })()}
+                                </div>
                               </td>
                             </tr>
                           );
@@ -2689,6 +3015,7 @@ export const SimpleFarmViewPage: React.FC = () => {
                   {displayAdvanceLabourers.map((l) => {
                     const bal = dataService.getLabourerAdvanceBalance(l.id);
                     const monthAmt = workerMonthAdvanceMap.get(l.id) || 0;
+                    const workerAdvances = recentAdvances.filter((a) => a.labourer_id === l.id);
 
                     return (
                       <div key={l.id} className="ledger-mobile-row" style={{ opacity: l.is_active ? 1 : 0.85 }}>
@@ -2740,24 +3067,52 @@ export const SimpleFarmViewPage: React.FC = () => {
                           </span>
                         </div>
 
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.78rem', color: '#475569', paddingTop: 8, borderTop: '1px dashed #dcfce7' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.78rem', color: '#475569', paddingTop: 8, borderTop: '1px dashed #dcfce7', flexWrap: 'wrap', gap: 6 }}>
                           <span>Given: ₹{bal.totalIssued} • Repaid: ₹{bal.totalRecovered}</span>
-                          <button
-                            type="button"
-                            onClick={() => setSelectedLabourerForCalendar(l)}
-                            style={{
-                              background: '#f0fdf4',
-                              border: '1px solid #86efac',
-                              color: '#15803d',
-                              fontWeight: 800,
-                              fontSize: '0.74rem',
-                              cursor: 'pointer',
-                              padding: '3px 8px',
-                              borderRadius: 6
-                            }}
-                          >
-                            Calendar
-                          </button>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            {workerAdvances.length > 0 && (
+                              <button
+                                type="button"
+                                onClick={() => handleOpenEditAdvance(workerAdvances[0])}
+                                style={{
+                                  background: '#f0f9ff',
+                                  border: '1.5px solid #7dd3fc',
+                                  color: '#0284c7',
+                                  fontWeight: 800,
+                                  fontSize: '0.76rem',
+                                  cursor: 'pointer',
+                                  padding: '5px 10px',
+                                  borderRadius: 8,
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: 4
+                                }}
+                              >
+                                <Edit2 size={12} />
+                                <span>Edit Adv</span>
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => setSelectedLabourerForCalendar(l)}
+                              style={{
+                                background: '#f0fdf4',
+                                border: '1px solid #86efac',
+                                color: '#15803d',
+                                fontWeight: 800,
+                                fontSize: '0.76rem',
+                                cursor: 'pointer',
+                                padding: '5px 10px',
+                                borderRadius: 8,
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 4
+                              }}
+                            >
+                              <Calendar size={12} />
+                              <span>Calendar</span>
+                            </button>
+                          </div>
                         </div>
                       </div>
                     );
@@ -2787,7 +3142,27 @@ export const SimpleFarmViewPage: React.FC = () => {
 
                   {filteredAdvances.length === 0 ? (
                     <div style={{ padding: '24px', textAlign: 'center', color: '#64748b', fontSize: '0.86rem', background: '#f8fafc', borderRadius: 10, border: '1px dashed #cbd5e1' }}>
-                      No cash advances recorded in {currentAdvMonthLabel}.
+                      <div style={{ marginBottom: recentAdvances.length > 0 && advFilterMonth !== 'all' ? 10 : 0 }}>
+                        No cash advances recorded in {currentAdvMonthLabel}.
+                      </div>
+                      {recentAdvances.length > 0 && advFilterMonth !== 'all' && (
+                        <button
+                          type="button"
+                          onClick={() => setAdvFilterMonth('all')}
+                          style={{
+                            background: '#f0fdf4',
+                            border: '1.5px solid #86efac',
+                            color: '#15803d',
+                            fontWeight: 800,
+                            padding: '6px 14px',
+                            borderRadius: 8,
+                            fontSize: '0.82rem',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          Show All Recorded Advances ({recentAdvances.length})
+                        </button>
+                      )}
                     </div>
                   ) : (
                     <>
@@ -2842,15 +3217,27 @@ export const SimpleFarmViewPage: React.FC = () => {
                                     </span>
                                   </td>
                                   <td className="ledger-td" style={{ textAlign: 'right' }}>
-                                    <button
-                                      type="button"
-                                      onClick={() => handleDeleteAdvance(adv.id)}
-                                      className="ledger-action-btn ledger-action-btn-danger"
-                                      style={{ padding: '4px 7px' }}
-                                      title="Delete advance record"
-                                    >
-                                      <Trash2 size={12} />
-                                    </button>
+                                    <div style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleOpenEditAdvance(adv)}
+                                        className="ledger-action-btn ledger-action-btn-secondary"
+                                        style={{ padding: '4px 8px', display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: '0.76rem' }}
+                                        title="Edit advance record"
+                                      >
+                                        <Edit2 size={12} />
+                                        <span>Edit</span>
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleDeleteAdvance(adv.id)}
+                                        className="ledger-action-btn ledger-action-btn-danger"
+                                        style={{ padding: '4px 7px' }}
+                                        title="Delete advance record"
+                                      >
+                                        <Trash2 size={12} />
+                                      </button>
+                                    </div>
                                   </td>
                                 </tr>
                               ))}
@@ -2861,29 +3248,79 @@ export const SimpleFarmViewPage: React.FC = () => {
 
                       <div className="ledger-mobile-only">
                         {filteredAdvances.map((adv) => (
-                          <div key={adv.id} className="ledger-mobile-row" style={{ padding: '10px 12px', marginBottom: 8 }}>
+                          <div key={adv.id} className="ledger-mobile-row" style={{ padding: '12px 14px', marginBottom: 10, border: '1.5px solid rgba(220, 235, 224, 0.9)' }}>
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-                              <span style={{ fontWeight: 800, fontSize: '0.9rem', color: '#143823' }}>
+                              <span style={{ fontWeight: 800, fontSize: '0.98rem', color: '#143823' }}>
                                 {adv.labourer_name || labourers.find(l => l.id === adv.labourer_id)?.full_name || 'Worker'}
                               </span>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                <span style={{ fontWeight: 800, color: '#b45309', fontSize: '0.92rem' }}>
-                                  ₹{adv.amount.toLocaleString('en-IN')}
-                                </span>
-                                <button
-                                  type="button"
-                                  onClick={() => handleDeleteAdvance(adv.id)}
-                                  className="ledger-action-btn ledger-action-btn-danger"
-                                  style={{ padding: '3px 6px' }}
-                                  title="Delete advance record"
-                                >
-                                  <Trash2 size={11} />
-                                </button>
-                              </div>
+                              <span style={{
+                                fontWeight: 900,
+                                color: '#b45309',
+                                fontSize: '1.05rem',
+                                background: '#fef3c7',
+                                border: '1px solid #fde68a',
+                                padding: '2px 8px',
+                                borderRadius: 6
+                              }}>
+                                ₹{adv.amount.toLocaleString('en-IN')}
+                              </span>
                             </div>
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.74rem', color: '#64748b' }}>
+
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.76rem', color: '#64748b', marginBottom: 8, background: '#f8fafc', padding: '6px 10px', borderRadius: 8 }}>
                               <span>Given By: <strong style={{ color: '#15803d' }}>{adv.issued_by || 'Owner/Manager'}</strong></span>
-                              <span>{new Date(adv.issued_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</span>
+                              <span>{new Date(adv.issued_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                            </div>
+
+                            {adv.purpose && (
+                              <div style={{ fontSize: '0.74rem', color: '#475569', marginBottom: 8, background: '#f0fdf4', padding: '4px 8px', borderRadius: 6, border: '1px solid #dcfce7' }}>
+                                Reason: <strong>{adv.purpose}</strong>
+                              </div>
+                            )}
+
+                            <div style={{ display: 'flex', gap: 8, borderTop: '1px dashed #dcfce7', paddingTop: 10 }}>
+                              <button
+                                type="button"
+                                onClick={() => handleOpenEditAdvance(adv)}
+                                style={{
+                                  flex: 1,
+                                  padding: '9px 12px',
+                                  borderRadius: 8,
+                                  border: '1.5px solid #0284c7',
+                                  background: '#f0f9ff',
+                                  color: '#0284c7',
+                                  fontWeight: 800,
+                                  fontSize: '0.84rem',
+                                  cursor: 'pointer',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  gap: 6
+                                }}
+                              >
+                                <Edit2 size={14} />
+                                <span>Edit Advance</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteAdvance(adv.id)}
+                                style={{
+                                  padding: '9px 14px',
+                                  borderRadius: 8,
+                                  border: '1px solid #fed7aa',
+                                  background: '#fff7ed',
+                                  color: '#c2410c',
+                                  fontWeight: 800,
+                                  fontSize: '0.82rem',
+                                  cursor: 'pointer',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: 4
+                                }}
+                                title="Delete advance record"
+                              >
+                                <Trash2 size={14} />
+                                <span>Delete</span>
+                              </button>
                             </div>
                           </div>
                         ))}
@@ -2901,96 +3338,297 @@ export const SimpleFarmViewPage: React.FC = () => {
           ========================================================================= */}
         {activeSection === 'payday' && (
           <div>
-            {/* Header & Month Navigation Toolbar */}
+            {/* Header & Period Switcher Toolbar */}
             <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
               background: '#ffffff',
               border: '2px solid rgba(220, 235, 224, 0.85)',
               borderRadius: 16,
-              padding: '12px 18px',
+              padding: '14px 18px',
               marginBottom: 16,
               boxShadow: '4px 4px 12px rgba(166, 184, 170, 0.2), inset 1px 1px 2px #ffffff',
-              flexWrap: 'wrap',
+              display: 'flex',
+              flexDirection: 'column',
               gap: 12
             }}>
-              <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <CreditCard size={20} color="#15803d" />
-                  <h2 style={{ fontSize: '1.25rem', margin: 0, color: '#143823', fontWeight: 800 }}>
-                    Monthly Salary Settlements ({salaryMonthName} {salaryYear})
-                  </h2>
+              {/* Row 1: Title and 3-Way Period Routine Switcher */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <CreditCard size={20} color="#15803d" />
+                    <h2 style={{ fontSize: '1.25rem', margin: 0, color: '#143823', fontWeight: 800 }}>
+                      {salaryPeriodType === 'monthly'
+                        ? `Monthly Salary Settlements (${effectivePeriodLabel})`
+                        : (salaryPeriodType === 'weekly' ? `Weekly Wage Settlements (${effectivePeriodLabel})` : `Custom Wage Settlements (${effectivePeriodLabel})`)}
+                    </h2>
+                  </div>
+                  <div style={{ fontSize: '0.8rem', color: '#4b6354', fontWeight: 600, marginTop: 2 }}>
+                    Formula: <strong>Gross Wage (Days Worked × Daily Rate) − Advance Deducted = Net Take-Home Pay</strong>
+                  </div>
                 </div>
-                <div style={{ fontSize: '0.8rem', color: '#4b6354', fontWeight: 600, marginTop: 2 }}>
-                  Formula: <strong>Gross Wage (Days Worked × Daily Rate) − Advance = Net Take-Home Pay</strong>
+
+                {/* 3-Way Routine Switcher: Monthly vs Weekly vs Custom */}
+                <div style={{
+                  display: 'inline-flex',
+                  background: '#f1f5f9',
+                  padding: 4,
+                  borderRadius: 12,
+                  border: '1px solid #cbd5e1',
+                  gap: 4
+                }}>
+                  <button
+                    type="button"
+                    onClick={() => setSalaryPeriodType('monthly')}
+                    style={{
+                      padding: '6px 14px',
+                      borderRadius: 9,
+                      border: 'none',
+                      background: salaryPeriodType === 'monthly' ? '#15803d' : 'transparent',
+                      color: salaryPeriodType === 'monthly' ? '#ffffff' : '#334155',
+                      fontWeight: 800,
+                      fontSize: '0.78rem',
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      boxShadow: salaryPeriodType === 'monthly' ? '0 2px 6px rgba(21, 128, 61, 0.3)' : 'none',
+                      transition: 'all 0.15s'
+                    }}
+                  >
+                    📅 Monthly Routine
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSalaryPeriodType('weekly')}
+                    style={{
+                      padding: '6px 14px',
+                      borderRadius: 9,
+                      border: 'none',
+                      background: salaryPeriodType === 'weekly' ? '#1d4ed8' : 'transparent',
+                      color: salaryPeriodType === 'weekly' ? '#ffffff' : '#334155',
+                      fontWeight: 800,
+                      fontSize: '0.78rem',
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      boxShadow: salaryPeriodType === 'weekly' ? '0 2px 6px rgba(29, 78, 216, 0.3)' : 'none',
+                      transition: 'all 0.15s'
+                    }}
+                  >
+                    🗓️ Weekly Routine
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSalaryPeriodType('custom')}
+                    style={{
+                      padding: '6px 14px',
+                      borderRadius: 9,
+                      border: 'none',
+                      background: salaryPeriodType === 'custom' ? '#475569' : 'transparent',
+                      color: salaryPeriodType === 'custom' ? '#ffffff' : '#334155',
+                      fontWeight: 800,
+                      fontSize: '0.78rem',
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      boxShadow: salaryPeriodType === 'custom' ? '0 2px 6px rgba(71, 85, 105, 0.3)' : 'none',
+                      transition: 'all 0.15s'
+                    }}
+                  >
+                    ⏳ Custom Range
+                  </button>
                 </div>
               </div>
 
-              {/* Month Navigation Controls */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <button
-                  type="button"
-                  onClick={handleSalaryPrevMonth}
-                  className="cal-nav-btn"
-                  title="Previous Month"
-                >
-                  <ChevronLeft size={18} />
-                </button>
-                <div style={{ fontWeight: 800, fontSize: '1rem', color: '#143823', minWidth: 120, textAlign: 'center' }}>
-                  {salaryMonthName} {salaryYear}
-                </div>
-                <button
-                  type="button"
-                  onClick={handleSalaryNextMonth}
-                  className="cal-nav-btn"
-                  title="Next Month"
-                >
-                  <ChevronRight size={18} />
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSalaryCurrentMonth}
-                  style={{
-                    background: '#f0fdf4',
-                    border: '1.5px solid #86efac',
-                    color: '#15803d',
-                    fontWeight: 800,
-                    fontSize: '0.78rem',
-                    padding: '6px 12px',
-                    borderRadius: 10,
-                    cursor: 'pointer',
-                    marginLeft: 4
-                  }}
-                >
-                  Current Month
-                </button>
+              {/* Row 2: Dynamic Navigation Controls by Mode */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                paddingTop: 10,
+                borderTop: '1px solid #e2e8f0',
+                flexWrap: 'wrap',
+                gap: 10
+              }}>
+                {/* Period Controls */}
+                {salaryPeriodType === 'monthly' && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <button
+                      type="button"
+                      onClick={handleSalaryPrevMonth}
+                      className="cal-nav-btn"
+                      title="Previous Month"
+                    >
+                      <ChevronLeft size={18} />
+                    </button>
+                    <div style={{ fontWeight: 800, fontSize: '0.96rem', color: '#143823', minWidth: 130, textAlign: 'center' }}>
+                      {salaryMonthName} {salaryYear}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleSalaryNextMonth}
+                      className="cal-nav-btn"
+                      title="Next Month"
+                    >
+                      <ChevronRight size={18} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSalaryCurrentMonth}
+                      style={{
+                        background: '#f0fdf4',
+                        border: '1.5px solid #86efac',
+                        color: '#15803d',
+                        fontWeight: 800,
+                        fontSize: '0.78rem',
+                        padding: '6px 12px',
+                        borderRadius: 10,
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Current Month
+                    </button>
+                  </div>
+                )}
 
+                {salaryPeriodType === 'weekly' && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <button
+                      type="button"
+                      onClick={handleSalaryPrevWeek}
+                      className="cal-nav-btn"
+                      title="Previous Week"
+                    >
+                      <ChevronLeft size={18} />
+                    </button>
+                    <div style={{ fontWeight: 800, fontSize: '0.94rem', color: '#1d4ed8', minWidth: 160, textAlign: 'center' }}>
+                      🗓️ {formatWeekLabel(salaryWeekStart, salaryWeekEnd)}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleSalaryNextWeek}
+                      className="cal-nav-btn"
+                      title="Next Week"
+                    >
+                      <ChevronRight size={18} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSalaryCurrentWeek}
+                      style={{
+                        background: '#eff6ff',
+                        border: '1.5px solid #93c5fd',
+                        color: '#1d4ed8',
+                        fontWeight: 800,
+                        fontSize: '0.78rem',
+                        padding: '6px 12px',
+                        borderRadius: 10,
+                        cursor: 'pointer'
+                      }}
+                    >
+                      This Week
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSalaryLastWeek}
+                      style={{
+                        background: '#f8fafc',
+                        border: '1.5px solid #cbd5e1',
+                        color: '#475569',
+                        fontWeight: 800,
+                        fontSize: '0.78rem',
+                        padding: '6px 12px',
+                        borderRadius: 10,
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Last Week
+                    </button>
+                  </div>
+                )}
+
+                {salaryPeriodType === 'custom' && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: '0.8rem', fontWeight: 800, color: '#475569' }}>From:</span>
+                    <input
+                      type="date"
+                      value={salaryCustomStart}
+                      onChange={(e) => setSalaryCustomStart(e.target.value)}
+                      className="ledger-input"
+                      style={{ padding: '5px 8px', fontSize: '0.8rem', width: 135 }}
+                    />
+                    <span style={{ fontSize: '0.8rem', fontWeight: 800, color: '#475569' }}>To:</span>
+                    <input
+                      type="date"
+                      value={salaryCustomEnd}
+                      onChange={(e) => setSalaryCustomEnd(e.target.value)}
+                      className="ledger-input"
+                      style={{ padding: '5px 8px', fontSize: '0.8rem', width: 135 }}
+                    />
+                    <div style={{ display: 'flex', gap: 5 }}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSalaryCustomStart(addDaysToDateStr(today, -6));
+                          setSalaryCustomEnd(today);
+                        }}
+                        style={{ padding: '4px 8px', fontSize: '0.74rem', fontWeight: 800, borderRadius: 6, border: '1px solid #cbd5e1', background: '#f8fafc', cursor: 'pointer' }}
+                      >
+                        Last 7 Days
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSalaryCustomStart(addDaysToDateStr(today, -14));
+                          setSalaryCustomEnd(today);
+                        }}
+                        style={{ padding: '4px 8px', fontSize: '0.74rem', fontWeight: 800, borderRadius: 6, border: '1px solid #cbd5e1', background: '#f8fafc', cursor: 'pointer' }}
+                      >
+                        Last 15 Days
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSalaryCustomStart(salaryMonthStartDate);
+                          setSalaryCustomEnd(today);
+                        }}
+                        style={{ padding: '4px 8px', fontSize: '0.74rem', fontWeight: 800, borderRadius: 6, border: '1px solid #cbd5e1', background: '#f8fafc', cursor: 'pointer' }}
+                      >
+                        Month to Date
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* PDF Export Action */}
                 <button
                   type="button"
                   onClick={() => handleExportSalaryPdf()}
                   className="ledger-action-btn ledger-action-btn-secondary"
                   style={{
                     fontSize: '0.78rem',
-                    padding: '6px 12px',
+                    padding: '6px 14px',
                     borderRadius: 10,
                     display: 'inline-flex',
                     alignItems: 'center',
-                    gap: 5
+                    gap: 6
                   }}
-                  title="Export Monthly Salary Settlement Sheet to PDF"
+                  title="Export Current Salary / Wage Settlement Sheet to PDF"
                 >
-                  <FileDown size={14} />
+                  <FileDown size={15} />
+                  <span>Export Wage Sheet PDF</span>
                 </button>
               </div>
             </div>
 
-            {/* Monthly KPI Summary Cards Strip */}
+
+            {/* KPI Summary Cards Strip */}
             <div className="ledger-kpi-grid" style={{ marginBottom: 16 }}>
               <div className="ledger-kpi-box" style={{ background: 'linear-gradient(135deg, #ffffff 60%, #f0fdf4 100%)', borderColor: '#86efac' }}>
                 <div className="ledger-kpi-title" style={{ color: '#16a34a' }}>Crew Days Worked</div>
                 <div className="ledger-kpi-value" style={{ color: '#15803d' }}>{totalCrewDaysWorked}</div>
-                <div className="ledger-kpi-sub">Total payable shifts in {salaryMonthName}</div>
+                <div className="ledger-kpi-sub">Payable shifts in {effectivePeriodLabel}</div>
               </div>
 
               <div className="ledger-kpi-box" style={{ background: 'linear-gradient(135deg, #ffffff 60%, #f0fdf4 100%)', borderColor: '#86efac' }}>
@@ -3031,21 +3669,22 @@ export const SimpleFarmViewPage: React.FC = () => {
                       <th className="ledger-th">Gross Wage</th>
                       <th className="ledger-th">Advance</th>
                       <th className="ledger-th">Net Take-Home Pay</th>
+                      <th className="ledger-th">Given By</th>
                       <th className="ledger-th" style={{ textAlign: 'right' }}>Payment Action</th>
                     </tr>
                   </thead>
                   <tbody>
                     {salaryRows.length === 0 ? (
                       <tr>
-                        <td colSpan={7} style={{ textAlign: 'center', padding: '36px 16px', color: '#64748b' }}>
+                        <td colSpan={8} style={{ textAlign: 'center', padding: '36px 16px', color: '#64748b' }}>
                           <CreditCard size={32} style={{ opacity: 0.4, margin: '0 auto 8px' }} />
-                          <div style={{ fontWeight: 800, color: '#334155' }}>No Workers or Shifts Recorded for {salaryMonthName} {salaryYear}</div>
+                          <div style={{ fontWeight: 800, color: '#334155' }}>No Workers or Shifts Recorded for {effectivePeriodLabel}</div>
                           <div style={{ fontSize: '0.8rem', marginTop: 4 }}>Add or reactivate crew members to generate settlement sheets.</div>
                         </td>
                       </tr>
                     ) : (
                       salaryRows.map((row) => {
-                        const { labourer: lab, dailyRate, daysWorked, grossWage, advanceDue, netTakeHome, isSettled } = row;
+                        const { labourer: lab, dailyRate, daysWorked, grossWage, advanceDue, netTakeHome, isSettled, settlement } = row;
 
                         return (
                           <tr key={lab.id} className="ledger-tr" style={{ opacity: lab.is_active ? 1 : 0.85 }}>
@@ -3105,16 +3744,85 @@ export const SimpleFarmViewPage: React.FC = () => {
                                 ₹{netTakeHome.toLocaleString('en-IN')}
                               </span>
                             </td>
+                            <td className="ledger-td">
+                              {isSettled ? (
+                                <span style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: 5,
+                                  background: '#f0fdf4',
+                                  color: '#15803d',
+                                  fontWeight: 800,
+                                  padding: '3px 8px',
+                                  borderRadius: 8,
+                                  border: '1px solid #86efac',
+                                  fontSize: '0.78rem'
+                                }}>
+                                  👤 {settlement?.given_by || salaryGivenBy || currentUser?.name || 'Owner'}
+                                </span>
+                              ) : (
+                                <span style={{ color: '#94a3b8', fontSize: '0.8rem' }}>—</span>
+                              )}
+                            </td>
                             <td className="ledger-td" style={{ textAlign: 'right' }}>
-                              <button
-                                type="button"
-                                disabled={isSettled}
-                                onClick={() => handleSettleSalary(lab, netTakeHome)}
-                                className={`ledger-action-btn ${isSettled ? 'ledger-action-btn-secondary' : 'ledger-action-btn-primary'}`}
-                                style={{ padding: '6px 14px', fontSize: '0.8rem' }}
-                              >
-                                {isSettled ? '✓ Paid / Settled' : 'Pay Cash / UPI'}
-                              </button>
+                              {isSettled && settlement ? (
+                                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                                  <span style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: 4,
+                                    background: '#dcfce7',
+                                    color: '#14532d',
+                                    fontWeight: 800,
+                                    fontSize: '0.75rem',
+                                    padding: '5px 9px',
+                                    borderRadius: 8,
+                                    border: '1px solid #86efac'
+                                  }}>
+                                    ✓ Paid ₹{settlement.paid_amount.toLocaleString('en-IN')}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenEditSalary(settlement)}
+                                    className="ledger-action-btn ledger-action-btn-secondary"
+                                    style={{ padding: '5px 8px', display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: '0.75rem' }}
+                                    title="Edit Salary Settlement (Amount, Given By, Date)"
+                                  >
+                                    <Edit2 size={12} />
+                                    <span>Edit</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteSalarySettlement(settlement.id)}
+                                    className="ledger-action-btn ledger-action-btn-danger"
+                                    style={{ padding: '5px 7px' }}
+                                    title="Revert to Unpaid"
+                                  >
+                                    <RotateCcw size={12} />
+                                  </button>
+                                </div>
+                              ) : (
+                                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenSettleModal(row)}
+                                    className="ledger-action-btn ledger-action-btn-primary"
+                                    style={{ padding: '6px 14px', fontSize: '0.8rem' }}
+                                  >
+                                    Pay Cash / UPI
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenEditLabourer(lab)}
+                                    className="ledger-action-btn ledger-action-btn-secondary"
+                                    style={{ padding: '6px 10px', fontSize: '0.76rem', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                                    title={`Edit wage rate / routine for ${lab.full_name}`}
+                                  >
+                                    <Edit2 size={12} color="#0284c7" />
+                                    <span>Rate</span>
+                                  </button>
+                                </div>
+                              )}
                             </td>
                           </tr>
                         );
@@ -3130,12 +3838,13 @@ export const SimpleFarmViewPage: React.FC = () => {
               {salaryRows.length === 0 ? (
                 <div style={{ textAlign: 'center', padding: '36px 16px', background: '#f8fafc', borderRadius: 16, border: '1.5px dashed #cbd5e1', color: '#64748b', margin: '14px 0' }}>
                   <CreditCard size={36} style={{ opacity: 0.4, marginBottom: 8 }} />
-                  <div style={{ fontWeight: 800, fontSize: '1rem', color: '#334155' }}>No Workers or Shifts for {salaryMonthName} {salaryYear}</div>
+                  <div style={{ fontWeight: 800, fontSize: '1rem', color: '#334155' }}>No Workers or Shifts for {effectivePeriodLabel}</div>
                   <div style={{ fontSize: '0.8rem', marginTop: 4 }}>Add or reactivate workers to calculate salaries.</div>
                 </div>
               ) : (
                 salaryRows.map((row) => {
-                  const { labourer: lab, dailyRate, daysWorked, grossWage, advanceDue, netTakeHome, isSettled } = row;
+                  const { labourer: lab, dailyRate, daysWorked, grossWage, advanceDue, netTakeHome, isSettled, settlement } = row;
+                  const pastSettlement = salarySettlements.find((s) => s.labourer_id === lab.id);
 
                   return (
                     <div key={lab.id} className="ledger-mobile-row" style={{ opacity: lab.is_active ? 1 : 0.85 }}>
@@ -3178,23 +3887,374 @@ export const SimpleFarmViewPage: React.FC = () => {
                         </div>
                       </div>
 
-                      <div style={{ background: '#f8faf8', border: '1px solid rgba(220, 235, 224, 0.8)', padding: '8px 12px', borderRadius: 10, fontSize: '0.78rem', color: '#334e3e', marginBottom: 10 }}>
-                        <span>Gross Wage: <strong>₹{grossWage.toLocaleString('en-IN')}</strong></span>
-                        {advanceDue > 0 && <span style={{ color: '#b45309', marginLeft: 10 }}>Advance: <strong>₹{advanceDue.toLocaleString('en-IN')}</strong></span>}
+                      <div style={{ background: '#f8faf8', border: '1px solid rgba(220, 235, 224, 0.8)', padding: '8px 12px', borderRadius: 10, fontSize: '0.78rem', color: '#334e3e', marginBottom: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+                        <div>
+                          <span>Gross: <strong>₹{grossWage.toLocaleString('en-IN')}</strong></span>
+                          {advanceDue > 0 && <span style={{ color: '#b45309', marginLeft: 10 }}>Advance: <strong>₹{advanceDue.toLocaleString('en-IN')}</strong></span>}
+                        </div>
+                        {isSettled && (
+                          <div style={{ fontSize: '0.74rem', color: '#15803d', fontWeight: 800 }}>
+                            Given By: <strong>👤 {settlement?.given_by || salaryGivenBy}</strong>
+                          </div>
+                        )}
                       </div>
 
-                      <button
-                        type="button"
-                        disabled={isSettled}
-                        onClick={() => handleSettleSalary(lab, netTakeHome)}
-                        className={`ledger-action-btn ${isSettled ? 'ledger-action-btn-secondary' : 'ledger-action-btn-primary'}`}
-                        style={{ width: '100%', padding: '10px', fontSize: '0.85rem', borderRadius: 12 }}
-                      >
-                        {isSettled ? '✓ Paid & Settled' : `Pay Cash / UPI (₹${netTakeHome})`}
-                      </button>
+                      {isSettled && settlement ? (
+                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                          <div style={{
+                            flex: '1 1 100%',
+                            background: '#f0fdf4',
+                            border: '1.5px solid #86efac',
+                            color: '#15803d',
+                            fontWeight: 800,
+                            fontSize: '0.84rem',
+                            borderRadius: 10,
+                            padding: '8px 12px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: 6
+                          }}>
+                            <CheckCircle2 size={16} /> Paid ₹{settlement.paid_amount.toLocaleString('en-IN')} ({settlement.period_type === 'weekly' ? 'Weekly' : 'Monthly'})
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleOpenEditSalary(settlement)}
+                            style={{
+                              flex: 1,
+                              padding: '10px 14px',
+                              borderRadius: 10,
+                              border: '1.5px solid #0284c7',
+                              background: '#f0f9ff',
+                              color: '#0284c7',
+                              fontWeight: 800,
+                              fontSize: '0.85rem',
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: 6,
+                              boxShadow: '0 2px 4px rgba(2, 132, 199, 0.12)'
+                            }}
+                          >
+                            <Edit2 size={15} />
+                            <span>Edit Payout</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteSalarySettlement(settlement.id)}
+                            style={{
+                              padding: '10px 14px',
+                              borderRadius: 10,
+                              border: '1px solid #fed7aa',
+                              background: '#fff7ed',
+                              color: '#c2410c',
+                              fontWeight: 800,
+                              fontSize: '0.82rem',
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 4
+                            }}
+                            title="Revert to Unpaid"
+                          >
+                            <RotateCcw size={14} />
+                            <span>Revert</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleOpenEditLabourer(lab)}
+                            style={{
+                              padding: '10px 12px',
+                              borderRadius: 10,
+                              border: '1px solid #cbd5e1',
+                              background: '#f8fafc',
+                              color: '#475569',
+                              fontWeight: 700,
+                              fontSize: '0.78rem',
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 4
+                            }}
+                            title="Edit wage rate"
+                          >
+                            <Edit2 size={12} color="#0284c7" />
+                            <span>Rate: ₹{dailyRate}</span>
+                          </button>
+                        </div>
+                      ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                          <button
+                            type="button"
+                            onClick={() => handleOpenSettleModal(row)}
+                            className="ledger-action-btn ledger-action-btn-primary"
+                            style={{ width: '100%', padding: '11px', fontSize: '0.88rem', borderRadius: 12, fontWeight: 800 }}
+                          >
+                            Pay Cash / UPI (₹{netTakeHome.toLocaleString('en-IN')})
+                          </button>
+                          <div style={{ display: 'flex', gap: 8 }}>
+                            <button
+                              type="button"
+                              onClick={() => handleOpenEditLabourer(lab)}
+                              style={{
+                                flex: 1,
+                                padding: '8px 12px',
+                                borderRadius: 10,
+                                border: '1px solid #cbd5e1',
+                                background: '#f8fafc',
+                                color: '#334155',
+                                fontWeight: 700,
+                                fontSize: '0.78rem',
+                                cursor: 'pointer',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: 5
+                              }}
+                            >
+                              <Edit2 size={13} color="#0284c7" />
+                              <span>Edit Daily Rate (₹{dailyRate})</span>
+                            </button>
+                            {pastSettlement && (
+                              <button
+                                type="button"
+                                onClick={() => handleOpenEditSalary(pastSettlement)}
+                                style={{
+                                  flex: 1,
+                                  padding: '8px 12px',
+                                  borderRadius: 10,
+                                  border: '1.5px solid #bae6fd',
+                                  background: '#f0f9ff',
+                                  color: '#0284c7',
+                                  fontWeight: 700,
+                                  fontSize: '0.78rem',
+                                  cursor: 'pointer',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  gap: 5
+                                }}
+                              >
+                                <Edit2 size={13} />
+                                <span>Edit Past Payout (₹{pastSettlement.paid_amount})</span>
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   );
                 })
+              )}
+            </div>
+
+            {/* Settled Salary Payouts History Section */}
+            <div style={{ marginTop: 24, paddingTop: 18, borderTop: '2px solid rgba(220, 235, 224, 0.7)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
+                <div>
+                  <h4 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800, color: '#143823' }}>
+                    Settled Salary Payouts History
+                  </h4>
+                  <div style={{ fontSize: '0.78rem', color: '#4b6354', fontWeight: 600 }}>
+                    All recorded salary payments and disbursements
+                  </div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: '0.78rem', fontWeight: 800, background: '#f0fdf4', color: '#15803d', padding: '3px 10px', borderRadius: 8, border: '1px solid #bbf7d0' }}>
+                    Total Paid: ₹{salarySettlements.reduce((s, st) => s + (Number(st.paid_amount) || 0), 0).toLocaleString('en-IN')}
+                  </span>
+                  <span style={{ fontSize: '0.75rem', fontWeight: 800, background: '#eff6ff', color: '#1d4ed8', padding: '3px 8px', borderRadius: 8, border: '1px solid #bfdbfe' }}>
+                    {salarySettlements.length} Payouts
+                  </span>
+                </div>
+              </div>
+
+              {salarySettlements.length === 0 ? (
+                <div style={{ padding: '24px', textAlign: 'center', color: '#64748b', fontSize: '0.86rem', background: '#f8fafc', borderRadius: 10, border: '1px dashed #cbd5e1' }}>
+                  No salary payouts recorded yet. Tap "Pay Cash / UPI" on any worker above to record a payout.
+                </div>
+              ) : (
+                <>
+                  {/* Desktop History Table */}
+                  <div className="ledger-desktop-only">
+                    <div className="ledger-table-wrap">
+                      <table className="ledger-table">
+                        <thead>
+                          <tr>
+                            <th className="ledger-th">Date</th>
+                            <th className="ledger-th">Worker</th>
+                            <th className="ledger-th">Period / Cycle</th>
+                            <th className="ledger-th">Gross Wage</th>
+                            <th className="ledger-th">Adv Deducted</th>
+                            <th className="ledger-th">Paid Amount</th>
+                            <th className="ledger-th">Given By</th>
+                            <th className="ledger-th">Mode</th>
+                            <th className="ledger-th" style={{ textAlign: 'right' }}>Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {salarySettlements.map((st) => (
+                            <tr key={st.id} className="ledger-tr">
+                              <td className="ledger-td" style={{ fontSize: '0.82rem', color: '#475569' }}>
+                                {st.payment_date || (st.created_at ? new Date(st.created_at).toLocaleDateString('en-IN') : '—')}
+                              </td>
+                              <td className="ledger-td" style={{ fontWeight: 800, color: '#143823' }}>
+                                {st.labourer_name || labourers.find(l => l.id === st.labourer_id)?.full_name || 'Worker'}
+                                {st.labour_code && <span style={{ fontSize: '0.72rem', color: '#64748b', marginLeft: 6 }}>({st.labour_code})</span>}
+                              </td>
+                              <td className="ledger-td" style={{ fontSize: '0.8rem', color: '#475569' }}>
+                                <span style={{
+                                  background: st.period_type === 'weekly' ? '#eff6ff' : '#f0fdf4',
+                                  color: st.period_type === 'weekly' ? '#1d4ed8' : '#15803d',
+                                  border: st.period_type === 'weekly' ? '1px solid #bfdbfe' : '1px solid #bbf7d0',
+                                  padding: '2px 6px',
+                                  borderRadius: 4,
+                                  fontSize: '0.72rem',
+                                  fontWeight: 800
+                                }}>
+                                  {st.period_type === 'weekly' ? '🗓️ Weekly' : '📅 Monthly'}
+                                </span>
+                                <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: 2 }}>
+                                  {st.start_date && st.end_date ? `${st.start_date} to ${st.end_date}` : `Month ${st.month}/${st.year}`}
+                                </div>
+                              </td>
+                              <td className="ledger-td" style={{ color: '#475569', fontWeight: 600 }}>
+                                ₹{st.gross_wage?.toLocaleString('en-IN') || '0'}
+                              </td>
+                              <td className="ledger-td" style={{ color: '#b45309', fontWeight: 600 }}>
+                                {st.advance_deducted > 0 ? `₹${st.advance_deducted.toLocaleString('en-IN')}` : '₹0'}
+                              </td>
+                              <td className="ledger-td" style={{ fontWeight: 800, color: '#15803d', fontSize: '0.95rem' }}>
+                                ₹{st.paid_amount.toLocaleString('en-IN')}
+                              </td>
+                              <td className="ledger-td">
+                                <span style={{
+                                  background: '#f0fdf4',
+                                  color: '#15803d',
+                                  border: '1px solid #86efac',
+                                  padding: '3px 8px',
+                                  borderRadius: 8,
+                                  fontWeight: 800,
+                                  fontSize: '0.78rem'
+                                }}>
+                                  👤 {st.given_by || 'Owner'}
+                                </span>
+                              </td>
+                              <td className="ledger-td" style={{ textTransform: 'uppercase', fontSize: '0.75rem', fontWeight: 700, color: '#64748b' }}>
+                                {st.payment_method || 'cash'}
+                              </td>
+                              <td className="ledger-td" style={{ textAlign: 'right' }}>
+                                <div style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenEditSalary(st)}
+                                    className="ledger-action-btn ledger-action-btn-secondary"
+                                    style={{ padding: '4px 8px', display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: '0.76rem' }}
+                                    title="Edit salary settlement"
+                                  >
+                                    <Edit2 size={12} />
+                                    <span>Edit</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteSalarySettlement(st.id)}
+                                    className="ledger-action-btn ledger-action-btn-danger"
+                                    style={{ padding: '4px 7px' }}
+                                    title="Revert to Unpaid"
+                                  >
+                                    <RotateCcw size={12} />
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  {/* Mobile History Cards */}
+                  <div className="ledger-mobile-only">
+                    {salarySettlements.map((st) => (
+                      <div key={st.id} className="ledger-mobile-row" style={{ padding: '12px 14px', marginBottom: 10, border: '1.5px solid rgba(220, 235, 224, 0.9)' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                          <div>
+                            <span style={{ fontWeight: 800, fontSize: '0.98rem', color: '#143823' }}>
+                              {st.labourer_name || labourers.find(l => l.id === st.labourer_id)?.full_name || 'Worker'}
+                            </span>
+                            <div style={{ fontSize: '0.72rem', color: '#64748b' }}>
+                              {st.start_date && st.end_date ? `${st.start_date} to ${st.end_date}` : `Month ${st.month}/${st.year}`} • {st.days_worked} Days
+                            </div>
+                          </div>
+                          <span style={{
+                            fontWeight: 900,
+                            color: '#15803d',
+                            fontSize: '1.1rem',
+                            background: '#dcfce7',
+                            border: '1px solid #86efac',
+                            padding: '3px 9px',
+                            borderRadius: 8
+                          }}>
+                            ₹{st.paid_amount.toLocaleString('en-IN')}
+                          </span>
+                        </div>
+
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.76rem', color: '#64748b', marginBottom: 8, background: '#f8fafc', padding: '6px 10px', borderRadius: 8 }}>
+                          <span>Payer: <strong style={{ color: '#15803d' }}>{st.given_by || 'Owner'}</strong></span>
+                          <span>Paid: <strong>{st.payment_date || '—'}</strong></span>
+                          <span>Mode: <strong>{(st.payment_method || 'cash').toUpperCase()}</strong></span>
+                        </div>
+
+                        <div style={{ display: 'flex', gap: 8, borderTop: '1px dashed #dcfce7', paddingTop: 10 }}>
+                          <button
+                            type="button"
+                            onClick={() => handleOpenEditSalary(st)}
+                            style={{
+                              flex: 1,
+                              padding: '9px 12px',
+                              borderRadius: 8,
+                              border: '1.5px solid #0284c7',
+                              background: '#f0f9ff',
+                              color: '#0284c7',
+                              fontWeight: 800,
+                              fontSize: '0.82rem',
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: 6
+                            }}
+                          >
+                            <Edit2 size={14} />
+                            <span>Edit Payout</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteSalarySettlement(st.id)}
+                            style={{
+                              padding: '9px 14px',
+                              borderRadius: 8,
+                              border: '1px solid #fed7aa',
+                              background: '#fff7ed',
+                              color: '#c2410c',
+                              fontWeight: 800,
+                              fontSize: '0.82rem',
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 4
+                            }}
+                            title="Revert to Unpaid"
+                          >
+                            <RotateCcw size={14} />
+                            <span>Revert</span>
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
               )}
             </div>
           </div>
@@ -4000,14 +5060,18 @@ export const SimpleFarmViewPage: React.FC = () => {
             right: 0,
             width: '100%',
             maxWidth: '100%',
-            zIndex: 999999,
+            zIndex: isAnyModalOpen ? -1 : 999999,
+            display: isAnyModalOpen ? 'none' : 'flex',
+            pointerEvents: isAnyModalOpen ? 'none' : 'auto',
             margin: 0,
           }}
         >
           <button
             type="button"
             className={`mobile-bottom-nav-item ${activeSection === 'attendance' ? 'active' : ''}`}
+            disabled={isAnyModalOpen}
             onClick={() => {
+              if (isAnyModalOpen) return;
               setActiveSection('attendance');
               window.scrollTo({ top: 0, behavior: 'smooth' });
             }}
@@ -4019,7 +5083,9 @@ export const SimpleFarmViewPage: React.FC = () => {
           <button
             type="button"
             className={`mobile-bottom-nav-item ${activeSection === 'advance' ? 'active' : ''}`}
+            disabled={isAnyModalOpen}
             onClick={() => {
+              if (isAnyModalOpen) return;
               setActiveSection('advance');
               window.scrollTo({ top: 0, behavior: 'smooth' });
             }}
@@ -4031,7 +5097,9 @@ export const SimpleFarmViewPage: React.FC = () => {
           <button
             type="button"
             className={`mobile-bottom-nav-item ${activeSection === 'payday' ? 'active' : ''}`}
+            disabled={isAnyModalOpen}
             onClick={() => {
+              if (isAnyModalOpen) return;
               setActiveSection('payday');
               window.scrollTo({ top: 0, behavior: 'smooth' });
             }}
@@ -4043,7 +5111,9 @@ export const SimpleFarmViewPage: React.FC = () => {
           <button
             type="button"
             className={`mobile-bottom-nav-item ${activeSection === 'tractor' ? 'active' : ''}`}
+            disabled={isAnyModalOpen}
             onClick={() => {
+              if (isAnyModalOpen) return;
               setActiveSection('tractor');
               window.scrollTo({ top: 0, behavior: 'smooth' });
             }}
@@ -4055,7 +5125,9 @@ export const SimpleFarmViewPage: React.FC = () => {
           <button
             type="button"
             className={`mobile-bottom-nav-item ${activeSection === 'labours' ? 'active' : ''}`}
+            disabled={isAnyModalOpen}
             onClick={() => {
+              if (isAnyModalOpen) return;
               setActiveSection('labours');
               window.scrollTo({ top: 0, behavior: 'smooth' });
             }}
@@ -4067,7 +5139,9 @@ export const SimpleFarmViewPage: React.FC = () => {
           <button
             type="button"
             className={`mobile-bottom-nav-item ${activeSection === 'settings' ? 'active' : ''}`}
+            disabled={isAnyModalOpen}
             onClick={() => {
+              if (isAnyModalOpen) return;
               setActiveSection('settings');
               window.scrollTo({ top: 0, behavior: 'smooth' });
             }}
@@ -4087,13 +5161,14 @@ export const SimpleFarmViewPage: React.FC = () => {
           style={{
             position: 'fixed',
             inset: 0,
-            background: 'rgba(15, 23, 42, 0.45)',
-            backdropFilter: 'blur(3px)',
-            zIndex: 150,
+            background: 'rgba(15, 23, 42, 0.55)',
+            backdropFilter: 'blur(4px)',
+            zIndex: 2000050,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             padding: 16,
+            touchAction: 'none'
           }}
           onClick={() => setIsAddModalOpen(false)}
         >
@@ -4193,13 +5268,14 @@ export const SimpleFarmViewPage: React.FC = () => {
           style={{
             position: 'fixed',
             inset: 0,
-            background: 'rgba(15, 23, 42, 0.5)',
-            backdropFilter: 'blur(3px)',
-            zIndex: 150,
+            background: 'rgba(15, 23, 42, 0.55)',
+            backdropFilter: 'blur(4px)',
+            zIndex: 2000060,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             padding: 16,
+            touchAction: 'none'
           }}
           onClick={() => setEditingLabourer(null)}
         >
@@ -4336,13 +5412,14 @@ export const SimpleFarmViewPage: React.FC = () => {
           style={{
             position: 'fixed',
             inset: 0,
-            background: 'rgba(15, 23, 42, 0.45)',
-            backdropFilter: 'blur(3px)',
-            zIndex: 150,
+            background: 'rgba(15, 23, 42, 0.55)',
+            backdropFilter: 'blur(4px)',
+            zIndex: 2000070,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             padding: 16,
+            touchAction: 'none'
           }}
           onClick={() => setDeleteConfirmLab(null)}
         >
@@ -4393,11 +5470,12 @@ export const SimpleFarmViewPage: React.FC = () => {
             inset: 0,
             background: 'rgba(15, 23, 42, 0.55)',
             backdropFilter: 'blur(4px)',
-            zIndex: 160,
+            zIndex: 2000050,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             padding: 16,
+            touchAction: 'none'
           }}
           onClick={() => setIsPdfExportModalOpen(false)}
         >
@@ -4653,6 +5731,753 @@ export const SimpleFarmViewPage: React.FC = () => {
                 style={{ fontSize: '0.78rem', padding: '6px 14px' }}
               >
                 Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Advance Modal */}
+      {editingAdv && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(15, 23, 42, 0.55)',
+            backdropFilter: 'blur(4px)',
+            zIndex: 2000060,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 16,
+            touchAction: 'none'
+          }}
+          onClick={() => setEditingAdv(null)}
+        >
+          <div
+            className="ledger-card"
+            style={{
+              maxWidth: 500,
+              width: '100%',
+              padding: 24,
+              maxHeight: '90vh',
+              overflowY: 'auto',
+              borderRadius: 20,
+              boxShadow: '0 20px 40px rgba(0,0,0,0.25)',
+              border: '2px solid #86efac'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{ width: 42, height: 42, borderRadius: 12, background: '#fef3c7', border: '1.5px solid #fde68a', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Edit2 size={20} color="#b45309" />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '1.2rem', color: '#143823', fontWeight: 800 }}>
+                    Edit Advance Record
+                  </h3>
+                  <div style={{ fontSize: '0.78rem', color: '#64748b' }}>
+                    Worker: {editingAdv.labourer_name || labourers.find(l => l.id === editingAdv.labourer_id)?.full_name}
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingAdv(null)}
+                style={{ background: '#f1f5f9', border: 'none', borderRadius: 8, padding: 6, cursor: 'pointer', color: '#64748b' }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEditAdvance}>
+              <div style={{ marginBottom: 14 }}>
+                <label className="ledger-label">Worker</label>
+                <select
+                  value={editAdvLabId}
+                  onChange={(e) => setEditAdvLabId(e.target.value)}
+                  className="ledger-select"
+                  required
+                >
+                  {allLabourers.map((l) => (
+                    <option key={l.id} value={l.id}>
+                      {l.full_name} ({l.labour_code})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
+                <div>
+                  <label className="ledger-label">Advance Amount (₹)</label>
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={editAdvAmount}
+                    onChange={(e) => setEditAdvAmount(Number(e.target.value) || 0)}
+                    className="ledger-input"
+                    style={{ fontWeight: 800, fontSize: '1.1rem', color: '#b45309' }}
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="ledger-label">Date Issued</label>
+                  <input
+                    type="date"
+                    value={editAdvDate}
+                    onChange={(e) => setEditAdvDate(e.target.value)}
+                    className="ledger-input"
+                    required
+                  />
+                </div>
+              </div>
+
+              {/* Given By Field */}
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                  <label className="ledger-label" style={{ margin: 0 }}>Given By</label>
+                  <span style={{ fontSize: '0.72rem', color: '#64748b' }}>Who issued this advance</span>
+                </div>
+                <input
+                  type="text"
+                  value={editAdvGivenBy}
+                  onChange={(e) => setEditAdvGivenBy(e.target.value)}
+                  placeholder="Enter name"
+                  className="ledger-input"
+                  style={{ fontWeight: 700 }}
+                  required
+                />
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
+                <div>
+                  <label className="ledger-label">Payment Mode</label>
+                  <select
+                    value={editAdvMethod}
+                    onChange={(e) => setEditAdvMethod(e.target.value as PaymentMethod)}
+                    className="ledger-select"
+                  >
+                    <option value="cash">Cash</option>
+                    <option value="upi">UPI / GPay / PhonePe</option>
+                    <option value="bank_transfer">Bank Transfer</option>
+                    <option value="cheque">Cheque</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="ledger-label">Reference / Note</label>
+                  <input
+                    type="text"
+                    value={editAdvRef}
+                    onChange={(e) => setEditAdvRef(e.target.value)}
+                    placeholder="Txn ID or ref"
+                    className="ledger-input"
+                  />
+                </div>
+              </div>
+
+              <div style={{ marginBottom: 18 }}>
+                <label className="ledger-label">Purpose / Reason</label>
+                <input
+                  type="text"
+                  value={editAdvPurpose}
+                  onChange={(e) => setEditAdvPurpose(e.target.value)}
+                  placeholder="e.g. Field work cash advance, Medical, Festival"
+                  className="ledger-input"
+                />
+              </div>
+
+              <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                <button
+                  type="button"
+                  onClick={() => setEditingAdv(null)}
+                  className="ledger-action-btn ledger-action-btn-secondary"
+                  style={{ padding: '8px 16px' }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="ledger-action-btn ledger-action-btn-primary"
+                  style={{ padding: '8px 20px' }}
+                >
+                  Save Changes
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Settle Salary Modal */}
+      {settleModalLab && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(15, 23, 42, 0.55)',
+            backdropFilter: 'blur(4px)',
+            zIndex: 2000060,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 16,
+            touchAction: 'none'
+          }}
+          onClick={() => setSettleModalLab(null)}
+        >
+          <div
+            className="ledger-card"
+            style={{
+              maxWidth: 520,
+              width: '100%',
+              padding: 24,
+              maxHeight: '90vh',
+              overflowY: 'auto',
+              borderRadius: 20,
+              boxShadow: '0 20px 40px rgba(0,0,0,0.25)',
+              border: '2px solid #86efac'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{ width: 42, height: 42, borderRadius: 12, background: '#dcfce7', border: '1.5px solid #86efac', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <CreditCard size={20} color="#15803d" />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '1.2rem', color: '#143823', fontWeight: 800 }}>
+                    {settleModalLab.periodType === 'weekly' ? 'Settle Weekly Wages' : (settleModalLab.periodType === 'monthly' ? 'Settle Monthly Salary' : 'Settle Custom Period Wages')}
+                  </h3>
+                  <div style={{ fontSize: '0.78rem', color: '#4b6354', fontWeight: 600 }}>
+                    {settleModalLab.lab.full_name} ({settleModalLab.lab.labour_code}) • {settleModalLab.periodLabel}
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSettleModalLab(null)}
+                style={{ background: '#f1f5f9', border: 'none', borderRadius: 8, padding: 6, cursor: 'pointer', color: '#64748b' }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Calculations Breakdown Strip */}
+            <div style={{
+              background: '#f8fafc',
+              border: '1px solid #e2e8f0',
+              borderRadius: 14,
+              padding: '12px 14px',
+              marginBottom: 16,
+              display: 'grid',
+              gridTemplateColumns: 'repeat(3, 1fr)',
+              gap: 8,
+              textAlign: 'center'
+            }}>
+              <div>
+                <div style={{ fontSize: '0.7rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 800 }}>Days × Rate</div>
+                <div style={{ fontSize: '0.92rem', fontWeight: 800, color: '#143823' }}>
+                  {settleModalLab.daysWorked}d @ ₹{settleModalLab.dailyRate}
+                </div>
+              </div>
+              <div>
+                <div style={{ fontSize: '0.7rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 800 }}>Gross Wage</div>
+                <div style={{ fontSize: '0.92rem', fontWeight: 800, color: '#15803d' }}>
+                  ₹{settleModalLab.grossWage.toLocaleString('en-IN')}
+                </div>
+              </div>
+              <div>
+                <div style={{ fontSize: '0.7rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 800 }}>Advance Due</div>
+                <div style={{ fontSize: '0.92rem', fontWeight: 800, color: settleModalLab.advanceDue > 0 ? '#b45309' : '#64748b' }}>
+                  ₹{settleModalLab.advanceDue.toLocaleString('en-IN')}
+                </div>
+              </div>
+            </div>
+
+            <form onSubmit={handleConfirmSettleSalary}>
+              {/* Advance Deducted This Payout Input (Editable!) */}
+              <div style={{ marginBottom: 14, background: '#fffbeb', padding: '10px 14px', borderRadius: 12, border: '1px solid #fef3c7' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                  <label className="ledger-label" style={{ margin: 0, color: '#92400e' }}>Advance Deducted This Payout (₹)</label>
+                  <span style={{ fontSize: '0.72rem', color: '#b45309', fontWeight: 800 }}>
+                    Total Due: ₹{settleModalLab.advanceDue.toLocaleString('en-IN')}
+                  </span>
+                </div>
+                <input
+                  type="number"
+                  min="0"
+                  max={settleModalLab.advanceDue}
+                  step="1"
+                  value={settleAdvanceDeduct}
+                  onChange={(e) => {
+                    const val = Math.max(0, Math.min(settleModalLab.advanceDue, Number(e.target.value) || 0));
+                    setSettleAdvanceDeduct(val);
+                    setSettleAmount(round2(Math.max(0, settleModalLab.grossWage - val)));
+                  }}
+                  className="ledger-input"
+                  style={{ fontWeight: 800, fontSize: '1.05rem', color: '#b45309', background: '#ffffff' }}
+                />
+                <div style={{ fontSize: '0.71rem', color: '#78350f', marginTop: 4 }}>
+                  💡 Tip: For weekly workers, adjust to deduct partial advance (e.g. ₹500) rather than wiping out their weekly wage.
+                </div>
+              </div>
+
+              <div style={{ marginBottom: 14 }}>
+                <label className="ledger-label">Net Take-Home Payout Amount (₹)</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={settleAmount}
+                  onChange={(e) => setSettleAmount(Number(e.target.value) || 0)}
+                  className="ledger-input"
+                  style={{ fontWeight: 900, fontSize: '1.25rem', color: '#15803d' }}
+                  required
+                />
+                <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: 3 }}>
+                  Gross ₹{settleModalLab.grossWage.toLocaleString('en-IN')} − Advance Ded. ₹{settleAdvanceDeduct.toLocaleString('en-IN')} = ₹{round2(Math.max(0, settleModalLab.grossWage - settleAdvanceDeduct)).toLocaleString('en-IN')}
+                </div>
+              </div>
+
+              {/* Given By Field with quick chips */}
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                  <label className="ledger-label" style={{ margin: 0 }}>Given By (Salary Payer)</label>
+                  <span style={{ fontSize: '0.72rem', color: '#64748b' }}>Who is handing the wage payout</span>
+                </div>
+                <input
+                  type="text"
+                  value={settleGivenBy}
+                  onChange={(e) => setSettleGivenBy(e.target.value)}
+                  placeholder="Enter payer name"
+                  className="ledger-input"
+                  style={{ fontWeight: 700 }}
+                  required
+                />
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
+                <div>
+                  <label className="ledger-label">Payment Date</label>
+                  <input
+                    type="date"
+                    value={settleDate}
+                    onChange={(e) => setSettleDate(e.target.value)}
+                    className="ledger-input"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="ledger-label">Payment Method</label>
+                  <select
+                    value={settleMethod}
+                    onChange={(e) => setSettleMethod(e.target.value as PaymentMethod)}
+                    className="ledger-select"
+                  >
+                    <option value="cash">Cash</option>
+                    <option value="upi">UPI / GPay / PhonePe</option>
+                    <option value="bank_transfer">Bank Transfer</option>
+                    <option value="cheque">Cheque</option>
+                  </select>
+                </div>
+              </div>
+
+              <div style={{ marginBottom: 18 }}>
+                <label className="ledger-label">Payment Notes / Remarks (Optional)</label>
+                <input
+                  type="text"
+                  value={settleNotes}
+                  onChange={(e) => setSettleNotes(e.target.value)}
+                  placeholder="e.g. Paid in full at farm office, UPI reference"
+                  className="ledger-input"
+                />
+              </div>
+
+              <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                <button
+                  type="button"
+                  onClick={() => setSettleModalLab(null)}
+                  className="ledger-action-btn ledger-action-btn-secondary"
+                  style={{ padding: '8px 16px' }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="ledger-action-btn ledger-action-btn-primary"
+                  style={{ padding: '8px 20px' }}
+                >
+                  Confirm Payout (₹{settleAmount.toLocaleString('en-IN')})
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Salary Settlement Modal */}
+      {editingSalarySettlement && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(15, 23, 42, 0.55)',
+            backdropFilter: 'blur(4px)',
+            zIndex: 2000060,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 16,
+            touchAction: 'none'
+          }}
+          onClick={() => setEditingSalarySettlement(null)}
+        >
+          <div
+            className="ledger-card"
+            style={{
+              maxWidth: 520,
+              width: '100%',
+              padding: 24,
+              maxHeight: '90vh',
+              overflowY: 'auto',
+              borderRadius: 20,
+              boxShadow: '0 20px 40px rgba(0,0,0,0.25)',
+              border: '2px solid #86efac'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{ width: 42, height: 42, borderRadius: 12, background: '#f0fdf4', border: '1.5px solid #86efac', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Edit2 size={20} color="#15803d" />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '1.2rem', color: '#143823', fontWeight: 800 }}>
+                    Edit Salary Settlement
+                  </h3>
+                  <div style={{ fontSize: '0.78rem', color: '#4b6354', fontWeight: 600 }}>
+                    {editingSalarySettlement.labourer_name} ({editingSalarySettlement.labour_code}) • Month {editingSalarySettlement.month}/{editingSalarySettlement.year}
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingSalarySettlement(null)}
+                style={{ background: '#f1f5f9', border: 'none', borderRadius: 8, padding: 6, cursor: 'pointer', color: '#64748b' }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Shift & Wage Info */}
+            <div style={{
+              background: '#f8fafc',
+              border: '1px solid #e2e8f0',
+              borderRadius: 14,
+              padding: '12px 14px',
+              marginBottom: 16,
+              display: 'grid',
+              gridTemplateColumns: 'repeat(3, 1fr)',
+              gap: 8,
+              textAlign: 'center'
+            }}>
+              <div>
+                <div style={{ fontSize: '0.7rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 800 }}>Days Worked</div>
+                <div style={{ fontSize: '0.92rem', fontWeight: 800, color: '#143823' }}>
+                  {editingSalarySettlement.days_worked} Days
+                </div>
+              </div>
+              <div>
+                <div style={{ fontSize: '0.7rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 800 }}>Gross Wage</div>
+                <div style={{ fontSize: '0.92rem', fontWeight: 800, color: '#15803d' }}>
+                  ₹{editingSalarySettlement.gross_wage.toLocaleString('en-IN')}
+                </div>
+              </div>
+              <div>
+                <div style={{ fontSize: '0.7rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 800 }}>Advance Ded.</div>
+                <div style={{ fontSize: '0.92rem', fontWeight: 800, color: '#b45309' }}>
+                  ₹{editingSalarySettlement.advance_deducted.toLocaleString('en-IN')}
+                </div>
+              </div>
+            </div>
+
+            <form onSubmit={handleUpdateSalarySettlement}>
+              <div style={{ marginBottom: 14 }}>
+                <label className="ledger-label">Actual Paid Amount (₹)</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={editSalaryAmount}
+                  onChange={(e) => setEditSalaryAmount(Number(e.target.value) || 0)}
+                  className="ledger-input"
+                  style={{ fontWeight: 900, fontSize: '1.25rem', color: '#15803d' }}
+                  required
+                />
+              </div>
+
+              {/* Given By Field */}
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                  <label className="ledger-label" style={{ margin: 0 }}>Given By (Salary Payer)</label>
+                  <span style={{ fontSize: '0.72rem', color: '#64748b' }}>Who handed the wage payout</span>
+                </div>
+                <input
+                  type="text"
+                  value={editSalaryGivenBy}
+                  onChange={(e) => setEditSalaryGivenBy(e.target.value)}
+                  placeholder="Enter payer name"
+                  className="ledger-input"
+                  style={{ fontWeight: 700 }}
+                  required
+                />
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
+                <div>
+                  <label className="ledger-label">Payment Date</label>
+                  <input
+                    type="date"
+                    value={editSalaryDate}
+                    onChange={(e) => setEditSalaryDate(e.target.value)}
+                    className="ledger-input"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="ledger-label">Payment Method</label>
+                  <select
+                    value={editSalaryMethod}
+                    onChange={(e) => setEditSalaryMethod(e.target.value as PaymentMethod)}
+                    className="ledger-select"
+                  >
+                    <option value="cash">Cash</option>
+                    <option value="upi">UPI / GPay / PhonePe</option>
+                    <option value="bank_transfer">Bank Transfer</option>
+                    <option value="cheque">Cheque</option>
+                  </select>
+                </div>
+              </div>
+
+              <div style={{ marginBottom: 18 }}>
+                <label className="ledger-label">Payment Notes / Remarks (Optional)</label>
+                <input
+                  type="text"
+                  value={editSalaryNotes}
+                  onChange={(e) => setEditSalaryNotes(e.target.value)}
+                  placeholder="e.g. Adjusted after overtime, UPI reference"
+                  className="ledger-input"
+                />
+              </div>
+
+              <div style={{ display: 'flex', gap: 10, justifyContent: 'space-between', alignItems: 'center' }}>
+                <button
+                  type="button"
+                  onClick={() => handleDeleteSalarySettlement(editingSalarySettlement.id)}
+                  className="ledger-action-btn ledger-action-btn-danger"
+                  style={{ padding: '8px 14px', fontSize: '0.8rem', display: 'inline-flex', alignItems: 'center', gap: 5 }}
+                >
+                  <RotateCcw size={14} />
+                  <span>Revert to Unpaid</span>
+                </button>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button
+                    type="button"
+                    onClick={() => setEditingSalarySettlement(null)}
+                    className="ledger-action-btn ledger-action-btn-secondary"
+                    style={{ padding: '8px 16px' }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="ledger-action-btn ledger-action-btn-primary"
+                    style={{ padding: '8px 20px' }}
+                  >
+                    Save Changes
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* =========================================================================
+          NATIVE PDF PREVIEW & SHARING MODAL
+          ========================================================================= */}
+      {pdfPreviewResult && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(15, 23, 42, 0.65)',
+            backdropFilter: 'blur(5px)',
+            zIndex: 2000080,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 16,
+            touchAction: 'none'
+          }}
+          onClick={() => setPdfPreviewResult(null)}
+        >
+          <div
+            className="ledger-card"
+            style={{
+              maxWidth: 460,
+              width: '100%',
+              padding: 24,
+              boxShadow: '0 20px 40px rgba(0,0,0,0.3)',
+              borderRadius: 20,
+              background: '#ffffff',
+              border: '2px solid #86efac'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header with success icon */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 16 }}>
+              <div style={{
+                width: 50,
+                height: 50,
+                borderRadius: '50%',
+                background: '#dcfce7',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#15803d',
+                border: '2px solid #86efac',
+                flexShrink: 0
+              }}>
+                <CheckCircle2 size={26} />
+              </div>
+              <div style={{ flex: 1 }}>
+                <h2 style={{ margin: 0, fontSize: '1.2rem', color: '#143823', fontWeight: 800 }}>
+                  PDF Export Complete!
+                </h2>
+                <div style={{ fontSize: '0.8rem', color: '#4b6354', fontWeight: 600 }}>
+                  Official Farm Statement Generated
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPdfPreviewResult(null)}
+                style={{ background: '#f1f5f9', border: 'none', borderRadius: 8, padding: 6, cursor: 'pointer', color: '#64748b' }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* File & Storage Location Card */}
+            <div style={{
+              background: '#f8fafc',
+              border: '1px solid #e2e8f0',
+              borderRadius: 14,
+              padding: '14px 16px',
+              marginBottom: 18
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                <FileText size={18} color="#15803d" />
+                <span style={{ fontSize: '0.86rem', fontWeight: 800, color: '#0f172a', wordBreak: 'break-all' }}>
+                  {pdfPreviewResult.filename}
+                </span>
+              </div>
+              <div style={{
+                fontSize: '0.78rem',
+                color: '#166534',
+                background: '#ecfdf5',
+                border: '1px solid #a7f3d0',
+                borderRadius: 8,
+                padding: '8px 12px',
+                lineHeight: 1.45
+              }}>
+                {Capacitor.isNativePlatform() ? (
+                  <div>
+                    <strong>📱 Saved to Phone:</strong> Your device's <code>Documents</code> folder (<code>{pdfPreviewResult.savedPath || 'Documents/' + pdfPreviewResult.filename}</code>).
+                  </div>
+                ) : (
+                  <div>
+                    <strong>💻 Downloaded to Computer:</strong> Saved in your browser's default Downloads folder.
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <button
+                type="button"
+                onClick={async () => {
+                  if (Capacitor.isNativePlatform() || pdfPreviewResult.nativeUri) {
+                    try {
+                      await Share.share({
+                        title: 'FarmLog Report',
+                        text: `FarmLog: ${pdfPreviewResult.filename}`,
+                        url: pdfPreviewResult.nativeUri || pdfPreviewResult.blobUrl,
+                        dialogTitle: 'Share / Save PDF to Phone'
+                      });
+                    } catch (e) {
+                      console.warn(e);
+                    }
+                  } else {
+                    window.open(pdfPreviewResult.blobUrl, '_blank');
+                  }
+                }}
+                className="ledger-action-btn ledger-action-btn-primary"
+                style={{
+                  padding: '12px 18px',
+                  fontSize: '0.92rem',
+                  fontWeight: 800,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 10,
+                  borderRadius: 12,
+                  boxShadow: '0 4px 12px rgba(21, 128, 61, 0.25)'
+                }}
+              >
+                <Share2 size={18} />
+                <span>{Capacitor.isNativePlatform() ? 'Send via WhatsApp / Drive / Files' : 'Share / Open File'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  window.open(pdfPreviewResult.blobUrl, '_blank');
+                }}
+                className="ledger-action-btn ledger-action-btn-secondary"
+                style={{
+                  padding: '10px 18px',
+                  fontSize: '0.88rem',
+                  fontWeight: 700,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 8,
+                  borderRadius: 12
+                }}
+              >
+                <ExternalLink size={16} />
+                <span>Preview in Browser</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setPdfPreviewResult(null)}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: '#64748b',
+                  fontSize: '0.86rem',
+                  fontWeight: 700,
+                  padding: '8px',
+                  cursor: 'pointer',
+                  marginTop: 2
+                }}
+              >
+                Done
               </button>
             </div>
           </div>

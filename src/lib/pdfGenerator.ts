@@ -1,5 +1,8 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { Capacitor } from '@capacitor/core';
+import { Filesystem, Directory } from '@capacitor/filesystem';
+import { Share } from '@capacitor/share';
 import { Farm } from '../types';
 
 export interface PDFReportData {
@@ -13,7 +16,14 @@ export interface PDFReportData {
   manifestType?: string;
 }
 
-export const generateReportPDF = (data: PDFReportData): { filename: string; blobUrl: string } => {
+export interface PDFGenerationResult {
+  filename: string;
+  blobUrl: string;
+  nativeUri?: string;
+  savedPath?: string;
+}
+
+export const generateReportPDF = async (data: PDFReportData): Promise<PDFGenerationResult> => {
   const doc = new jsPDF({
     orientation: 'portrait',
     unit: 'pt',
@@ -143,12 +153,63 @@ export const generateReportPDF = (data: PDFReportData): { filename: string; blob
 
   const blob = doc.output('blob');
   const blobUrl = URL.createObjectURL(blob);
+  let nativeUri: string | undefined;
+  let savedPath: string | undefined;
 
-  // Auto-trigger download
-  const link = document.createElement('a');
-  link.href = blobUrl;
-  link.download = filename;
-  link.click();
+  // On Native Mobile (Android / iOS)
+  if (Capacitor.isNativePlatform()) {
+    try {
+      try {
+        const check = await Filesystem.checkPermissions();
+        if (check.publicStorage !== 'granted') {
+          await Filesystem.requestPermissions();
+        }
+      } catch (permErr) {
+        console.warn('Filesystem permission request:', permErr);
+      }
 
-  return { filename, blobUrl };
+      const dataUri = doc.output('datauristring');
+      const base64Data = dataUri.split(',')[1];
+
+      const writeRes = await Filesystem.writeFile({
+        path: filename,
+        data: base64Data,
+        directory: Directory.Documents,
+        recursive: true
+      });
+
+      nativeUri = writeRes.uri;
+      savedPath = `Documents/${filename}`;
+
+      try {
+        const canShare = await Share.canShare().then(r => r.value).catch(() => true);
+        if (canShare) {
+          await Share.share({
+            title: data.title,
+            text: `FarmLog: ${data.title} (${data.dateRange})`,
+            url: writeRes.uri,
+            dialogTitle: 'Save / Share FarmLog PDF'
+          });
+        }
+      } catch (shareErr) {
+        console.warn('Native share dialog:', shareErr);
+      }
+    } catch (fsErr) {
+      console.error('Failed to write PDF natively with Filesystem:', fsErr);
+    }
+  } else {
+    // Browser download
+    try {
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (e) {
+      console.warn('Browser download link error:', e);
+    }
+  }
+
+  return { filename, blobUrl, nativeUri, savedPath };
 };

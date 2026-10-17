@@ -57,7 +57,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, onSelectTab }) 
             inset: 0,
             background: 'rgba(15, 35, 22, 0.4)',
             backdropFilter: 'blur(4px)',
-            zIndex: 150,
+            zIndex: 2000000,
             display: 'flex',
             flexDirection: 'column',
             justifyContent: 'flex-end',
