@@ -30,7 +30,11 @@ export const GoogleSheetsPage: React.FC = () => {
     import.meta.env.VITE_GOOGLE_SHEETS_WEBHOOK_URL ||
     'https://script.google.com/macros/s/AKfycbwzPHk9cX19SgD04boxnAJ5AsHQF9ahZvpFP5WovBtGjmN74Pz0H1IhVXFCKUL-0Czh/exec';
   const [webhookUrl, setWebhookUrl] = useState(() => {
-    return localStorage.getItem('kisanops_google_sheets_webhook_url') || DEFAULT_WEBHOOK_URL;
+    try {
+      return sessionStorage.getItem('kisanops_google_sheets_webhook_url') || DEFAULT_WEBHOOK_URL;
+    } catch {
+      return DEFAULT_WEBHOOK_URL;
+    }
   });
   const [showGuide, setShowGuide] = useState(false);
   const [copiedCode, setCopiedCode] = useState(false);
@@ -44,7 +48,10 @@ export const GoogleSheetsPage: React.FC = () => {
   }, []);
 
   const handleSaveWebhook = () => {
-    localStorage.setItem('kisanops_google_sheets_webhook_url', webhookUrl.trim());
+    try {
+      sessionStorage.setItem('kisanops_google_sheets_webhook_url', webhookUrl.trim());
+      localStorage.removeItem('kisanops_google_sheets_webhook_url');
+    } catch {}
     setSyncMsg('Google Apps Script Webhook URL saved successfully!');
     setTimeout(() => setSyncMsg(''), 4000);
   };

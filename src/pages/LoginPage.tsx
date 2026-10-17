@@ -16,12 +16,10 @@ import {
 export const LoginPage: React.FC = () => {
   const { login, farm } = useAuth();
   const [username, setUsername] = useState(() => {
-    try { return localStorage.getItem('farmlog_saved_username') || ''; } catch { return ''; }
+    try { return sessionStorage.getItem('farmlog_saved_username') || ''; } catch { return ''; }
   });
   const [password, setPassword] = useState('');
-  const [rememberMe, setRememberMe] = useState<boolean>(() => {
-    try { return localStorage.getItem('farmlog_remember_me') !== 'false'; } catch { return true; }
-  });
+  const [rememberMe, setRememberMe] = useState<boolean>(false);
   const [showPassword, setShowPassword] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [isLoading, setIsLoading] = useState(false);

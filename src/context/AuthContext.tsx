@@ -23,50 +23,23 @@ export interface AuthContextType {
   canCloseFinancialYear: boolean;
 }
 
+import { supabase } from '../lib/supabaseClient';
+
 const AUTH_STORAGE_KEY = 'kisanops_auth_session_v2';
 
+let memoryUsers: InternalUserAccount[] = [...INTERNAL_USERS];
+
 const getCombinedUsers = (): InternalUserAccount[] => {
-  try {
-    const cached = localStorage.getItem('farmlog_cached_users');
-    if (cached) {
-      const parsed = JSON.parse(cached);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        const userMap = new Map<string, InternalUserAccount>();
-        // Base accounts first
-        for (const u of INTERNAL_USERS) {
-          userMap.set(u.id, u);
-          userMap.set(u.username.toLowerCase(), u);
-        }
-        // Cached/synced accounts override base accounts
-        for (const u of parsed) {
-          const userObj: InternalUserAccount = {
-            id: u.id,
-            username: u.username,
-            aliases: u.aliases || [u.username],
-            password: u.password || u.password_hash,
-            name: u.name || u.full_name || u.username,
-            email: u.email || `${u.username}@farm.local`,
-            role: u.role,
-            viewAccess: u.viewAccess || u.view_access || 'simple',
-            roleTitle: u.roleTitle || (u.viewAccess === 'advanced' || u.view_access === 'advanced' ? 'Farm Administrator' : 'Field Operations')
-          };
-          userMap.set(userObj.id, userObj);
-          userMap.set(userObj.username.toLowerCase(), userObj);
-        }
-        return Array.from(new Set(userMap.values()));
-      }
-    }
-  } catch {}
-  return INTERNAL_USERS;
+  return memoryUsers;
 };
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  // Session initialization
+  // Session initialization from sessionStorage (clean in-memory browser/app session)
   const [currentUser, setCurrentUser] = useState<InternalUserAccount>(() => {
     try {
-      const stored = localStorage.getItem(AUTH_STORAGE_KEY) || sessionStorage.getItem(AUTH_STORAGE_KEY);
+      const stored = sessionStorage.getItem(AUTH_STORAGE_KEY) || localStorage.getItem(AUTH_STORAGE_KEY);
       if (stored) {
         const parsed = JSON.parse(stored);
         const allUsers = getCombinedUsers();
@@ -79,7 +52,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
     try {
-      const stored = localStorage.getItem(AUTH_STORAGE_KEY) || sessionStorage.getItem(AUTH_STORAGE_KEY);
+      const stored = sessionStorage.getItem(AUTH_STORAGE_KEY) || localStorage.getItem(AUTH_STORAGE_KEY);
       if (stored) {
         const parsed = JSON.parse(stored);
         const allUsers = getCombinedUsers();
@@ -95,12 +68,43 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setFarm(dataService.getFarm());
   };
 
-  const login = async (usernameOrEmail: string, password: string, rememberMe = true): Promise<boolean> => {
+  const login = async (usernameOrEmail: string, password: string, _rememberMe = true): Promise<boolean> => {
     const cleanUser = usernameOrEmail.trim().toLowerCase();
     const cleanPass = password.trim();
 
     if (!cleanUser || !cleanPass) {
       throw new Error('Please enter both username and password.');
+    }
+
+    // Direct live query to Supabase Cloud Server for authoritative app_users
+    if (supabase) {
+      try {
+        const { data: dbUsers, error } = await supabase.from('app_users').select('*');
+        if (!error && dbUsers && dbUsers.length > 0) {
+          const userMap = new Map<string, InternalUserAccount>();
+          for (const u of INTERNAL_USERS) {
+            userMap.set(u.id, u);
+          }
+          for (const u of dbUsers) {
+            const userObj: InternalUserAccount = {
+              id: u.id,
+              username: u.username,
+              aliases: u.aliases || [u.username],
+              password: u.password_hash || u.password,
+              name: u.full_name || u.name || u.username,
+              email: u.email || `${u.username}@farm.local`,
+              role: u.role,
+              viewAccess: u.view_access || u.viewAccess || 'simple',
+              roleTitle: (u.view_access === 'advanced' || u.viewAccess === 'advanced') ? 'Farm Administrator' : 'Field Operations'
+            };
+            userMap.set(userObj.id, userObj);
+            userMap.set(userObj.username.toLowerCase(), userObj);
+          }
+          memoryUsers = Array.from(new Set(userMap.values()));
+        }
+      } catch (err) {
+        console.warn('[Auth] Live user query fallback:', err);
+      }
     }
 
     const allUsers = getCombinedUsers();
@@ -118,17 +122,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setIsAuthenticated(true);
 
       const sessionPayload = JSON.stringify({ userId: matched.id, loggedInAt: new Date().toISOString() });
-      if (rememberMe) {
-        localStorage.setItem(AUTH_STORAGE_KEY, sessionPayload);
-        localStorage.setItem('farmlog_remember_me', 'true');
-        localStorage.setItem('farmlog_saved_username', cleanUser);
-        localStorage.removeItem('farmlog_saved_password');
-      } else {
-        sessionStorage.setItem(AUTH_STORAGE_KEY, sessionPayload);
+      sessionStorage.setItem(AUTH_STORAGE_KEY, sessionPayload);
+      try {
         localStorage.removeItem(AUTH_STORAGE_KEY);
+        localStorage.removeItem('farmlog_cached_users');
         localStorage.removeItem('farmlog_saved_password');
-        localStorage.setItem('farmlog_remember_me', 'false');
-      }
+      } catch {}
 
       dataService.logAudit(
         'USER_LOGIN',
@@ -173,15 +172,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       password: cleanNew,
     };
 
-    // Update in cached users list
+    // Update in memory users list
     const allUsers = getCombinedUsers();
     const userMap = new Map<string, InternalUserAccount>();
     allUsers.forEach(u => userMap.set(u.id, u));
     userMap.set(updatedUser.id, updatedUser);
 
-    const updatedList = Array.from(userMap.values());
+    memoryUsers = Array.from(userMap.values());
     try {
-      localStorage.setItem('farmlog_cached_users', JSON.stringify(updatedList));
+      localStorage.removeItem('farmlog_cached_users');
       localStorage.removeItem('farmlog_saved_password');
     } catch {}
 
@@ -233,8 +232,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     allUsers.forEach(u => userMap.set(u.id, u));
     userMap.set(updatedUser.id, updatedUser);
 
+    memoryUsers = Array.from(userMap.values());
     try {
-      localStorage.setItem('farmlog_cached_users', JSON.stringify(Array.from(userMap.values())));
+      localStorage.removeItem('farmlog_cached_users');
     } catch {}
 
     setCurrentUser(updatedUser);

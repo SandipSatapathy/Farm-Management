@@ -32,26 +32,14 @@ import {
   isDbSyncActive
 } from './localDbClient';
 
-const STORAGE_KEY = 'kisanops_farm_data_v2';
-const TOMBSTONES_KEY = 'farmlog_tombstones_v1';
+// Pure Online Mode: In-Memory Runtime Store
+// Absolutely NO farm or business data is saved to localStorage.
+// The Supabase Cloud database is the sole, direct source of truth.
 
-// Tombstones: tracks deleted IDs so background syncs don't re-insert deleted records
-const getTombstones = (): Set<string> => {
-  try {
-    const raw = localStorage.getItem(TOMBSTONES_KEY);
-    return raw ? new Set(JSON.parse(raw)) : new Set();
-  } catch {
-    return new Set();
-  }
-};
-
+const inMemoryTombstones = new Set<string>();
+const getTombstones = (): Set<string> => inMemoryTombstones;
 const addTombstone = (id: string) => {
-  if (!id) return;
-  try {
-    const set = getTombstones();
-    set.add(id);
-    localStorage.setItem(TOMBSTONES_KEY, JSON.stringify([...set]));
-  } catch {}
+  if (id) inMemoryTombstones.add(id);
 };
 
 export const genId = (): string => {
@@ -67,9 +55,9 @@ export const round2 = (num: number): number => {
   return Math.round((num + Number.EPSILON) * 100) / 100;
 };
 
-// Initial Clean Farm Setup (Real Production Data — Zero Demo/Test Records)
+// Initial Farm Entity
 const initialFarm: Farm = {
-  id: '11111111-1111-1111-1111-111111111111',
+  id: 'farm-main-001',
   name: 'My Farm Operations',
   address: '',
   currency_code: 'INR',
@@ -116,69 +104,44 @@ interface FarmDataStore {
   closeManifests: AnnualCloseManifest[];
 }
 
-const getStore = (): FarmDataStore => {
-  if (typeof window !== 'undefined') {
-    // Purge old demo storage keys so no fake demo records persist
-    try {
-      localStorage.removeItem('kisanops_farm_data_v1');
-    } catch {}
-  }
-
-  const existing = localStorage.getItem(STORAGE_KEY);
-  if (existing) {
-    try {
-      const parsed = JSON.parse(existing);
-      if (!parsed.tractorRentals) parsed.tractorRentals = [];
-      if (!parsed.attendance) parsed.attendance = [];
-      if (!parsed.labourers) parsed.labourers = [];
-      if (!parsed.advances) parsed.advances = [];
-      if (!parsed.allocations) parsed.allocations = [];
-      if (!parsed.machinery) parsed.machinery = [];
-      if (!parsed.usage) parsed.usage = [];
-      if (!parsed.expenses) parsed.expenses = [];
-      if (!parsed.auditLogs) parsed.auditLogs = [];
-      if (!parsed.syncJobs) parsed.syncJobs = [];
-      if (!parsed.payrollPeriods) parsed.payrollPeriods = [];
-      if (!parsed.payrollLines) parsed.payrollLines = [];
-      if (!parsed.payrollPayments) parsed.payrollPayments = [];
-      if (!parsed.salarySettlements) parsed.salarySettlements = [];
-      if (!parsed.closeManifests) parsed.closeManifests = [];
-      return parsed;
-    } catch {
-      // fallback
-    }
-  }
-
-  const initialStore: FarmDataStore = {
-    farm: initialFarm,
-    memberships: initialMemberships,
-    labourers: initialLabourers,
-    attendance: initialAttendance,
-    payrollPeriods: [],
-    payrollLines: [],
-    payrollPayments: [],
-    salarySettlements: [],
-    advances: initialAdvances,
-    allocations: initialAllocations,
-    machinery: initialMachinery,
-    usage: initialUsage,
-    expenses: initialExpenses,
-    tractorRentals: initialTractorRentals,
-    auditLogs: initialAudit,
-    syncJobs: [],
-    closeManifests: []
-  };
-
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(initialStore));
-  return initialStore;
+// In-Memory Runtime Store (Zero LocalStorage)
+let memoryStore: FarmDataStore = {
+  farm: initialFarm,
+  memberships: initialMemberships,
+  labourers: initialLabourers,
+  attendance: initialAttendance,
+  payrollPeriods: [],
+  payrollLines: [],
+  payrollPayments: [],
+  salarySettlements: [],
+  advances: initialAdvances,
+  allocations: initialAllocations,
+  machinery: initialMachinery,
+  usage: initialUsage,
+  expenses: initialExpenses,
+  tractorRentals: initialTractorRentals,
+  auditLogs: initialAudit,
+  syncJobs: [],
+  closeManifests: []
 };
 
+// Completely purge any historical localStorage cache from previous builds
+if (typeof window !== 'undefined') {
+  try {
+    localStorage.removeItem('kisanops_farm_data_v2');
+    localStorage.removeItem('kisanops_farm_data_v1');
+    localStorage.removeItem('farmlog_tombstones_v1');
+    localStorage.removeItem('farmlog_cached_users');
+  } catch {}
+}
+
+const getStore = (): FarmDataStore => memoryStore;
 const saveStore = (store: FarmDataStore) => {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
+  memoryStore = store;
 };
 
 export const dataService = {
-  // Live Database Fetch Engine (Direct Supabase / Local PostgreSQL)
+  // Live Database Fetch Engine (Direct Supabase Cloud Server)
   fetchLiveAll: async (): Promise<boolean> => {
     if (!isDbSyncActive) return false;
 
@@ -188,7 +151,7 @@ export const dataService = {
 
       const store = getStore();
 
-      // Cloud data is 100% authoritative - assign clean live dataset
+      // Cloud data is 100% authoritative
       store.labourers = dbData.labourers || [];
       store.attendance = dbData.attendance || [];
       store.advances = dbData.advances || [];
@@ -196,38 +159,9 @@ export const dataService = {
       store.tractorRentals = dbData.tractorRentals || [];
       store.payrollPeriods = dbData.payrollPeriods || [];
       store.payrollLines = dbData.payrollLines || [];
+      store.salarySettlements = dbData.salarySettlements || [];
       if (dbData.payrollPayments) store.payrollPayments = dbData.payrollPayments || [];
-
-      // Smart merge salary settlements: retain cloud authoritative state while preserving and auto-uploading any local unsynced payouts
-      if (dbData.salarySettlements !== undefined) {
-        const cloudList = dbData.salarySettlements || [];
-        const localList = store.salarySettlements || [];
-        const tombstones = getTombstones();
-        const mergedMap = new Map<string, any>();
-
-        // 1. Add all cloud records
-        cloudList.forEach((s: any) => {
-          if (!tombstones.has(s.id)) {
-            mergedMap.set(s.id, s);
-          }
-        });
-
-        // 2. Add local records that aren't in cloud yet and auto-upload them to Supabase
-        localList.forEach((s: any) => {
-          if (!mergedMap.has(s.id) && !tombstones.has(s.id)) {
-            mergedMap.set(s.id, s);
-            upsertToLocalDb('salary_settlements', [s]).catch(() => {});
-          }
-        });
-
-        store.salarySettlements = Array.from(mergedMap.values());
-      }
-
-      if (dbData.appUsers && dbData.appUsers.length > 0) {
-        try {
-          localStorage.setItem('farmlog_cached_users', JSON.stringify(dbData.appUsers));
-        } catch {}
-      }
+      if (dbData.farm) store.farm = dbData.farm;
 
       saveStore(store);
       if (typeof window !== 'undefined') {

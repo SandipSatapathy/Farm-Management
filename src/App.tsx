@@ -24,10 +24,15 @@ import { SettingsPage } from './pages/SettingsPage';
 export const AppContent: React.FC = () => {
   const { isAuthenticated, viewAccess } = useAuth();
   const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
   const [, setSyncTick] = useState(0);
 
   useEffect(() => {
-    dataService.initDatabaseSync();
+    let isMounted = true;
+    dataService.initDatabaseSync().finally(() => {
+      if (isMounted) setIsInitialLoading(false);
+    });
+
     const unsubscribeRealtime = dataService.initRealtimeSync();
 
     const handleDataUpdated = () => {
@@ -42,6 +47,7 @@ export const AppContent: React.FC = () => {
 
     window.addEventListener('farmlog-data-updated', handleDataUpdated);
     return () => {
+      isMounted = false;
       clearInterval(pollInterval);
       window.removeEventListener('farmlog-data-updated', handleDataUpdated);
       if (typeof unsubscribeRealtime === 'function') {
@@ -52,6 +58,43 @@ export const AppContent: React.FC = () => {
 
   if (!isAuthenticated) {
     return <LoginPage />;
+  }
+
+  if (isInitialLoading) {
+    return (
+      <div style={{
+        minHeight: '100vh',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: 'var(--color-bg, #f8fafc)',
+        padding: 24,
+        textAlign: 'center'
+      }}>
+        <div style={{
+          width: 48,
+          height: 48,
+          borderRadius: '50%',
+          border: '4px solid #bbf7d0',
+          borderTopColor: '#16a34a',
+          animation: 'spin 0.8s linear infinite',
+          marginBottom: 16
+        }} />
+        <h3 style={{ fontSize: '1.05rem', fontWeight: 800, color: '#166534', margin: '0 0 6px 0' }}>
+          Connecting to Cloud Server...
+        </h3>
+        <p style={{ fontSize: '0.85rem', color: '#64748b', margin: 0 }}>
+          Synchronizing live farm records from Supabase
+        </p>
+        <style>{`
+          @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+          }
+        `}</style>
+      </div>
+    );
   }
 
   // 1. Simpler View User: strictly sees ONLY the Simple Farm Routine

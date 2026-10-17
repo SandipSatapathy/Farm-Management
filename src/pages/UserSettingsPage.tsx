@@ -138,7 +138,7 @@ export const UserSettingsPage: React.FC<UserSettingsPageProps> = ({ onClose, com
     .substring(0, 2)
     .toUpperCase() || 'U';
 
-  const isRemembered = typeof window !== 'undefined' && localStorage.getItem('farmlog_remember_me') === 'true';
+  const isRemembered = false;
 
   return (
     <div className={compact ? 'user-settings-compact' : 'page-wrapper'} style={{ maxWidth: 900, margin: '0 auto' }}>
