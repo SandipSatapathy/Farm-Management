@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useAuth } from '../context/AuthContext';
 import { dataService, round2 } from '../lib/dataService';
@@ -28,6 +28,9 @@ import {
   List,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
+  Search,
   RefreshCw,
   FileDown,
   Download,
@@ -150,6 +153,10 @@ export const SimpleFarmViewPage: React.FC = () => {
     advanceDeducted: number;
     daysWorked: number;
     dailyRate: number;
+    isPartiallyPaid?: boolean;
+    alreadyPaid?: number;
+    remainingNet?: number;
+    totalGross?: number;
   } | null>(null);
   const [settleAdvanceDeduct, setSettleAdvanceDeduct] = useState<number>(0);
   const [settleAmount, setSettleAmount] = useState<number>(0);
@@ -165,6 +172,14 @@ export const SimpleFarmViewPage: React.FC = () => {
   const [editSalaryMethod, setEditSalaryMethod] = useState<PaymentMethod>('cash');
   const [editSalaryDate, setEditSalaryDate] = useState<string>(today);
   const [editSalaryNotes, setEditSalaryNotes] = useState<string>('');
+
+  // Settled Salary Payouts History Filter & Grouping State
+  const [historyScope, setHistoryScope] = useState<'current' | 'all'>('current');
+  const [historyWorkerId, setHistoryWorkerId] = useState<string>('all');
+  const [historyPeriodType, setHistoryPeriodType] = useState<string>('all');
+  const [historyMonthFilter, setHistoryMonthFilter] = useState<string>('all');
+  const [historySearch, setHistorySearch] = useState<string>('');
+  const [historyExpandedGroups, setHistoryExpandedGroups] = useState<Record<string, boolean>>({});
 
   // Hired Tractor Rental State (Purely Hired / Rented — Zero Owned Tractors)
   const [tractorRentals, setTractorRentals] = useState<TractorRentalLog[]>([]);
@@ -655,25 +670,32 @@ export const SimpleFarmViewPage: React.FC = () => {
   };
 
   const handleOpenSettleModal = (row: any) => {
+    const isPayingRemaining = Boolean(row.isPartiallyPaid && row.remainingNet > 0);
+    const initialAmount = isPayingRemaining ? row.remainingNet : row.netTakeHome;
+
     setSettleModalLab({
       lab: row.labourer,
       periodType: salaryPeriodType,
       startDate: effectiveSalaryStartDate,
       endDate: effectiveSalaryEndDate,
       periodLabel: effectivePeriodLabel,
-      netPay: row.netTakeHome,
+      netPay: initialAmount,
       grossWage: row.grossWage,
       advanceDue: row.advanceDue,
-      advanceDeducted: row.advanceDeducted,
+      advanceDeducted: isPayingRemaining ? 0 : row.advanceDeducted,
       daysWorked: row.daysWorked,
-      dailyRate: row.dailyRate
+      dailyRate: row.dailyRate,
+      isPartiallyPaid: row.isPartiallyPaid,
+      alreadyPaid: row.alreadyPaid,
+      remainingNet: row.remainingNet,
+      totalGross: row.grossWage
     });
-    setSettleAdvanceDeduct(row.advanceDeducted);
-    setSettleAmount(row.netTakeHome);
+    setSettleAdvanceDeduct(isPayingRemaining ? 0 : row.advanceDeducted);
+    setSettleAmount(initialAmount);
     setSettleGivenBy(salaryGivenBy || currentUser?.name || '');
     setSettleMethod('cash');
     setSettleDate(today);
-    setSettleNotes('');
+    setSettleNotes(isPayingRemaining ? `Remaining balance settlement (₹${(row.alreadyPaid || 0).toLocaleString('en-IN')} previously paid via weekly payout)` : '');
   };
 
   const handleConfirmSettleSalary = async (e: React.FormEvent) => {
@@ -969,9 +991,22 @@ export const SimpleFarmViewPage: React.FC = () => {
     const advanceDeducted = round2(Math.min(advanceDue, grossWage));
     const calculatedNet = round2(Math.max(0, grossWage - advanceDeducted));
 
-    // Match settlement by period_type and corresponding dates / month
-    const settlement = salarySettlements.find((s) => {
+    // Match all overlapping settlements for this worker within effectiveSalaryStartDate to effectiveSalaryEndDate
+    const labSettlements = salarySettlements.filter((s) => {
       if (s.labourer_id !== lab.id) return false;
+      if ((s as any).status === 'cancelled') return false;
+
+      const sStart = s.start_date || `${s.year}-${String(s.month).padStart(2, '0')}-01`;
+      const sEnd = s.end_date || `${s.year}-${String(s.month).padStart(2, '0')}-31`;
+
+      const overlapsByDate = sStart <= effectiveSalaryEndDate && sEnd >= effectiveSalaryStartDate;
+      const overlapsByMonth = salaryPeriodType === 'monthly' && s.year === salaryYear && s.month === salaryMonth;
+
+      return overlapsByDate || overlapsByMonth;
+    });
+
+    // 1. Exact match settlement for this active period
+    const exactSettlement = labSettlements.find((s) => {
       if (salaryPeriodType === 'monthly') {
         return (s.period_type === 'monthly' && s.year === salaryYear && s.month === salaryMonth) ||
                (!s.period_type && s.year === salaryYear && s.month === salaryMonth) ||
@@ -979,11 +1014,62 @@ export const SimpleFarmViewPage: React.FC = () => {
       } else if (salaryPeriodType === 'weekly') {
         return s.period_type === 'weekly' && s.start_date === effectiveSalaryStartDate && s.end_date === effectiveSalaryEndDate;
       } else {
-        return s.period_type === 'custom' && s.start_date === effectiveSalaryStartDate && s.end_date === effectiveSalaryEndDate;
+        return s.start_date === effectiveSalaryStartDate && s.end_date === effectiveSalaryEndDate;
       }
     });
 
-    const isSettled = Boolean(settlement);
+    // 2. Parent settlement covering this sub-period (e.g. whole month was paid, now viewing weekly)
+    const parentPeriodSettlement = !exactSettlement ? labSettlements.find((s) => {
+      const sStart = s.start_date || `${s.year}-${String(s.month).padStart(2, '0')}-01`;
+      const sEnd = s.end_date || `${s.year}-${String(s.month).padStart(2, '0')}-31`;
+      return (s.period_type === 'monthly' && salaryPeriodType !== 'monthly' && sStart <= effectiveSalaryStartDate && sEnd >= effectiveSalaryEndDate) ||
+             (s.period_type === 'monthly' && salaryPeriodType === 'weekly' && s.year === salaryYear && s.month === salaryMonth);
+    }) : undefined;
+
+    // 3. Sub-period settlements (e.g. weekly payouts inside a monthly view)
+    const subPeriodSettlements = labSettlements.filter((s) => {
+      if (exactSettlement && s.id === exactSettlement.id) return false;
+      if (parentPeriodSettlement && s.id === parentPeriodSettlement.id) return false;
+      return true;
+    });
+
+    const totalSubPeriodPaid = round2(subPeriodSettlements.reduce((sum, s) => sum + (Number(s.paid_amount) || 0), 0));
+    const totalSubPeriodDays = round2(subPeriodSettlements.reduce((sum, s) => sum + (Number(s.days_worked) || 0), 0));
+
+    let isSettled = false;
+    let isPartiallyPaid = false;
+    let alreadyPaid = 0;
+    let remainingNet = calculatedNet;
+    let settlementType: 'exact' | 'parent' | 'subperiods' | 'partial' | 'unpaid' = 'unpaid';
+    let statusLabel = 'Unpaid';
+    const activeSettlement = exactSettlement || parentPeriodSettlement || (subPeriodSettlements.length === 1 ? subPeriodSettlements[0] : undefined);
+
+    if (exactSettlement) {
+      isSettled = true;
+      alreadyPaid = exactSettlement.paid_amount;
+      remainingNet = 0;
+      settlementType = 'exact';
+      statusLabel = `✓ Paid ₹${exactSettlement.paid_amount.toLocaleString('en-IN')}`;
+    } else if (parentPeriodSettlement) {
+      isSettled = true;
+      alreadyPaid = calculatedNet;
+      remainingNet = 0;
+      settlementType = 'parent';
+      statusLabel = `✓ Paid (Covered by Monthly Payout)`;
+    } else if (totalSubPeriodPaid > 0) {
+      alreadyPaid = totalSubPeriodPaid;
+      remainingNet = round2(Math.max(0, calculatedNet - totalSubPeriodPaid));
+
+      if (remainingNet <= 0 || (daysWorked > 0 && totalSubPeriodDays >= daysWorked)) {
+        isSettled = true;
+        settlementType = 'subperiods';
+        statusLabel = `✓ Paid via ${subPeriodSettlements.length} Weekly Payout${subPeriodSettlements.length > 1 ? 's' : ''} (₹${totalSubPeriodPaid.toLocaleString('en-IN')})`;
+      } else {
+        isPartiallyPaid = true;
+        settlementType = 'partial';
+        statusLabel = `⏳ ₹${totalSubPeriodPaid.toLocaleString('en-IN')} Paid (${subPeriodSettlements.length} Payout${subPeriodSettlements.length > 1 ? 's' : ''}) • ₹${remainingNet.toLocaleString('en-IN')} Due`;
+      }
+    }
 
     return {
       labourer: lab,
@@ -993,9 +1079,15 @@ export const SimpleFarmViewPage: React.FC = () => {
       advanceDue,
       advanceDeducted,
       calculatedNet,
-      netTakeHome: settlement ? settlement.paid_amount : calculatedNet,
+      alreadyPaid,
+      remainingNet,
+      netTakeHome: isSettled ? (exactSettlement ? exactSettlement.paid_amount : alreadyPaid || calculatedNet) : remainingNet,
       isSettled,
-      settlement,
+      isPartiallyPaid,
+      settlementType,
+      statusLabel,
+      settlement: activeSettlement,
+      subPeriodSettlements,
       presentDays: summary.presentDays,
       halfDays: summary.halfDays
     };
@@ -1004,7 +1096,161 @@ export const SimpleFarmViewPage: React.FC = () => {
   const totalCrewDaysWorked = round2(salaryRows.reduce((sum, r) => sum + r.daysWorked, 0));
   const totalGrossWages = round2(salaryRows.reduce((sum, r) => sum + r.grossWage, 0));
   const totalAdvancesDeducted = round2(salaryRows.reduce((sum, r) => sum + r.advanceDeducted, 0));
-  const totalNetTakeHome = round2(salaryRows.reduce((sum, r) => sum + r.netTakeHome, 0));
+  const totalAlreadyPaid = round2(salaryRows.reduce((sum, r) => sum + r.alreadyPaid, 0));
+  const totalRemainingDue = round2(salaryRows.reduce((sum, r) => sum + (r.isSettled ? 0 : r.remainingNet), 0));
+  const totalNetTakeHome = totalRemainingDue;
+
+  // Salary History Calculations & Filtering
+  const formatYearMonth = (ym: string) => {
+    const [yearStr, monthStr] = ym.split('-');
+    const y = parseInt(yearStr, 10);
+    const m = parseInt(monthStr, 10);
+    if (!y || !m) return ym;
+    const d = new Date(y, m - 1, 1);
+    return d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  };
+
+  const availableHistoryMonths = useMemo(() => {
+    const monthSet = new Set<string>();
+    salarySettlements.forEach((st) => {
+      if (st.year && st.month) {
+        monthSet.add(`${st.year}-${String(st.month).padStart(2, '0')}`);
+      } else if (st.payment_date) {
+        monthSet.add(st.payment_date.slice(0, 7));
+      } else if (st.start_date) {
+        monthSet.add(st.start_date.slice(0, 7));
+      }
+    });
+    return Array.from(monthSet).sort().reverse();
+  }, [salarySettlements]);
+
+  const filteredHistorySettlements = useMemo(() => {
+    return salarySettlements.filter((st) => {
+      // 1. Scope filter
+      if (historyScope === 'current') {
+        const sStart = st.start_date || `${st.year}-${String(st.month).padStart(2, '0')}-01`;
+        const sEnd = st.end_date || `${st.year}-${String(st.month).padStart(2, '0')}-31`;
+        const overlapsByDate = sStart <= effectiveSalaryEndDate && sEnd >= effectiveSalaryStartDate;
+        const overlapsByMonth = salaryPeriodType === 'monthly' && st.year === salaryYear && st.month === salaryMonth;
+        if (!overlapsByDate && !overlapsByMonth) return false;
+      } else {
+        // In 'all' scope, if a specific month is selected
+        if (historyMonthFilter !== 'all') {
+          const stMonth = st.year && st.month
+            ? `${st.year}-${String(st.month).padStart(2, '0')}`
+            : (st.payment_date?.slice(0, 7) || st.start_date?.slice(0, 7) || '');
+          if (stMonth !== historyMonthFilter) return false;
+        }
+      }
+
+      // 2. Worker filter
+      if (historyWorkerId !== 'all' && st.labourer_id !== historyWorkerId) {
+        return false;
+      }
+
+      // 3. Period type filter
+      if (historyPeriodType !== 'all') {
+        const pType = st.period_type || 'monthly';
+        if (pType !== historyPeriodType) return false;
+      }
+
+      // 4. Search query
+      if (historySearch.trim()) {
+        const q = historySearch.toLowerCase().trim();
+        const labName = (st.labourer_name || labourers.find(l => l.id === st.labourer_id)?.full_name || '').toLowerCase();
+        const labCode = (st.labour_code || labourers.find(l => l.id === st.labourer_id)?.labour_code || '').toLowerCase();
+        const payer = (st.given_by || '').toLowerCase();
+        const notes = (st.notes || '').toLowerCase();
+        const method = (st.payment_method || '').toLowerCase();
+        if (!labName.includes(q) && !labCode.includes(q) && !payer.includes(q) && !notes.includes(q) && !method.includes(q)) {
+          return false;
+        }
+      }
+
+      return true;
+    });
+  }, [salarySettlements, historyScope, effectiveSalaryStartDate, effectiveSalaryEndDate, salaryPeriodType, salaryYear, salaryMonth, historyMonthFilter, historyWorkerId, historyPeriodType, historySearch, labourers]);
+
+  const historyGroups = useMemo(() => {
+    const groups: { [key: string]: { label: string; yearMonth: string; items: SalarySettlement[]; totalPaid: number } } = {};
+
+    filteredHistorySettlements.forEach((st) => {
+      let key = '';
+      let label = '';
+      if (st.year && st.month) {
+        key = `${st.year}-${String(st.month).padStart(2, '0')}`;
+        label = formatYearMonth(key);
+      } else if (st.payment_date) {
+        key = st.payment_date.slice(0, 7);
+        label = formatYearMonth(key);
+      } else if (st.start_date) {
+        key = st.start_date.slice(0, 7);
+        label = formatYearMonth(key);
+      } else {
+        key = 'other';
+        label = 'Other Payouts';
+      }
+
+      if (!groups[key]) {
+        groups[key] = {
+          label,
+          yearMonth: key,
+          items: [],
+          totalPaid: 0
+        };
+      }
+      groups[key].items.push(st);
+      groups[key].totalPaid = round2(groups[key].totalPaid + (Number(st.paid_amount) || 0));
+    });
+
+    // Sort items within each group newest payment_date or created_at first
+    Object.values(groups).forEach(g => {
+      g.items.sort((a, b) => (b.payment_date || b.created_at || '').localeCompare(a.payment_date || a.created_at || ''));
+    });
+
+    // Sort groups newest month key first
+    return Object.keys(groups)
+      .sort()
+      .reverse()
+      .map(k => groups[k]);
+  }, [filteredHistorySettlements]);
+
+  const filteredHistoryTotalPaid = round2(filteredHistorySettlements.reduce((sum, st) => sum + (Number(st.paid_amount) || 0), 0));
+
+  const isGroupExpanded = (yearMonth: string, idx: number) => {
+    if (historyExpandedGroups[yearMonth] !== undefined) {
+      return historyExpandedGroups[yearMonth];
+    }
+    // Default: expand all groups when in current period or expand the first group in all history
+    return historyScope === 'current' || idx === 0;
+  };
+
+  const toggleGroupExpand = (yearMonth: string, idx: number) => {
+    const current = isGroupExpanded(yearMonth, idx);
+    setHistoryExpandedGroups(prev => ({ ...prev, [yearMonth]: !current }));
+  };
+
+  const expandAllGroups = () => {
+    const allExpanded: Record<string, boolean> = {};
+    historyGroups.forEach(g => { allExpanded[g.yearMonth] = true; });
+    setHistoryExpandedGroups(allExpanded);
+  };
+
+  const collapseAllGroups = () => {
+    const allCollapsed: Record<string, boolean> = {};
+    historyGroups.forEach(g => { allCollapsed[g.yearMonth] = false; });
+    setHistoryExpandedGroups(allCollapsed);
+  };
+
+  const resetHistoryFilters = () => {
+    setHistoryScope('current');
+    setHistoryWorkerId('all');
+    setHistoryPeriodType('all');
+    setHistoryMonthFilter('all');
+    setHistorySearch('');
+  };
+
+  const hasActiveHistoryFilters = historyScope !== 'current' || historyWorkerId !== 'all' || historyPeriodType !== 'all' || historyMonthFilter !== 'all' || historySearch.trim() !== '';
 
   // Advance Month Calculations
   const advMonthPrefix = advFilterMonth !== 'all' ? `${advFilterYear}-${String(advFilterMonth).padStart(2, '0')}` : null;
@@ -3637,16 +3883,18 @@ export const SimpleFarmViewPage: React.FC = () => {
                 <div className="ledger-kpi-sub">Before deductions</div>
               </div>
 
-              <div className="ledger-kpi-box" style={{ background: 'linear-gradient(135deg, #ffffff 60%, #fef3c7 100%)', borderColor: '#fcd34d' }}>
-                <div className="ledger-kpi-title" style={{ color: '#b45309' }}>Advance Deductions</div>
-                <div className="ledger-kpi-value" style={{ color: '#92400e' }}>₹{totalAdvancesDeducted.toLocaleString('en-IN')}</div>
-                <div className="ledger-kpi-sub">Recovered</div>
+              <div className="ledger-kpi-box" style={{ background: 'linear-gradient(135deg, #ffffff 60%, #eff6ff 100%)', borderColor: '#bfdbfe' }}>
+                <div className="ledger-kpi-title" style={{ color: '#1d4ed8' }}>Already Disbursed</div>
+                <div className="ledger-kpi-value" style={{ color: '#1e40af' }}>₹{totalAlreadyPaid.toLocaleString('en-IN')}</div>
+                <div className="ledger-kpi-sub">Paid in weekly / prior payouts</div>
               </div>
 
-              <div className="ledger-kpi-box" style={{ background: 'linear-gradient(135deg, #ffffff 60%, #f0f9ff 100%)', borderColor: '#bae6fd' }}>
-                <div className="ledger-kpi-title" style={{ color: '#0284c7' }}>Net Take-Home Pay</div>
-                <div className="ledger-kpi-value" style={{ color: '#0369a1' }}>₹{totalNetTakeHome.toLocaleString('en-IN')}</div>
-                <div className="ledger-kpi-sub">Total crew take-home payout</div>
+              <div className="ledger-kpi-box" style={{ background: totalRemainingDue > 0 ? 'linear-gradient(135deg, #ffffff 60%, #fffbeb 100%)' : 'linear-gradient(135deg, #ffffff 60%, #f0fdf4 100%)', borderColor: totalRemainingDue > 0 ? '#fde68a' : '#86efac' }}>
+                <div className="ledger-kpi-title" style={{ color: totalRemainingDue > 0 ? '#b45309' : '#15803d' }}>Remaining Payout Due</div>
+                <div className="ledger-kpi-value" style={{ color: totalRemainingDue > 0 ? '#b45309' : '#15803d' }}>
+                  {totalRemainingDue > 0 ? `₹${totalRemainingDue.toLocaleString('en-IN')}` : '✓ All Settled'}
+                </div>
+                <div className="ledger-kpi-sub">{totalRemainingDue > 0 ? 'Pending crew take-home' : 'Zero outstanding for this cycle'}</div>
               </div>
             </div>
 
@@ -3668,7 +3916,8 @@ export const SimpleFarmViewPage: React.FC = () => {
                       <th className="ledger-th">Days Worked</th>
                       <th className="ledger-th">Gross Wage</th>
                       <th className="ledger-th">Advance</th>
-                      <th className="ledger-th">Net Take-Home Pay</th>
+                      <th className="ledger-th">Prior Paid (Weekly)</th>
+                      <th className="ledger-th">Net Balance Due</th>
                       <th className="ledger-th">Given By</th>
                       <th className="ledger-th" style={{ textAlign: 'right' }}>Payment Action</th>
                     </tr>
@@ -3676,7 +3925,7 @@ export const SimpleFarmViewPage: React.FC = () => {
                   <tbody>
                     {salaryRows.length === 0 ? (
                       <tr>
-                        <td colSpan={8} style={{ textAlign: 'center', padding: '36px 16px', color: '#64748b' }}>
+                        <td colSpan={9} style={{ textAlign: 'center', padding: '36px 16px', color: '#64748b' }}>
                           <CreditCard size={32} style={{ opacity: 0.4, margin: '0 auto 8px' }} />
                           <div style={{ fontWeight: 800, color: '#334155' }}>No Workers or Shifts Recorded for {effectivePeriodLabel}</div>
                           <div style={{ fontSize: '0.8rem', marginTop: 4 }}>Add or reactivate crew members to generate settlement sheets.</div>
@@ -3684,7 +3933,7 @@ export const SimpleFarmViewPage: React.FC = () => {
                       </tr>
                     ) : (
                       salaryRows.map((row) => {
-                        const { labourer: lab, dailyRate, daysWorked, grossWage, advanceDue, netTakeHome, isSettled, settlement } = row;
+                        const { labourer: lab, dailyRate, daysWorked, grossWage, advanceDue, netTakeHome, remainingNet, alreadyPaid, isSettled, isPartiallyPaid, settlementType, statusLabel, settlement, subPeriodSettlements } = row;
 
                         return (
                           <tr key={lab.id} className="ledger-tr" style={{ opacity: lab.is_active ? 1 : 0.85 }}>
@@ -3740,9 +3989,38 @@ export const SimpleFarmViewPage: React.FC = () => {
                               )}
                             </td>
                             <td className="ledger-td">
-                              <span style={{ fontSize: '1.18rem', fontWeight: 900, color: '#15803d', fontFamily: 'Outfit, Plus Jakarta Sans, sans-serif' }}>
-                                ₹{netTakeHome.toLocaleString('en-IN')}
-                              </span>
+                              {alreadyPaid > 0 ? (
+                                <div>
+                                  <span style={{ color: '#1d4ed8', fontWeight: 800, background: '#eff6ff', padding: '2px 8px', borderRadius: 6, border: '1px solid #bfdbfe', fontSize: '0.8rem' }}>
+                                    ₹{alreadyPaid.toLocaleString('en-IN')}
+                                  </span>
+                                  {subPeriodSettlements && subPeriodSettlements.length > 0 && (
+                                    <div style={{ fontSize: '0.7rem', color: '#64748b', marginTop: 2 }}>
+                                      {subPeriodSettlements.length} weekly payout{subPeriodSettlements.length > 1 ? 's' : ''}
+                                    </div>
+                                  )}
+                                </div>
+                              ) : (
+                                <span style={{ color: '#94a3b8', fontSize: '0.8rem' }}>—</span>
+                              )}
+                            </td>
+                            <td className="ledger-td">
+                              {isSettled ? (
+                                <span style={{ fontSize: '1.05rem', fontWeight: 900, color: '#15803d', fontFamily: 'Outfit, Plus Jakarta Sans, sans-serif' }}>
+                                  ₹{netTakeHome.toLocaleString('en-IN')} (Paid)
+                                </span>
+                              ) : (
+                                <div>
+                                  <span style={{ fontSize: '1.18rem', fontWeight: 900, color: isPartiallyPaid ? '#b45309' : '#15803d', fontFamily: 'Outfit, Plus Jakarta Sans, sans-serif' }}>
+                                    ₹{remainingNet.toLocaleString('en-IN')}
+                                  </span>
+                                  {isPartiallyPaid && (
+                                    <div style={{ fontSize: '0.7rem', color: '#b45309', fontWeight: 700 }}>
+                                      Remaining Due
+                                    </div>
+                                  )}
+                                </div>
+                              )}
                             </td>
                             <td className="ledger-td">
                               {isSettled ? (
@@ -3760,13 +4038,28 @@ export const SimpleFarmViewPage: React.FC = () => {
                                 }}>
                                   👤 {settlement?.given_by || salaryGivenBy || currentUser?.name || 'Owner'}
                                 </span>
+                              ) : isPartiallyPaid && subPeriodSettlements && subPeriodSettlements.length > 0 ? (
+                                <span style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: 5,
+                                  background: '#eff6ff',
+                                  color: '#1e40af',
+                                  fontWeight: 700,
+                                  padding: '3px 8px',
+                                  borderRadius: 8,
+                                  border: '1px solid #bfdbfe',
+                                  fontSize: '0.75rem'
+                                }}>
+                                  👤 {subPeriodSettlements[0].given_by || 'Paid'}
+                                </span>
                               ) : (
                                 <span style={{ color: '#94a3b8', fontSize: '0.8rem' }}>—</span>
                               )}
                             </td>
                             <td className="ledger-td" style={{ textAlign: 'right' }}>
-                              {isSettled && settlement ? (
-                                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                              {isSettled ? (
+                                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                                   <span style={{
                                     display: 'inline-flex',
                                     alignItems: 'center',
@@ -3779,27 +4072,70 @@ export const SimpleFarmViewPage: React.FC = () => {
                                     borderRadius: 8,
                                     border: '1px solid #86efac'
                                   }}>
-                                    ✓ Paid ₹{settlement.paid_amount.toLocaleString('en-IN')}
+                                    {statusLabel}
                                   </span>
+                                  {settlement && settlementType === 'exact' && (
+                                    <>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleOpenEditSalary(settlement)}
+                                        className="ledger-action-btn ledger-action-btn-secondary"
+                                        style={{ padding: '5px 8px', display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: '0.75rem' }}
+                                        title="Edit Salary Settlement (Amount, Given By, Date)"
+                                      >
+                                        <Edit2 size={12} />
+                                        <span>Edit</span>
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleDeleteSalarySettlement(settlement.id)}
+                                        className="ledger-action-btn ledger-action-btn-danger"
+                                        style={{ padding: '5px 7px' }}
+                                        title="Revert to Unpaid"
+                                      >
+                                        <RotateCcw size={12} />
+                                      </button>
+                                    </>
+                                  )}
+                                  {subPeriodSettlements && subPeriodSettlements.length > 0 && settlementType === 'subperiods' && (
+                                    <div style={{ display: 'flex', gap: 4 }}>
+                                      {subPeriodSettlements.map((s: SalarySettlement) => (
+                                        <button
+                                          key={s.id}
+                                          type="button"
+                                          onClick={() => handleDeleteSalarySettlement(s.id)}
+                                          className="ledger-action-btn ledger-action-btn-danger"
+                                          style={{ padding: '3px 6px', fontSize: '0.68rem' }}
+                                          title={`Revert weekly payout of ₹${s.paid_amount} (${s.start_date || ''})`}
+                                        >
+                                          Revert ₹{s.paid_amount}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              ) : isPartiallyPaid ? (
+                                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                                   <button
                                     type="button"
-                                    onClick={() => handleOpenEditSalary(settlement)}
-                                    className="ledger-action-btn ledger-action-btn-secondary"
-                                    style={{ padding: '5px 8px', display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: '0.75rem' }}
-                                    title="Edit Salary Settlement (Amount, Given By, Date)"
+                                    onClick={() => handleOpenSettleModal(row)}
+                                    className="ledger-action-btn ledger-action-btn-primary"
+                                    style={{ padding: '6px 14px', fontSize: '0.8rem', background: '#d97706', borderColor: '#b45309' }}
                                   >
-                                    <Edit2 size={12} />
-                                    <span>Edit</span>
+                                    Pay Remaining (₹{remainingNet.toLocaleString('en-IN')})
                                   </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleDeleteSalarySettlement(settlement.id)}
-                                    className="ledger-action-btn ledger-action-btn-danger"
-                                    style={{ padding: '5px 7px' }}
-                                    title="Revert to Unpaid"
-                                  >
-                                    <RotateCcw size={12} />
-                                  </button>
+                                  {subPeriodSettlements && subPeriodSettlements.map((s: SalarySettlement) => (
+                                    <button
+                                      key={s.id}
+                                      type="button"
+                                      onClick={() => handleDeleteSalarySettlement(s.id)}
+                                      className="ledger-action-btn ledger-action-btn-danger"
+                                      style={{ padding: '4px 6px', fontSize: '0.7rem' }}
+                                      title={`Revert weekly payout of ₹${s.paid_amount}`}
+                                    >
+                                      Revert ₹{s.paid_amount}
+                                    </button>
+                                  ))}
                                 </div>
                               ) : (
                                 <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
@@ -3843,7 +4179,24 @@ export const SimpleFarmViewPage: React.FC = () => {
                 </div>
               ) : (
                 salaryRows.map((row) => {
-                  const { labourer: lab, dailyRate, daysWorked, grossWage, advanceDue, netTakeHome, isSettled, settlement } = row;
+                  const {
+                    labourer: lab,
+                    dailyRate,
+                    daysWorked,
+                    grossWage,
+                    advanceDue,
+                    advanceDeducted,
+                    calculatedNet,
+                    alreadyPaid,
+                    remainingNet,
+                    netTakeHome,
+                    isSettled,
+                    isPartiallyPaid,
+                    settlementType,
+                    statusLabel,
+                    settlement,
+                    subPeriodSettlements
+                  } = row;
                   const pastSettlement = salarySettlements.find((s) => s.labourer_id === lab.id);
 
                   return (
@@ -3880,26 +4233,29 @@ export const SimpleFarmViewPage: React.FC = () => {
                         </div>
 
                         <div style={{ textAlign: 'right' }}>
-                          <div style={{ fontSize: '0.68rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 800 }}>Net Take-Home</div>
-                          <div style={{ fontSize: '1.25rem', fontWeight: 900, color: '#15803d', fontFamily: 'Outfit, sans-serif' }}>
-                            ₹{netTakeHome.toLocaleString('en-IN')}
+                          <div style={{ fontSize: '0.68rem', color: isPartiallyPaid ? '#b45309' : '#64748b', textTransform: 'uppercase', fontWeight: 800 }}>
+                            {isSettled ? 'Net Paid' : (isPartiallyPaid ? 'Remaining Due' : 'Net Take-Home')}
+                          </div>
+                          <div style={{ fontSize: '1.25rem', fontWeight: 900, color: isPartiallyPaid ? '#d97706' : '#15803d', fontFamily: 'Outfit, sans-serif' }}>
+                            ₹{(isSettled ? netTakeHome : (isPartiallyPaid ? remainingNet : calculatedNet)).toLocaleString('en-IN')}
                           </div>
                         </div>
                       </div>
 
                       <div style={{ background: '#f8faf8', border: '1px solid rgba(220, 235, 224, 0.8)', padding: '8px 12px', borderRadius: 10, fontSize: '0.78rem', color: '#334e3e', marginBottom: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
-                        <div>
+                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                           <span>Gross: <strong>₹{grossWage.toLocaleString('en-IN')}</strong></span>
-                          {advanceDue > 0 && <span style={{ color: '#b45309', marginLeft: 10 }}>Advance: <strong>₹{advanceDue.toLocaleString('en-IN')}</strong></span>}
+                          {advanceDue > 0 && <span style={{ color: '#b45309' }}>Adv Ded: <strong>₹{advanceDeducted.toLocaleString('en-IN')}</strong></span>}
+                          {alreadyPaid > 0 && <span style={{ color: '#2563eb', background: '#eff6ff', padding: '1px 6px', borderRadius: 6, fontWeight: 700 }}>Prior Paid: <strong>₹{alreadyPaid.toLocaleString('en-IN')}</strong></span>}
                         </div>
-                        {isSettled && (
+                        {(isSettled || isPartiallyPaid) && (
                           <div style={{ fontSize: '0.74rem', color: '#15803d', fontWeight: 800 }}>
-                            Given By: <strong>👤 {settlement?.given_by || salaryGivenBy}</strong>
+                            Given By: <strong>👤 {settlement?.given_by || (subPeriodSettlements && subPeriodSettlements[0]?.given_by) || salaryGivenBy || 'Owner'}</strong>
                           </div>
                         )}
                       </div>
 
-                      {isSettled && settlement ? (
+                      {isSettled ? (
                         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                           <div style={{
                             flex: '1 1 100%',
@@ -3907,7 +4263,7 @@ export const SimpleFarmViewPage: React.FC = () => {
                             border: '1.5px solid #86efac',
                             color: '#15803d',
                             fontWeight: 800,
-                            fontSize: '0.84rem',
+                            fontSize: '0.82rem',
                             borderRadius: 10,
                             padding: '8px 12px',
                             display: 'flex',
@@ -3915,52 +4271,75 @@ export const SimpleFarmViewPage: React.FC = () => {
                             justifyContent: 'center',
                             gap: 6
                           }}>
-                            <CheckCircle2 size={16} /> Paid ₹{settlement.paid_amount.toLocaleString('en-IN')} ({settlement.period_type === 'weekly' ? 'Weekly' : 'Monthly'})
+                            <CheckCircle2 size={16} /> {statusLabel}
                           </div>
-                          <button
-                            type="button"
-                            onClick={() => handleOpenEditSalary(settlement)}
-                            style={{
-                              flex: 1,
-                              padding: '10px 14px',
-                              borderRadius: 10,
-                              border: '1.5px solid #0284c7',
-                              background: '#f0f9ff',
-                              color: '#0284c7',
-                              fontWeight: 800,
-                              fontSize: '0.85rem',
-                              cursor: 'pointer',
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              gap: 6,
-                              boxShadow: '0 2px 4px rgba(2, 132, 199, 0.12)'
-                            }}
-                          >
-                            <Edit2 size={15} />
-                            <span>Edit Payout</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteSalarySettlement(settlement.id)}
-                            style={{
-                              padding: '10px 14px',
-                              borderRadius: 10,
-                              border: '1px solid #fed7aa',
-                              background: '#fff7ed',
-                              color: '#c2410c',
-                              fontWeight: 800,
-                              fontSize: '0.82rem',
-                              cursor: 'pointer',
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: 4
-                            }}
-                            title="Revert to Unpaid"
-                          >
-                            <RotateCcw size={14} />
-                            <span>Revert</span>
-                          </button>
+                          {settlement && settlementType === 'exact' && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => handleOpenEditSalary(settlement)}
+                                style={{
+                                  flex: 1,
+                                  padding: '10px 14px',
+                                  borderRadius: 10,
+                                  border: '1.5px solid #0284c7',
+                                  background: '#f0f9ff',
+                                  color: '#0284c7',
+                                  fontWeight: 800,
+                                  fontSize: '0.85rem',
+                                  cursor: 'pointer',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  gap: 6,
+                                  boxShadow: '0 2px 4px rgba(2, 132, 199, 0.12)'
+                                }}
+                              >
+                                <Edit2 size={15} />
+                                <span>Edit Payout</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteSalarySettlement(settlement.id)}
+                                style={{
+                                  padding: '10px 14px',
+                                  borderRadius: 10,
+                                  border: '1px solid #fed7aa',
+                                  background: '#fff7ed',
+                                  color: '#c2410c',
+                                  fontWeight: 800,
+                                  fontSize: '0.82rem',
+                                  cursor: 'pointer',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: 4
+                                }}
+                                title="Revert to Unpaid"
+                              >
+                                <RotateCcw size={14} />
+                                <span>Revert</span>
+                              </button>
+                            </>
+                          )}
+                          {subPeriodSettlements && subPeriodSettlements.length > 0 && settlementType === 'subperiods' && (
+                            <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 6, marginTop: 4 }}>
+                              <div style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 700 }}>Individual Weekly Payouts:</div>
+                              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                                {subPeriodSettlements.map((s: SalarySettlement) => (
+                                  <button
+                                    key={s.id}
+                                    type="button"
+                                    onClick={() => handleDeleteSalarySettlement(s.id)}
+                                    className="ledger-action-btn ledger-action-btn-danger"
+                                    style={{ padding: '4px 8px', fontSize: '0.72rem' }}
+                                    title={`Revert weekly payout of ₹${s.paid_amount} (${s.start_date || ''})`}
+                                  >
+                                    Revert ₹{s.paid_amount}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          )}
                           <button
                             type="button"
                             onClick={() => handleOpenEditLabourer(lab)}
@@ -3982,6 +4361,62 @@ export const SimpleFarmViewPage: React.FC = () => {
                             <Edit2 size={12} color="#0284c7" />
                             <span>Rate: ₹{dailyRate}</span>
                           </button>
+                        </div>
+                      ) : isPartiallyPaid ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                          <button
+                            type="button"
+                            onClick={() => handleOpenSettleModal(row)}
+                            className="ledger-action-btn ledger-action-btn-primary"
+                            style={{ width: '100%', padding: '11px', fontSize: '0.88rem', borderRadius: 12, fontWeight: 800, background: '#d97706', borderColor: '#b45309' }}
+                          >
+                            Pay Remaining Balance (₹{remainingNet.toLocaleString('en-IN')})
+                          </button>
+                          {subPeriodSettlements && subPeriodSettlements.length > 0 && (
+                            <div style={{ background: '#fffbeb', border: '1px solid #fef3c7', padding: '8px 10px', borderRadius: 10 }}>
+                              <div style={{ fontSize: '0.72rem', color: '#92400e', fontWeight: 800, marginBottom: 4 }}>
+                                Prior Weekly Payouts (₹{alreadyPaid.toLocaleString('en-IN')} paid):
+                              </div>
+                              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                                {subPeriodSettlements.map((s: SalarySettlement) => (
+                                  <button
+                                    key={s.id}
+                                    type="button"
+                                    onClick={() => handleDeleteSalarySettlement(s.id)}
+                                    className="ledger-action-btn ledger-action-btn-danger"
+                                    style={{ padding: '4px 8px', fontSize: '0.72rem' }}
+                                    title={`Revert weekly payout of ₹${s.paid_amount}`}
+                                  >
+                                    Revert ₹{s.paid_amount}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          <div style={{ display: 'flex', gap: 8 }}>
+                            <button
+                              type="button"
+                              onClick={() => handleOpenEditLabourer(lab)}
+                              style={{
+                                flex: 1,
+                                padding: '8px 12px',
+                                borderRadius: 10,
+                                border: '1px solid #cbd5e1',
+                                background: '#f8fafc',
+                                color: '#334155',
+                                fontWeight: 700,
+                                fontSize: '0.78rem',
+                                cursor: 'pointer',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: 5
+                              }}
+                            >
+                              <Edit2 size={13} color="#0284c7" />
+                              <span>Rate: ₹{dailyRate}</span>
+                            </button>
+                          </div>
                         </div>
                       ) : (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -4050,211 +4485,512 @@ export const SimpleFarmViewPage: React.FC = () => {
             </div>
 
             {/* Settled Salary Payouts History Section */}
-            <div style={{ marginTop: 24, paddingTop: 18, borderTop: '2px solid rgba(220, 235, 224, 0.7)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
+            <div style={{ marginTop: 28, paddingTop: 20, borderTop: '2.5px solid rgba(220, 235, 224, 0.8)' }}>
+              {/* Header Strip with KPIs */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14, flexWrap: 'wrap', gap: 10 }}>
                 <div>
-                  <h4 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800, color: '#143823' }}>
-                    Settled Salary Payouts History
-                  </h4>
-                  <div style={{ fontSize: '0.78rem', color: '#4b6354', fontWeight: 600 }}>
-                    All recorded salary payments and disbursements
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <CreditCard size={20} color="#15803d" />
+                    <h4 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 800, color: '#143823' }}>
+                      Settled Salary Payouts History
+                    </h4>
+                  </div>
+                  <div style={{ fontSize: '0.78rem', color: '#4b6354', fontWeight: 600, marginTop: 2 }}>
+                    Filterable archive of recorded salary payments, vouchers & disbursements
                   </div>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ fontSize: '0.78rem', fontWeight: 800, background: '#f0fdf4', color: '#15803d', padding: '3px 10px', borderRadius: 8, border: '1px solid #bbf7d0' }}>
-                    Total Paid: ₹{salarySettlements.reduce((s, st) => s + (Number(st.paid_amount) || 0), 0).toLocaleString('en-IN')}
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: '0.8rem', fontWeight: 800, background: '#f0fdf4', color: '#15803d', padding: '4px 12px', borderRadius: 10, border: '1.5px solid #86efac' }}>
+                    Total: ₹{filteredHistoryTotalPaid.toLocaleString('en-IN')}
                   </span>
-                  <span style={{ fontSize: '0.75rem', fontWeight: 800, background: '#eff6ff', color: '#1d4ed8', padding: '3px 8px', borderRadius: 8, border: '1px solid #bfdbfe' }}>
-                    {salarySettlements.length} Payouts
+                  <span style={{ fontSize: '0.78rem', fontWeight: 800, background: '#eff6ff', color: '#1d4ed8', padding: '4px 10px', borderRadius: 10, border: '1.5px solid #bfdbfe' }}>
+                    {filteredHistorySettlements.length} Payout{filteredHistorySettlements.length === 1 ? '' : 's'}
+                    {salarySettlements.length !== filteredHistorySettlements.length && (
+                      <span style={{ opacity: 0.7, marginLeft: 4 }}>({salarySettlements.length} total)</span>
+                    )}
                   </span>
                 </div>
               </div>
 
+              {/* Scope Segment Pill Bar & Filter Controls */}
+              <div style={{
+                background: '#f8fafc',
+                border: '1.5px solid #e2e8f0',
+                borderRadius: 14,
+                padding: '12px 14px',
+                marginBottom: 16
+              }}>
+                {/* Row 1: Scope Selector & Quick Reset */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10, marginBottom: 12 }}>
+                  <div style={{ display: 'inline-flex', background: '#e2e8f0', padding: 3, borderRadius: 10, gap: 3 }}>
+                    <button
+                      type="button"
+                      onClick={() => setHistoryScope('current')}
+                      style={{
+                        border: 'none',
+                        background: historyScope === 'current' ? '#ffffff' : 'transparent',
+                        color: historyScope === 'current' ? '#143823' : '#64748b',
+                        fontWeight: 800,
+                        fontSize: '0.8rem',
+                        padding: '6px 14px',
+                        borderRadius: 8,
+                        cursor: 'pointer',
+                        boxShadow: historyScope === 'current' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 6,
+                        transition: 'all 0.15s ease'
+                      }}
+                    >
+                      <span>📍 Active Cycle ({effectivePeriodLabel})</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setHistoryScope('all')}
+                      style={{
+                        border: 'none',
+                        background: historyScope === 'all' ? '#ffffff' : 'transparent',
+                        color: historyScope === 'all' ? '#143823' : '#64748b',
+                        fontWeight: 800,
+                        fontSize: '0.8rem',
+                        padding: '6px 14px',
+                        borderRadius: 8,
+                        cursor: 'pointer',
+                        boxShadow: historyScope === 'all' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 6,
+                        transition: 'all 0.15s ease'
+                      }}
+                    >
+                      <span>📚 All History Archive</span>
+                      <span style={{ fontSize: '0.7rem', background: '#e2e8f0', color: '#475569', padding: '1px 6px', borderRadius: 10 }}>
+                        {salarySettlements.length}
+                      </span>
+                    </button>
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    {hasActiveHistoryFilters && (
+                      <button
+                        type="button"
+                        onClick={resetHistoryFilters}
+                        style={{
+                          background: '#fff1f2',
+                          border: '1px solid #fecdd3',
+                          color: '#e11d48',
+                          fontWeight: 800,
+                          fontSize: '0.75rem',
+                          padding: '5px 10px',
+                          borderRadius: 8,
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 4
+                        }}
+                      >
+                        <RotateCcw size={12} />
+                        <span>Reset Filters</span>
+                      </button>
+                    )}
+                    {historyGroups.length > 1 && (
+                      <div style={{ display: 'inline-flex', gap: 6 }}>
+                        <button
+                          type="button"
+                          onClick={expandAllGroups}
+                          style={{
+                            background: '#ffffff',
+                            border: '1px solid #cbd5e1',
+                            color: '#334155',
+                            fontWeight: 700,
+                            fontSize: '0.72rem',
+                            padding: '4px 8px',
+                            borderRadius: 6,
+                            cursor: 'pointer'
+                          }}
+                        >
+                          Expand All
+                        </button>
+                        <button
+                          type="button"
+                          onClick={collapseAllGroups}
+                          style={{
+                            background: '#ffffff',
+                            border: '1px solid #cbd5e1',
+                            color: '#334155',
+                            fontWeight: 700,
+                            fontSize: '0.72rem',
+                            padding: '4px 8px',
+                            borderRadius: 6,
+                            cursor: 'pointer'
+                          }}
+                        >
+                          Collapse All
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Row 2: Detailed Filter Controls */}
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+                  gap: 10,
+                  alignItems: 'center'
+                }}>
+                  {/* Search Input */}
+                  <div style={{ position: 'relative' }}>
+                    <Search size={14} color="#94a3b8" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)' }} />
+                    <input
+                      type="text"
+                      placeholder="Search worker, payer, note..."
+                      value={historySearch}
+                      onChange={(e) => setHistorySearch(e.target.value)}
+                      className="ledger-input"
+                      style={{ paddingLeft: 30, fontSize: '0.8rem', padding: '6px 10px 6px 30px' }}
+                    />
+                    {historySearch && (
+                      <button
+                        type="button"
+                        onClick={() => setHistorySearch('')}
+                        style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', border: 'none', background: 'none', cursor: 'pointer', color: '#94a3b8' }}
+                      >
+                        <X size={14} />
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Worker Select */}
+                  <div>
+                    <select
+                      value={historyWorkerId}
+                      onChange={(e) => setHistoryWorkerId(e.target.value)}
+                      className="ledger-select"
+                      style={{ fontSize: '0.8rem', padding: '6px 10px' }}
+                    >
+                      <option value="all">👥 All Workers ({allLabourers.length})</option>
+                      {allLabourers.map((l) => (
+                        <option key={l.id} value={l.id}>
+                          {l.full_name} {l.labour_code ? `(${l.labour_code})` : ''} {!l.is_active ? '• Inactive' : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Period Routine Type */}
+                  <div>
+                    <select
+                      value={historyPeriodType}
+                      onChange={(e) => setHistoryPeriodType(e.target.value)}
+                      className="ledger-select"
+                      style={{ fontSize: '0.8rem', padding: '6px 10px' }}
+                    >
+                      <option value="all">🗓️ All Routine Types</option>
+                      <option value="weekly">🗓️ Weekly Payouts</option>
+                      <option value="monthly">📅 Monthly Payouts</option>
+                      <option value="custom">⏳ Custom Range Payouts</option>
+                    </select>
+                  </div>
+
+                  {/* Month Filter (Enabled for All History scope) */}
+                  {historyScope === 'all' && (
+                    <div>
+                      <select
+                        value={historyMonthFilter}
+                        onChange={(e) => setHistoryMonthFilter(e.target.value)}
+                        className="ledger-select"
+                        style={{ fontSize: '0.8rem', padding: '6px 10px' }}
+                      >
+                        <option value="all">📅 All Months & Years</option>
+                        {availableHistoryMonths.map((ym) => (
+                          <option key={ym} value={ym}>
+                            {formatYearMonth(ym)}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Filtered Results Rendering */}
               {salarySettlements.length === 0 ? (
                 <div style={{ padding: '24px', textAlign: 'center', color: '#64748b', fontSize: '0.86rem', background: '#f8fafc', borderRadius: 10, border: '1px dashed #cbd5e1' }}>
                   No salary payouts recorded yet. Tap "Pay Cash / UPI" on any worker above to record a payout.
                 </div>
-              ) : (
-                <>
-                  {/* Desktop History Table */}
-                  <div className="ledger-desktop-only">
-                    <div className="ledger-table-wrap">
-                      <table className="ledger-table">
-                        <thead>
-                          <tr>
-                            <th className="ledger-th">Date</th>
-                            <th className="ledger-th">Worker</th>
-                            <th className="ledger-th">Period / Cycle</th>
-                            <th className="ledger-th">Gross Wage</th>
-                            <th className="ledger-th">Adv Deducted</th>
-                            <th className="ledger-th">Paid Amount</th>
-                            <th className="ledger-th">Given By</th>
-                            <th className="ledger-th">Mode</th>
-                            <th className="ledger-th" style={{ textAlign: 'right' }}>Actions</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {salarySettlements.map((st) => (
-                            <tr key={st.id} className="ledger-tr">
-                              <td className="ledger-td" style={{ fontSize: '0.82rem', color: '#475569' }}>
-                                {st.payment_date || (st.created_at ? new Date(st.created_at).toLocaleDateString('en-IN') : '—')}
-                              </td>
-                              <td className="ledger-td" style={{ fontWeight: 800, color: '#143823' }}>
-                                {st.labourer_name || labourers.find(l => l.id === st.labourer_id)?.full_name || 'Worker'}
-                                {st.labour_code && <span style={{ fontSize: '0.72rem', color: '#64748b', marginLeft: 6 }}>({st.labour_code})</span>}
-                              </td>
-                              <td className="ledger-td" style={{ fontSize: '0.8rem', color: '#475569' }}>
-                                <span style={{
-                                  background: st.period_type === 'weekly' ? '#eff6ff' : '#f0fdf4',
-                                  color: st.period_type === 'weekly' ? '#1d4ed8' : '#15803d',
-                                  border: st.period_type === 'weekly' ? '1px solid #bfdbfe' : '1px solid #bbf7d0',
-                                  padding: '2px 6px',
-                                  borderRadius: 4,
-                                  fontSize: '0.72rem',
-                                  fontWeight: 800
-                                }}>
-                                  {st.period_type === 'weekly' ? '🗓️ Weekly' : '📅 Monthly'}
-                                </span>
-                                <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: 2 }}>
-                                  {st.start_date && st.end_date ? `${st.start_date} to ${st.end_date}` : `Month ${st.month}/${st.year}`}
-                                </div>
-                              </td>
-                              <td className="ledger-td" style={{ color: '#475569', fontWeight: 600 }}>
-                                ₹{st.gross_wage?.toLocaleString('en-IN') || '0'}
-                              </td>
-                              <td className="ledger-td" style={{ color: '#b45309', fontWeight: 600 }}>
-                                {st.advance_deducted > 0 ? `₹${st.advance_deducted.toLocaleString('en-IN')}` : '₹0'}
-                              </td>
-                              <td className="ledger-td" style={{ fontWeight: 800, color: '#15803d', fontSize: '0.95rem' }}>
-                                ₹{st.paid_amount.toLocaleString('en-IN')}
-                              </td>
-                              <td className="ledger-td">
-                                <span style={{
-                                  background: '#f0fdf4',
-                                  color: '#15803d',
-                                  border: '1px solid #86efac',
-                                  padding: '3px 8px',
-                                  borderRadius: 8,
-                                  fontWeight: 800,
-                                  fontSize: '0.78rem'
-                                }}>
-                                  👤 {st.given_by || 'Owner'}
-                                </span>
-                              </td>
-                              <td className="ledger-td" style={{ textTransform: 'uppercase', fontSize: '0.75rem', fontWeight: 700, color: '#64748b' }}>
-                                {st.payment_method || 'cash'}
-                              </td>
-                              <td className="ledger-td" style={{ textAlign: 'right' }}>
-                                <div style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleOpenEditSalary(st)}
-                                    className="ledger-action-btn ledger-action-btn-secondary"
-                                    style={{ padding: '4px 8px', display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: '0.76rem' }}
-                                    title="Edit salary settlement"
-                                  >
-                                    <Edit2 size={12} />
-                                    <span>Edit</span>
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleDeleteSalarySettlement(st.id)}
-                                    className="ledger-action-btn ledger-action-btn-danger"
-                                    style={{ padding: '4px 7px' }}
-                                    title="Revert to Unpaid"
-                                  >
-                                    <RotateCcw size={12} />
-                                  </button>
-                                </div>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
+              ) : filteredHistorySettlements.length === 0 ? (
+                <div style={{ padding: '28px 16px', textAlign: 'center', color: '#64748b', fontSize: '0.88rem', background: '#f8fafc', borderRadius: 12, border: '1.5px dashed #cbd5e1' }}>
+                  <Filter size={32} style={{ opacity: 0.4, marginBottom: 8 }} />
+                  <div style={{ fontWeight: 800, color: '#334155', fontSize: '0.98rem' }}>No salary payouts match your current filters</div>
+                  <div style={{ fontSize: '0.8rem', marginTop: 4, color: '#64748b' }}>
+                    {historyScope === 'current'
+                      ? `No payouts recorded for active period "${effectivePeriodLabel}". Switch to "All History Archive" to see past disbursements.`
+                      : 'Try clearing the search query or selecting "All Workers" / "All Months".'}
                   </div>
+                  <button
+                    type="button"
+                    onClick={resetHistoryFilters}
+                    className="ledger-action-btn ledger-action-btn-secondary"
+                    style={{ marginTop: 12, padding: '6px 14px', fontSize: '0.8rem' }}
+                  >
+                    Reset All Filters
+                  </button>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                  {historyGroups.map((group, groupIdx) => {
+                    const expanded = isGroupExpanded(group.yearMonth, groupIdx);
 
-                  {/* Mobile History Cards */}
-                  <div className="ledger-mobile-only">
-                    {salarySettlements.map((st) => (
-                      <div key={st.id} className="ledger-mobile-row" style={{ padding: '12px 14px', marginBottom: 10, border: '1.5px solid rgba(220, 235, 224, 0.9)' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-                          <div>
-                            <span style={{ fontWeight: 800, fontSize: '0.98rem', color: '#143823' }}>
-                              {st.labourer_name || labourers.find(l => l.id === st.labourer_id)?.full_name || 'Worker'}
-                            </span>
-                            <div style={{ fontSize: '0.72rem', color: '#64748b' }}>
-                              {st.start_date && st.end_date ? `${st.start_date} to ${st.end_date}` : `Month ${st.month}/${st.year}`} • {st.days_worked} Days
+                    return (
+                      <div
+                        key={group.yearMonth}
+                        style={{
+                          background: '#ffffff',
+                          border: '1.5px solid #e2e8f0',
+                          borderRadius: 14,
+                          overflow: 'hidden',
+                          boxShadow: '0 1px 3px rgba(0,0,0,0.04)'
+                        }}
+                      >
+                        {/* Group Header (Clickable Accordion) */}
+                        <div
+                          onClick={() => toggleGroupExpand(group.yearMonth, groupIdx)}
+                          style={{
+                            padding: '11px 16px',
+                            background: expanded ? '#f8fafc' : '#ffffff',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            borderBottom: expanded ? '1px solid #e2e8f0' : 'none',
+                            userSelect: 'none',
+                            transition: 'background 0.15s ease'
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                            <div style={{ color: '#15803d', display: 'flex', alignItems: 'center' }}>
+                              {expanded ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
+                            </div>
+                            <div>
+                              <span style={{ fontWeight: 800, fontSize: '0.98rem', color: '#143823' }}>
+                                📅 {group.label}
+                              </span>
                             </div>
                           </div>
-                          <span style={{
-                            fontWeight: 900,
-                            color: '#15803d',
-                            fontSize: '1.1rem',
-                            background: '#dcfce7',
-                            border: '1px solid #86efac',
-                            padding: '3px 9px',
-                            borderRadius: 8
-                          }}>
-                            ₹{st.paid_amount.toLocaleString('en-IN')}
-                          </span>
+
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <span style={{ fontSize: '0.74rem', fontWeight: 800, background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe', padding: '2px 8px', borderRadius: 8 }}>
+                              {group.items.length} payout{group.items.length > 1 ? 's' : ''}
+                            </span>
+                            <span style={{ fontSize: '0.84rem', fontWeight: 900, color: '#15803d', fontFamily: 'Outfit, sans-serif' }}>
+                              ₹{group.totalPaid.toLocaleString('en-IN')}
+                            </span>
+                          </div>
                         </div>
 
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.76rem', color: '#64748b', marginBottom: 8, background: '#f8fafc', padding: '6px 10px', borderRadius: 8 }}>
-                          <span>Payer: <strong style={{ color: '#15803d' }}>{st.given_by || 'Owner'}</strong></span>
-                          <span>Paid: <strong>{st.payment_date || '—'}</strong></span>
-                          <span>Mode: <strong>{(st.payment_method || 'cash').toUpperCase()}</strong></span>
-                        </div>
+                        {/* Group Items (when expanded) */}
+                        {expanded && (
+                          <div>
+                            {/* Desktop Table View */}
+                            <div className="ledger-desktop-only">
+                              <div className="ledger-table-wrap">
+                                <table className="ledger-table" style={{ margin: 0 }}>
+                                  <thead>
+                                    <tr>
+                                      <th className="ledger-th">Date</th>
+                                      <th className="ledger-th">Worker</th>
+                                      <th className="ledger-th">Period / Cycle</th>
+                                      <th className="ledger-th">Gross Wage</th>
+                                      <th className="ledger-th">Adv Deducted</th>
+                                      <th className="ledger-th">Paid Amount</th>
+                                      <th className="ledger-th">Given By</th>
+                                      <th className="ledger-th">Mode</th>
+                                      <th className="ledger-th" style={{ textAlign: 'right' }}>Actions</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {group.items.map((st) => (
+                                      <tr key={st.id} className="ledger-tr">
+                                        <td className="ledger-td" style={{ fontSize: '0.82rem', color: '#475569' }}>
+                                          {st.payment_date || (st.created_at ? new Date(st.created_at).toLocaleDateString('en-IN') : '—')}
+                                        </td>
+                                        <td className="ledger-td" style={{ fontWeight: 800, color: '#143823' }}>
+                                          {st.labourer_name || labourers.find(l => l.id === st.labourer_id)?.full_name || 'Worker'}
+                                          {st.labour_code && <span style={{ fontSize: '0.72rem', color: '#64748b', marginLeft: 6 }}>({st.labour_code})</span>}
+                                        </td>
+                                        <td className="ledger-td" style={{ fontSize: '0.8rem', color: '#475569' }}>
+                                          <span style={{
+                                            background: st.period_type === 'weekly' ? '#eff6ff' : (st.period_type === 'custom' ? '#fef3c7' : '#f0fdf4'),
+                                            color: st.period_type === 'weekly' ? '#1d4ed8' : (st.period_type === 'custom' ? '#92400e' : '#15803d'),
+                                            border: st.period_type === 'weekly' ? '1px solid #bfdbfe' : (st.period_type === 'custom' ? '1px solid #fde68a' : '1px solid #bbf7d0'),
+                                            padding: '2px 6px',
+                                            borderRadius: 4,
+                                            fontSize: '0.72rem',
+                                            fontWeight: 800
+                                          }}>
+                                            {st.period_type === 'weekly' ? '🗓️ Weekly' : (st.period_type === 'custom' ? '⏳ Custom' : '📅 Monthly')}
+                                          </span>
+                                          <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: 2 }}>
+                                            {st.start_date && st.end_date ? `${st.start_date} to ${st.end_date}` : `Month ${st.month}/${st.year}`}
+                                          </div>
+                                        </td>
+                                        <td className="ledger-td" style={{ color: '#475569', fontWeight: 600 }}>
+                                          ₹{st.gross_wage?.toLocaleString('en-IN') || '0'}
+                                        </td>
+                                        <td className="ledger-td" style={{ color: '#b45309', fontWeight: 600 }}>
+                                          {st.advance_deducted > 0 ? `₹${st.advance_deducted.toLocaleString('en-IN')}` : '₹0'}
+                                        </td>
+                                        <td className="ledger-td" style={{ fontWeight: 900, color: '#15803d', fontSize: '0.98rem' }}>
+                                          ₹{st.paid_amount.toLocaleString('en-IN')}
+                                        </td>
+                                        <td className="ledger-td">
+                                          <span style={{
+                                            background: '#f0fdf4',
+                                            color: '#15803d',
+                                            border: '1px solid #86efac',
+                                            padding: '3px 8px',
+                                            borderRadius: 8,
+                                            fontWeight: 800,
+                                            fontSize: '0.78rem'
+                                          }}>
+                                            👤 {st.given_by || 'Owner'}
+                                          </span>
+                                        </td>
+                                        <td className="ledger-td" style={{ textTransform: 'uppercase', fontSize: '0.75rem', fontWeight: 700, color: '#64748b' }}>
+                                          {st.payment_method || 'cash'}
+                                        </td>
+                                        <td className="ledger-td" style={{ textAlign: 'right' }}>
+                                          <div style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+                                            <button
+                                              type="button"
+                                              onClick={() => handleOpenEditSalary(st)}
+                                              className="ledger-action-btn ledger-action-btn-secondary"
+                                              style={{ padding: '4px 8px', display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: '0.76rem' }}
+                                              title="Edit salary settlement"
+                                            >
+                                              <Edit2 size={12} />
+                                              <span>Edit</span>
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={() => handleDeleteSalarySettlement(st.id)}
+                                              className="ledger-action-btn ledger-action-btn-danger"
+                                              style={{ padding: '4px 7px' }}
+                                              title="Revert to Unpaid"
+                                            >
+                                              <RotateCcw size={12} />
+                                            </button>
+                                          </div>
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </div>
 
-                        <div style={{ display: 'flex', gap: 8, borderTop: '1px dashed #dcfce7', paddingTop: 10 }}>
-                          <button
-                            type="button"
-                            onClick={() => handleOpenEditSalary(st)}
-                            style={{
-                              flex: 1,
-                              padding: '9px 12px',
-                              borderRadius: 8,
-                              border: '1.5px solid #0284c7',
-                              background: '#f0f9ff',
-                              color: '#0284c7',
-                              fontWeight: 800,
-                              fontSize: '0.82rem',
-                              cursor: 'pointer',
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              gap: 6
-                            }}
-                          >
-                            <Edit2 size={14} />
-                            <span>Edit Payout</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteSalarySettlement(st.id)}
-                            style={{
-                              padding: '9px 14px',
-                              borderRadius: 8,
-                              border: '1px solid #fed7aa',
-                              background: '#fff7ed',
-                              color: '#c2410c',
-                              fontWeight: 800,
-                              fontSize: '0.82rem',
-                              cursor: 'pointer',
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: 4
-                            }}
-                            title="Revert to Unpaid"
-                          >
-                            <RotateCcw size={14} />
-                            <span>Revert</span>
-                          </button>
-                        </div>
+                            {/* Mobile Card View */}
+                            <div className="ledger-mobile-only" style={{ padding: '10px 12px' }}>
+                              {group.items.map((st) => (
+                                <div key={st.id} className="ledger-mobile-row" style={{ padding: '12px 14px', marginBottom: 10, border: '1.5px solid rgba(220, 235, 224, 0.9)' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                                    <div>
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                        <span style={{ fontWeight: 800, fontSize: '0.98rem', color: '#143823' }}>
+                                          {st.labourer_name || labourers.find(l => l.id === st.labourer_id)?.full_name || 'Worker'}
+                                        </span>
+                                        <span style={{
+                                          background: st.period_type === 'weekly' ? '#eff6ff' : (st.period_type === 'custom' ? '#fef3c7' : '#f0fdf4'),
+                                          color: st.period_type === 'weekly' ? '#1d4ed8' : (st.period_type === 'custom' ? '#92400e' : '#15803d'),
+                                          border: st.period_type === 'weekly' ? '1px solid #bfdbfe' : (st.period_type === 'custom' ? '1px solid #fde68a' : '1px solid #bbf7d0'),
+                                          padding: '1px 5px',
+                                          borderRadius: 4,
+                                          fontSize: '0.68rem',
+                                          fontWeight: 800
+                                        }}>
+                                          {st.period_type === 'weekly' ? 'Weekly' : (st.period_type === 'custom' ? 'Custom' : 'Monthly')}
+                                        </span>
+                                      </div>
+                                      <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: 2 }}>
+                                        {st.start_date && st.end_date ? `${st.start_date} to ${st.end_date}` : `Month ${st.month}/${st.year}`} • {st.days_worked} Days
+                                      </div>
+                                    </div>
+                                    <span style={{
+                                      fontWeight: 900,
+                                      color: '#15803d',
+                                      fontSize: '1.15rem',
+                                      background: '#dcfce7',
+                                      border: '1.5px solid #86efac',
+                                      padding: '3px 10px',
+                                      borderRadius: 10,
+                                      fontFamily: 'Outfit, sans-serif'
+                                    }}>
+                                      ₹{st.paid_amount.toLocaleString('en-IN')}
+                                    </span>
+                                  </div>
+
+                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.76rem', color: '#64748b', marginBottom: 8, background: '#f8fafc', padding: '6px 10px', borderRadius: 8 }}>
+                                    <span>Payer: <strong style={{ color: '#15803d' }}>{st.given_by || 'Owner'}</strong></span>
+                                    <span>Paid: <strong>{st.payment_date || '—'}</strong></span>
+                                    <span>Mode: <strong>{(st.payment_method || 'cash').toUpperCase()}</strong></span>
+                                  </div>
+
+                                  <div style={{ display: 'flex', gap: 8, borderTop: '1px dashed #dcfce7', paddingTop: 10 }}>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleOpenEditSalary(st)}
+                                      style={{
+                                        flex: 1,
+                                        padding: '9px 12px',
+                                        borderRadius: 8,
+                                        border: '1.5px solid #0284c7',
+                                        background: '#f0f9ff',
+                                        color: '#0284c7',
+                                        fontWeight: 800,
+                                        fontSize: '0.82rem',
+                                        cursor: 'pointer',
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        gap: 6
+                                      }}
+                                    >
+                                      <Edit2 size={14} />
+                                      <span>Edit Payout</span>
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDeleteSalarySettlement(st.id)}
+                                      style={{
+                                        padding: '9px 14px',
+                                        borderRadius: 8,
+                                        border: '1px solid #fed7aa',
+                                        background: '#fff7ed',
+                                        color: '#c2410c',
+                                        fontWeight: 800,
+                                        fontSize: '0.82rem',
+                                        cursor: 'pointer',
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: 4
+                                      }}
+                                      title="Revert to Unpaid"
+                                    >
+                                      <RotateCcw size={14} />
+                                      <span>Revert</span>
+                                    </button>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                       </div>
-                    ))}
-                  </div>
-                </>
+                    );
+                  })}
+                </div>
               )}
             </div>
           </div>
@@ -5972,7 +6708,7 @@ export const SimpleFarmViewPage: React.FC = () => {
               padding: '12px 14px',
               marginBottom: 16,
               display: 'grid',
-              gridTemplateColumns: 'repeat(3, 1fr)',
+              gridTemplateColumns: (settleModalLab.alreadyPaid || 0) > 0 ? 'repeat(4, 1fr)' : 'repeat(3, 1fr)',
               gap: 8,
               textAlign: 'center'
             }}>
@@ -5988,6 +6724,14 @@ export const SimpleFarmViewPage: React.FC = () => {
                   ₹{settleModalLab.grossWage.toLocaleString('en-IN')}
                 </div>
               </div>
+              {(settleModalLab.alreadyPaid || 0) > 0 && (
+                <div>
+                  <div style={{ fontSize: '0.7rem', color: '#2563eb', textTransform: 'uppercase', fontWeight: 800 }}>Prior Paid</div>
+                  <div style={{ fontSize: '0.92rem', fontWeight: 800, color: '#1d4ed8' }}>
+                    ₹{(settleModalLab.alreadyPaid || 0).toLocaleString('en-IN')}
+                  </div>
+                </div>
+              )}
               <div>
                 <div style={{ fontSize: '0.7rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 800 }}>Advance Due</div>
                 <div style={{ fontSize: '0.92rem', fontWeight: 800, color: settleModalLab.advanceDue > 0 ? '#b45309' : '#64748b' }}>
@@ -5995,6 +6739,25 @@ export const SimpleFarmViewPage: React.FC = () => {
                 </div>
               </div>
             </div>
+
+            {(settleModalLab.alreadyPaid || 0) > 0 && (
+              <div style={{
+                background: '#eff6ff',
+                border: '1.5px solid #bfdbfe',
+                borderRadius: 12,
+                padding: '10px 14px',
+                marginBottom: 14,
+                display: 'flex',
+                alignItems: 'flex-start',
+                gap: 10
+              }}>
+                <CheckCircle2 size={18} color="#2563eb" style={{ flexShrink: 0, marginTop: 2 }} />
+                <div style={{ fontSize: '0.8rem', color: '#1e40af', lineHeight: 1.4 }}>
+                  <strong>Weekly Payouts Reconciled:</strong> ₹{(settleModalLab.alreadyPaid || 0).toLocaleString('en-IN')} was already paid across weekly payout(s) in this period.
+                  Deducting prior payouts leaves a <strong>balance of ₹{(settleModalLab.remainingNet || 0).toLocaleString('en-IN')}</strong> to settle.
+                </div>
+              </div>
+            )}
 
             <form onSubmit={handleConfirmSettleSalary}>
               {/* Advance Deducted This Payout Input (Editable!) */}
@@ -6014,7 +6777,9 @@ export const SimpleFarmViewPage: React.FC = () => {
                   onChange={(e) => {
                     const val = Math.max(0, Math.min(settleModalLab.advanceDue, Number(e.target.value) || 0));
                     setSettleAdvanceDeduct(val);
-                    setSettleAmount(round2(Math.max(0, settleModalLab.grossWage - val)));
+                    const netAfterAdv = Math.max(0, settleModalLab.grossWage - val);
+                    const remaining = Math.max(0, netAfterAdv - (settleModalLab.alreadyPaid || 0));
+                    setSettleAmount(round2(remaining));
                   }}
                   className="ledger-input"
                   style={{ fontWeight: 800, fontSize: '1.05rem', color: '#b45309', background: '#ffffff' }}
@@ -6037,7 +6802,9 @@ export const SimpleFarmViewPage: React.FC = () => {
                   required
                 />
                 <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: 3 }}>
-                  Gross ₹{settleModalLab.grossWage.toLocaleString('en-IN')} − Advance Ded. ₹{settleAdvanceDeduct.toLocaleString('en-IN')} = ₹{round2(Math.max(0, settleModalLab.grossWage - settleAdvanceDeduct)).toLocaleString('en-IN')}
+                  Gross ₹{settleModalLab.grossWage.toLocaleString('en-IN')} − Advance Ded. ₹{settleAdvanceDeduct.toLocaleString('en-IN')}
+                  {(settleModalLab.alreadyPaid || 0) > 0 ? ` − Prior Paid ₹${(settleModalLab.alreadyPaid || 0).toLocaleString('en-IN')}` : ''}
+                  {' = ₹' + round2(Math.max(0, settleModalLab.grossWage - settleAdvanceDeduct - (settleModalLab.alreadyPaid || 0))).toLocaleString('en-IN')}
                 </div>
               </div>
 
