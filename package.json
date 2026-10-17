@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "build": "tsc && vite build --mode production",
     "preview": "vite preview",
     "build:apk": "npm run build && powershell -ExecutionPolicy Bypass -File ./build-apk.ps1"
   },
