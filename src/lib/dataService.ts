@@ -543,9 +543,9 @@ export const dataService = {
           unmarkedDays++;
         }
       } else if (rec) {
-        if (rec.status === 'present') {
+        if (rec.status === 'present' || rec.payable_units === 1) {
           presentDays++;
-        } else if (rec.status === 'half_day') {
+        } else if (rec.status === 'half_day' || rec.payable_units === 0.5) {
           halfDays++;
         } else if (rec.status === 'leave' || rec.status === 'absent') {
           if (isSunday || rec.task_name?.includes('Sunday')) {
@@ -567,8 +567,42 @@ export const dataService = {
     const effectiveDays = round2(presentDays + (halfDays * 0.5));
     const dailyRate = labourer ? labourer.base_rate : 450;
     const grossEarned = round2(effectiveDays * dailyRate);
-    const advanceInfo = labourerId ? dataService.getLabourerAdvanceBalance(labourerId) : { outstanding: 0 };
-    const netPayable = round2(Math.max(0, grossEarned - advanceInfo.outstanding));
+
+    const monthStartDate = `${monthPrefix}-01`;
+    const monthEndDate = `${monthPrefix}-${String(daysInMonth).padStart(2, '0')}`;
+
+    const settlements = (store.salarySettlements || []).filter(s => {
+      if (s.labourer_id !== labourerId) return false;
+      if ((s as any).status === 'cancelled') return false;
+      const sStart = s.start_date || `${s.year}-${String(s.month).padStart(2, '0')}-01`;
+      const sEnd = s.end_date || `${s.year}-${String(s.month).padStart(2, '0')}-31`;
+      const overlaps = sStart <= monthEndDate && sEnd >= monthStartDate;
+      const sameMonth = s.year === year && s.month === month;
+      return overlaps || sameMonth;
+    });
+
+    const advanceDeducted = round2(settlements.reduce((sum, s) => sum + (Number(s.advance_deducted) || 0), 0));
+    const alreadyPaid = round2(settlements.reduce((sum, s) => sum + (Number(s.paid_amount) || 0), 0));
+    const settledDays = round2(settlements.reduce((sum, s) => sum + (Number(s.days_worked) || 0), 0));
+    const settledGross = round2(settlements.reduce((sum, s) => sum + (Number(s.gross_wage) || 0), 0));
+
+    const unsettledGross = round2(Math.max(0, grossEarned - settledGross));
+    const advanceInfo = labourerId ? dataService.getLabourerAdvanceBalance(labourerId) : { totalIssued: 0, totalRecovered: 0, outstanding: 0 };
+    const applicableAdvOnUnsettled = round2(Math.min(unsettledGross, advanceInfo.outstanding));
+
+    let remainingNet = 0;
+    if (effectiveDays > 0) {
+      if (settledDays >= effectiveDays) {
+        remainingNet = 0;
+      } else if (settlements.length === 0) {
+        remainingNet = round2(Math.max(0, grossEarned - Math.min(grossEarned, advanceInfo.outstanding)));
+      } else {
+        remainingNet = round2(Math.max(0, unsettledGross - applicableAdvOnUnsettled));
+      }
+    }
+
+    const isSettled = effectiveDays > 0 && remainingNet === 0 && (alreadyPaid > 0 || advanceDeducted >= grossEarned);
+    const netPayable = isSettled ? 0 : remainingNet;
 
     const summary: MonthlyAttendanceSummary = {
       presentDays,
@@ -580,7 +614,11 @@ export const dataService = {
       dailyRate,
       grossEarned,
       advanceOutstanding: advanceInfo.outstanding,
-      netPayable
+      netPayable,
+      advanceDeducted,
+      alreadyPaid,
+      remainingNet,
+      isSettled
     };
 
     return { records: recordMap, summary };

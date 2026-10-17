@@ -1442,13 +1442,15 @@ export const SimpleFarmViewPage: React.FC = () => {
     let sumDays = 0;
     let sumGross = 0;
     let sumAdvDeducted = 0;
-    let sumNet = 0;
+    let sumAlreadyPaid = 0;
+    let sumRemaining = 0;
 
     const rows = salaryRows.map((r, index) => {
       sumDays += r.daysWorked;
       sumGross += r.grossWage;
       sumAdvDeducted += r.advanceDeducted;
-      sumNet += r.netTakeHome;
+      sumAlreadyPaid += r.alreadyPaid;
+      sumRemaining += r.isSettled ? 0 : r.remainingNet;
 
       return [
         index + 1,
@@ -1457,9 +1459,10 @@ export const SimpleFarmViewPage: React.FC = () => {
         `Rs. ${r.dailyRate}`,
         `Rs. ${r.grossWage.toLocaleString('en-IN')}`,
         `Rs. ${r.advanceDeducted.toLocaleString('en-IN')}`,
-        `Rs. ${r.netTakeHome.toLocaleString('en-IN')}`,
-        r.settlement?.given_by || '—',
-        r.isSettled ? 'SETTLED' : 'PENDING'
+        r.alreadyPaid > 0 ? `Rs. ${r.alreadyPaid.toLocaleString('en-IN')}` : '—',
+        r.isSettled ? 'Rs. 0 (Paid)' : `Rs. ${r.remainingNet.toLocaleString('en-IN')}`,
+        r.settlement?.given_by || (r.subPeriodSettlements && r.subPeriodSettlements[0]?.given_by) || salaryGivenBy || '—',
+        r.isSettled ? 'SETTLED' : (r.isPartiallyPaid ? 'PARTIAL' : 'PENDING')
       ];
     });
 
@@ -1469,16 +1472,19 @@ export const SimpleFarmViewPage: React.FC = () => {
 
     const res = await generateReportPDF({
       title: titlePrefix,
-      subtitle: `Official Wage Calculations, Advance Adjustments & Net Wages Take-Home (${effectivePeriodSubtitle})`,
+      subtitle: `Official Wage Calculations, Advance Deductions, Prior Disbursements & Net Balance Due (${effectivePeriodSubtitle})`,
       dateRange: effectivePeriodLabel,
       farm: farm || { id: 'default', name: 'My Farm Operations', address: 'Agricultural Operations Hub' },
-      headers: ['#', 'Worker Name', 'Days Worked', 'Rate', 'Gross Wage', 'Advance Ded.', 'Net Payable', 'Given By', 'Status'],
+      headers: ['#', 'Worker Name', 'Days Worked', 'Daily Rate', 'Gross Wage', 'Adv. Ded.', 'Already Paid', 'Balance Due', 'Given By', 'Status'],
       rows,
       summaryTotals: [
+        { label: 'Filter Type', value: salaryPeriodType === 'weekly' ? 'Weekly Routine' : (salaryPeriodType === 'monthly' ? 'Monthly Routine' : 'Custom Date Range') },
+        { label: 'Settlement Date Range', value: `${effectiveSalaryStartDate} to ${effectiveSalaryEndDate}` },
         { label: 'Total Crew Days Worked', value: `${round2(sumDays)} shifts` },
         { label: 'Total Gross Wages Earned', value: `Rs. ${round2(sumGross).toLocaleString('en-IN')}` },
         { label: 'Total Advances Deducted', value: `Rs. ${round2(sumAdvDeducted).toLocaleString('en-IN')}` },
-        { label: 'Total Net Payout Disbursed', value: `Rs. ${round2(sumNet).toLocaleString('en-IN')}` }
+        { label: 'Total Already Disbursed', value: `Rs. ${round2(sumAlreadyPaid).toLocaleString('en-IN')}` },
+        { label: 'Total Remaining Balance Due', value: `Rs. ${round2(sumRemaining).toLocaleString('en-IN')}` }
       ]
     });
 
@@ -4007,7 +4013,7 @@ export const SimpleFarmViewPage: React.FC = () => {
                             <td className="ledger-td">
                               {isSettled ? (
                                 <span style={{ fontSize: '1.05rem', fontWeight: 900, color: '#15803d', fontFamily: 'Outfit, Plus Jakarta Sans, sans-serif' }}>
-                                  ₹{netTakeHome.toLocaleString('en-IN')} (Paid)
+                                  ₹0 (Paid)
                                 </span>
                               ) : (
                                 <div>
@@ -4233,11 +4239,11 @@ export const SimpleFarmViewPage: React.FC = () => {
                         </div>
 
                         <div style={{ textAlign: 'right' }}>
-                          <div style={{ fontSize: '0.68rem', color: isPartiallyPaid ? '#b45309' : '#64748b', textTransform: 'uppercase', fontWeight: 800 }}>
-                            {isSettled ? 'Net Paid' : (isPartiallyPaid ? 'Remaining Due' : 'Net Take-Home')}
+                          <div style={{ fontSize: '0.68rem', color: isSettled ? '#15803d' : (isPartiallyPaid ? '#b45309' : '#64748b'), textTransform: 'uppercase', fontWeight: 800 }}>
+                            {isSettled ? 'Remaining Due' : (isPartiallyPaid ? 'Remaining Due' : 'Net Take-Home')}
                           </div>
-                          <div style={{ fontSize: '1.25rem', fontWeight: 900, color: isPartiallyPaid ? '#d97706' : '#15803d', fontFamily: 'Outfit, sans-serif' }}>
-                            ₹{(isSettled ? netTakeHome : (isPartiallyPaid ? remainingNet : calculatedNet)).toLocaleString('en-IN')}
+                          <div style={{ fontSize: '1.25rem', fontWeight: 900, color: isSettled ? '#15803d' : (isPartiallyPaid ? '#d97706' : '#15803d'), fontFamily: 'Outfit, sans-serif' }}>
+                            ₹{isSettled ? '0' : (isPartiallyPaid ? remainingNet.toLocaleString('en-IN') : calculatedNet.toLocaleString('en-IN'))}
                           </div>
                         </div>
                       </div>
@@ -6364,27 +6370,75 @@ export const SimpleFarmViewPage: React.FC = () => {
                 </button>
               </div>
 
-              {/* Option 3: Monthly Salary Settlement Sheet */}
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px', borderRadius: 12, border: '1.5px solid #e2e8f0', background: '#f8fafc' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                  <CreditCard size={20} color="#7c3aed" />
-                  <div>
-                    <div style={{ fontWeight: 800, fontSize: '0.92rem', color: '#0f172a' }}>Monthly Salary Settlement Sheet</div>
-                    <div style={{ fontSize: '0.78rem', color: '#64748b' }}>Month: {salaryMonthName} {salaryYear} • Net Payout: ₹{totalNetTakeHome.toLocaleString('en-IN')}</div>
+              {/* Option 3: Labour Salary & Wage Settlement Sheet */}
+              <div style={{ padding: '12px 14px', borderRadius: 12, border: '1.5px solid #e2e8f0', background: '#f8fafc' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <CreditCard size={20} color="#7c3aed" />
+                    <div>
+                      <div style={{ fontWeight: 800, fontSize: '0.92rem', color: '#0f172a' }}>
+                        Labour Wage Settlement Sheet ({salaryPeriodType === 'weekly' ? 'Weekly' : (salaryPeriodType === 'monthly' ? 'Monthly' : 'Custom')})
+                      </div>
+                      <div style={{ fontSize: '0.78rem', color: '#64748b' }}>
+                        Period: {effectivePeriodLabel} • Due: ₹{totalRemainingDue.toLocaleString('en-IN')}
+                      </div>
+                    </div>
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleExportSalaryPdf();
+                      setIsPdfExportModalOpen(false);
+                    }}
+                    className="ledger-action-btn ledger-action-btn-secondary"
+                    style={{ fontSize: '0.78rem', padding: '6px 12px' }}
+                  >
+                    <Download size={13} />
+                    <span>PDF</span>
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    handleExportSalaryPdf();
-                    setIsPdfExportModalOpen(false);
-                  }}
-                  className="ledger-action-btn ledger-action-btn-secondary"
-                  style={{ fontSize: '0.78rem', padding: '6px 12px' }}
-                >
-                  <Download size={13} />
-                  <span>PDF</span>
-                </button>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8, paddingTop: 8, borderTop: '1px dashed #cbd5e1' }}>
+                  <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 700, alignSelf: 'center' }}>Filter:</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSalaryPeriodType('monthly');
+                      setTimeout(() => {
+                        handleExportSalaryPdf();
+                        setIsPdfExportModalOpen(false);
+                      }, 100);
+                    }}
+                    style={{ padding: '3px 8px', fontSize: '0.72rem', fontWeight: 800, borderRadius: 6, border: '1px solid #c7d2fe', background: salaryPeriodType === 'monthly' ? '#e0e7ff' : '#ffffff', color: '#4338ca', cursor: 'pointer' }}
+                  >
+                    Monthly
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSalaryPeriodType('weekly');
+                      setTimeout(() => {
+                        handleExportSalaryPdf();
+                        setIsPdfExportModalOpen(false);
+                      }, 100);
+                    }}
+                    style={{ padding: '3px 8px', fontSize: '0.72rem', fontWeight: 800, borderRadius: 6, border: '1px solid #bfdbfe', background: salaryPeriodType === 'weekly' ? '#dbeafe' : '#ffffff', color: '#1d4ed8', cursor: 'pointer' }}
+                  >
+                    Weekly
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSalaryPeriodType('custom');
+                      setTimeout(() => {
+                        handleExportSalaryPdf();
+                        setIsPdfExportModalOpen(false);
+                      }, 100);
+                    }}
+                    style={{ padding: '3px 8px', fontSize: '0.72rem', fontWeight: 800, borderRadius: 6, border: '1px solid #cbd5e1', background: salaryPeriodType === 'custom' ? '#e2e8f0' : '#ffffff', color: '#334155', cursor: 'pointer' }}
+                  >
+                    Custom
+                  </button>
+                </div>
               </div>
 
               {/* Option 4: Advances & Khata */}

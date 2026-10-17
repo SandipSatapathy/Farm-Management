@@ -31,6 +31,10 @@ export interface MonthlyAttendanceSummary {
   grossEarned: number;
   advanceOutstanding: number;
   netPayable: number;
+  advanceDeducted?: number;
+  alreadyPaid?: number;
+  remainingNet?: number;
+  isSettled?: boolean;
 }
 
 export type PayrollPeriodStatus = 

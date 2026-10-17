@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Labourer, AttendanceStatus, MonthlyAttendanceSummary, AttendanceRecord } from '../../types';
+import { Labourer, AttendanceStatus, MonthlyAttendanceSummary, AttendanceRecord, SalarySettlement } from '../../types';
 import { dataService, round2 } from '../../lib/dataService';
 import {
   Calendar,
@@ -13,7 +13,10 @@ import {
   Coffee,
   Wallet,
   DollarSign,
-  ArrowRight
+  ArrowRight,
+  Receipt,
+  CreditCard,
+  Check
 } from 'lucide-react';
 
 interface LabourAttendanceCalendarModalProps {
@@ -40,11 +43,19 @@ export const LabourAttendanceCalendarModal: React.FC<LabourAttendanceCalendarMod
     records: Record<string, AttendanceRecord>;
     summary: MonthlyAttendanceSummary;
   } | null>(null);
+  const [settlements, setSettlements] = useState<SalarySettlement[]>([]);
+  const [advanceBal, setAdvanceBal] = useState<{ totalIssued: number; totalRecovered: number; outstanding: number }>({
+    totalIssued: 0,
+    totalRecovered: 0,
+    outstanding: 0
+  });
 
   const loadMonthData = () => {
     if (!labourer) return;
     const res = dataService.getLabourerMonthlyAttendance(labourer.id, currentYear, currentMonth);
     setData(res);
+    setSettlements(dataService.getSalarySettlements());
+    setAdvanceBal(dataService.getLabourerAdvanceBalance(labourer.id));
   };
 
   useEffect(() => {
@@ -536,214 +547,374 @@ export const LabourAttendanceCalendarModal: React.FC<LabourAttendanceCalendarMod
         {/* ================================================================
             THE NUMBERS SECTION BELOW THE CALENDAR (User's Exact Requirement)
             ================================================================ */}
-        <div className="cal-numbers-container">
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              marginBottom: 12
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <CheckCircle2 size={18} color="#15803d" />
-              <h3 style={{ margin: 0, fontSize: '1.05rem', color: '#143823' }}>
-                Attendance & Wage Numbers for {monthName} {currentYear}
-              </h3>
-            </div>
-            <span
-              style={{
-                fontSize: '0.78rem',
-                color: '#4b6354',
-                fontWeight: 600
-              }}
-            >
-              Calculated till today ({todayStr})
-            </span>
-          </div>
+        {/* ================================================================
+            THE NUMBERS SECTION BELOW THE CALENDAR (User's Exact Requirement)
+            ================================================================ */}
+        {(() => {
+          const monthPrefix = `${currentYear}-${String(currentMonth).padStart(2, '0')}`;
+          const daysInMonthCount = new Date(currentYear, currentMonth, 0).getDate();
+          const monthStartDate = `${monthPrefix}-01`;
+          const monthEndDate = `${monthPrefix}-${String(daysInMonthCount).padStart(2, '0')}`;
 
-          {/* 4 Attendance Counters Grid */}
-          <div className="cal-numbers-grid">
-            <div className="cal-stat-card present">
-              <span
-                style={{
-                  fontSize: '0.75rem',
-                  fontWeight: 800,
-                  color: '#15803d',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.04em'
-                }}
-              >
-                Total Present
-              </span>
-              <div className="cal-stat-val" style={{ color: '#15803d' }}>
-                {data.summary.presentDays}{' '}
-                <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>Days</span>
-              </div>
-              <span style={{ fontSize: '0.72rem', color: '#166534', marginTop: 2 }}>
-                {data.summary.presentDays * 8} full working hours
-              </span>
-            </div>
+          const workerMonthSettlements = settlements.filter((s) => {
+            if (s.labourer_id !== labourer.id) return false;
+            if ((s as any).status === 'cancelled') return false;
+            const sStart = s.start_date || `${s.year}-${String(s.month).padStart(2, '0')}-01`;
+            const sEnd = s.end_date || `${s.year}-${String(s.month).padStart(2, '0')}-31`;
+            const overlaps = sStart <= monthEndDate && sEnd >= monthStartDate;
+            const isThisMonth = s.year === currentYear && s.month === currentMonth;
+            return overlaps || isThisMonth;
+          });
 
-            <div className="cal-stat-card half-day">
-              <span
-                style={{
-                  fontSize: '0.75rem',
-                  fontWeight: 800,
-                  color: '#b45309',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.04em'
-                }}
-              >
-                Half-Days
-              </span>
-              <div className="cal-stat-val" style={{ color: '#b45309' }}>
-                {data.summary.halfDays}{' '}
-                <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>Days</span>
-              </div>
-              <span style={{ fontSize: '0.72rem', color: '#92400e', marginTop: 2 }}>
-                = {data.summary.halfDays * 0.5} effective pay days
-              </span>
-            </div>
+          const effectiveDays = data.summary.effectiveDays;
+          const dailyRate = labourer.base_rate;
+          const grossEarned = round2(effectiveDays * dailyRate);
 
-            <div className="cal-stat-card absent">
-              <span
-                style={{
-                  fontSize: '0.75rem',
-                  fontWeight: 800,
-                  color: '#b91c1c',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.04em'
-                }}
-              >
-                Total Absent / Leave
-              </span>
-              <div className="cal-stat-val" style={{ color: '#b91c1c' }}>
-                {data.summary.absentDays}{' '}
-                <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>Days</span>
-              </div>
-              <span style={{ fontSize: '0.72rem', color: '#991b1b', marginTop: 2 }}>
-                Unpaid leave taken
-              </span>
-            </div>
+          const advanceDeductedInSettlements = round2(
+            workerMonthSettlements.reduce((sum, s) => sum + (Number(s.advance_deducted) || 0), 0)
+          );
+          const totalPaidInMonth = round2(
+            workerMonthSettlements.reduce((sum, s) => sum + (Number(s.paid_amount) || 0), 0)
+          );
+          const settledDaysCount = round2(
+            workerMonthSettlements.reduce((sum, s) => sum + (Number(s.days_worked) || 0), 0)
+          );
+          const settledGrossAmount = round2(
+            workerMonthSettlements.reduce((sum, s) => sum + (Number(s.gross_wage) || 0), 0)
+          );
 
-            <div className="cal-stat-card effective">
-              <span
-                style={{
-                  fontSize: '0.75rem',
-                  fontWeight: 800,
-                  color: '#047857',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.04em'
-                }}
-              >
-                Effective Paid Days
-              </span>
-              <div className="cal-stat-val" style={{ color: '#047857' }}>
-                {data.summary.effectiveDays}{' '}
-                <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>Days</span>
-              </div>
-              <span style={{ fontSize: '0.72rem', color: '#065f46', marginTop: 2 }}>
-                {data.summary.presentDays} + ({data.summary.halfDays} × 0.5)
-              </span>
-            </div>
-          </div>
+          const advanceKhataOutstanding = advanceBal.outstanding;
+          const unsettledGross = round2(Math.max(0, grossEarned - settledGrossAmount));
+          const applicableAdvOnUnsettled = round2(Math.min(unsettledGross, advanceKhataOutstanding));
 
-          {/* Financial Calculation Summary Ribbon */}
-          <div className="cal-finance-ribbon">
-            <div>
-              <span
-                style={{
-                  fontSize: '0.75rem',
-                  fontWeight: 700,
-                  color: '#166534',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.04em'
-                }}
-              >
-                Gross Earned This Month
-              </span>
+          let remainingNetDue = 0;
+          if (effectiveDays > 0) {
+            if (settledDaysCount >= effectiveDays) {
+              remainingNetDue = 0;
+            } else if (workerMonthSettlements.length === 0) {
+              remainingNetDue = round2(Math.max(0, grossEarned - Math.min(grossEarned, advanceKhataOutstanding)));
+            } else {
+              remainingNetDue = round2(Math.max(0, unsettledGross - applicableAdvOnUnsettled));
+            }
+          }
+
+          const isMonthSettled = effectiveDays > 0 && remainingNetDue === 0 && (totalPaidInMonth > 0 || advanceDeductedInSettlements >= grossEarned);
+
+          return (
+            <div className="cal-numbers-container">
               <div
                 style={{
-                  fontSize: '1.4rem',
-                  fontWeight: 800,
-                  color: '#143823',
-                  fontFamily: 'Outfit',
-                  marginTop: 2
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  marginBottom: 12,
+                  flexWrap: 'wrap',
+                  gap: 8
                 }}
               >
-                ₹{data.summary.grossEarned.toLocaleString('en-IN')}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <CheckCircle2 size={18} color="#15803d" />
+                  <h3 style={{ margin: 0, fontSize: '1.05rem', color: '#143823', fontWeight: 800 }}>
+                    Attendance & Wage Numbers for {monthName} {currentYear}
+                  </h3>
+                </div>
+                <span
+                  style={{
+                    fontSize: '0.78rem',
+                    color: '#4b6354',
+                    fontWeight: 600
+                  }}
+                >
+                  Calculated till today ({todayStr})
+                </span>
               </div>
-              <span style={{ fontSize: '0.72rem', color: '#4b6354' }}>
-                {data.summary.effectiveDays} days × ₹{data.summary.dailyRate}/day
-              </span>
-            </div>
 
-            <div>
-              <span
-                style={{
-                  fontSize: '0.75rem',
-                  fontWeight: 700,
-                  color: '#b45309',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.04em'
-                }}
-              >
-                Active Advance Deducted
-              </span>
-              <div
-                style={{
-                  fontSize: '1.4rem',
-                  fontWeight: 800,
-                  color: data.summary.advanceOutstanding > 0 ? '#b45309' : '#143823',
-                  fontFamily: 'Outfit',
-                  marginTop: 2
-                }}
-              >
-                {data.summary.advanceOutstanding > 0 ? '-' : ''}₹
-                {data.summary.advanceOutstanding.toLocaleString('en-IN')}
-              </div>
-              <span style={{ fontSize: '0.72rem', color: '#78350f' }}>
-                {data.summary.advanceOutstanding > 0
-                  ? 'Outstanding in Advance Khata'
-                  : 'Zero advance taken'}
-              </span>
-            </div>
+              {/* 4 Attendance Counters Grid */}
+              <div className="cal-numbers-grid">
+                <div className="cal-stat-card present">
+                  <span
+                    style={{
+                      fontSize: '0.75rem',
+                      fontWeight: 800,
+                      color: '#15803d',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.04em'
+                    }}
+                  >
+                    Total Present
+                  </span>
+                  <div className="cal-stat-val" style={{ color: '#15803d' }}>
+                    {data.summary.presentDays}{' '}
+                    <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>Days</span>
+                  </div>
+                  <span style={{ fontSize: '0.72rem', color: '#166534', marginTop: 2 }}>
+                    {data.summary.presentDays * 8} full working hours
+                  </span>
+                </div>
 
-            <div
-              style={{
-                borderLeft: '2px dashed rgba(21, 128, 61, 0.3)',
-                paddingLeft: 16
-              }}
-            >
-              <span
-                style={{
-                  fontSize: '0.75rem',
-                  fontWeight: 800,
-                  color: '#15803d',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.04em'
-                }}
-              >
-                Net Payable Balance
-              </span>
-              <div
-                style={{
-                  fontSize: '1.6rem',
-                  fontWeight: 900,
-                  color: '#15803d',
-                  fontFamily: 'Outfit',
-                  marginTop: 2
-                }}
-              >
-                ₹{data.summary.netPayable.toLocaleString('en-IN')}
+                <div className="cal-stat-card half-day">
+                  <span
+                    style={{
+                      fontSize: '0.75rem',
+                      fontWeight: 800,
+                      color: '#b45309',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.04em'
+                    }}
+                  >
+                    Half-Days
+                  </span>
+                  <div className="cal-stat-val" style={{ color: '#b45309' }}>
+                    {data.summary.halfDays}{' '}
+                    <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>Days</span>
+                  </div>
+                  <span style={{ fontSize: '0.72rem', color: '#92400e', marginTop: 2 }}>
+                    = {data.summary.halfDays * 0.5} effective pay days
+                  </span>
+                </div>
+
+                <div className="cal-stat-card absent">
+                  <span
+                    style={{
+                      fontSize: '0.75rem',
+                      fontWeight: 800,
+                      color: '#b91c1c',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.04em'
+                    }}
+                  >
+                    Total Absent / Leave
+                  </span>
+                  <div className="cal-stat-val" style={{ color: '#b91c1c' }}>
+                    {data.summary.absentDays}{' '}
+                    <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>Days</span>
+                  </div>
+                  <span style={{ fontSize: '0.72rem', color: '#991b1b', marginTop: 2 }}>
+                    Unpaid leave taken
+                  </span>
+                </div>
+
+                <div className="cal-stat-card effective">
+                  <span
+                    style={{
+                      fontSize: '0.75rem',
+                      fontWeight: 800,
+                      color: '#047857',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.04em'
+                    }}
+                  >
+                    Effective Paid Days
+                  </span>
+                  <div className="cal-stat-val" style={{ color: '#047857' }}>
+                    {data.summary.effectiveDays}{' '}
+                    <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>Days</span>
+                  </div>
+                  <span style={{ fontSize: '0.72rem', color: '#065f46', marginTop: 2 }}>
+                    {data.summary.presentDays} + ({data.summary.halfDays} × 0.5)
+                  </span>
+                </div>
               </div>
-              <span style={{ fontSize: '0.72rem', color: '#166534', fontWeight: 600 }}>
-                Gross Earned − Advance Khata
-              </span>
+
+              {/* Financial Calculation Summary Ribbon (4 Columns) */}
+              <div className="cal-finance-ribbon" style={{ marginBottom: 16 }}>
+                <div>
+                  <span
+                    style={{
+                      fontSize: '0.74rem',
+                      fontWeight: 700,
+                      color: '#166534',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.04em'
+                    }}
+                  >
+                    Gross Earned This Month
+                  </span>
+                  <div
+                    style={{
+                      fontSize: '1.35rem',
+                      fontWeight: 800,
+                      color: '#143823',
+                      fontFamily: 'Outfit',
+                      marginTop: 2
+                    }}
+                  >
+                    ₹{grossEarned.toLocaleString('en-IN')}
+                  </div>
+                  <span style={{ fontSize: '0.72rem', color: '#4b6354' }}>
+                    {effectiveDays} shifts × ₹{dailyRate}/day
+                  </span>
+                </div>
+
+                <div>
+                  <span
+                    style={{
+                      fontSize: '0.74rem',
+                      fontWeight: 700,
+                      color: '#b45309',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.04em'
+                    }}
+                  >
+                    Advance Deducted
+                  </span>
+                  <div
+                    style={{
+                      fontSize: '1.35rem',
+                      fontWeight: 800,
+                      color: advanceDeductedInSettlements > 0 ? '#b45309' : '#143823',
+                      fontFamily: 'Outfit',
+                      marginTop: 2
+                    }}
+                  >
+                    ₹{advanceDeductedInSettlements.toLocaleString('en-IN')}
+                  </div>
+                  <span style={{ fontSize: '0.72rem', color: '#78350f' }}>
+                    Deducted in {monthName} payouts • Khata Due: ₹{advanceKhataOutstanding.toLocaleString('en-IN')}
+                  </span>
+                </div>
+
+                <div>
+                  <span
+                    style={{
+                      fontSize: '0.74rem',
+                      fontWeight: 700,
+                      color: '#1d4ed8',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.04em'
+                    }}
+                  >
+                    Already Disbursed
+                  </span>
+                  <div
+                    style={{
+                      fontSize: '1.35rem',
+                      fontWeight: 800,
+                      color: totalPaidInMonth > 0 ? '#1d4ed8' : '#64748b',
+                      fontFamily: 'Outfit',
+                      marginTop: 2
+                    }}
+                  >
+                    ₹{totalPaidInMonth.toLocaleString('en-IN')}
+                  </div>
+                  <span style={{ fontSize: '0.72rem', color: '#1e40af' }}>
+                    {workerMonthSettlements.length > 0 ? `Paid in ${workerMonthSettlements.length} settlement${workerMonthSettlements.length > 1 ? 's' : ''}` : 'No payouts disbursed yet'}
+                  </span>
+                </div>
+
+                <div
+                  style={{
+                    borderLeft: '2px dashed rgba(21, 128, 61, 0.3)',
+                    paddingLeft: 14
+                  }}
+                >
+                  <span
+                    style={{
+                      fontSize: '0.74rem',
+                      fontWeight: 800,
+                      color: isMonthSettled ? '#15803d' : (remainingNetDue > 0 ? '#b45309' : '#143823'),
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.04em'
+                    }}
+                  >
+                    Remaining Due
+                  </span>
+                  <div
+                    style={{
+                      fontSize: '1.45rem',
+                      fontWeight: 900,
+                      color: isMonthSettled ? '#15803d' : (remainingNetDue > 0 ? '#d97706' : '#15803d'),
+                      fontFamily: 'Outfit',
+                      marginTop: 2
+                    }}
+                  >
+                    ₹{remainingNetDue.toLocaleString('en-IN')}
+                  </div>
+                  <span style={{ fontSize: '0.72rem', color: isMonthSettled ? '#166534' : '#64748b', fontWeight: 700 }}>
+                    {isMonthSettled ? '✓ Fully Settled (₹0 Due)' : (remainingNetDue === 0 ? 'All Clear' : 'Gross − Adv Ded − Paid')}
+                  </span>
+                </div>
+              </div>
+
+              {/* Settlement History Slip for this Worker in this Month */}
+              <div style={{ marginTop: 14, background: '#ffffff', borderRadius: 14, border: '1.5px solid #e2e8f0', padding: 14 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, flexWrap: 'wrap', gap: 6 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <Receipt size={16} color="#15803d" />
+                    <span style={{ fontWeight: 800, fontSize: '0.88rem', color: '#143823' }}>
+                      Settlement & Payout Slips for {monthName} {currentYear}
+                    </span>
+                  </div>
+                  <span style={{ fontSize: '0.74rem', color: '#64748b', fontWeight: 600 }}>
+                    {workerMonthSettlements.length} payout record{workerMonthSettlements.length !== 1 ? 's' : ''}
+                  </span>
+                </div>
+
+                {workerMonthSettlements.length === 0 ? (
+                  <div style={{ padding: '12px 14px', background: '#f8fafc', borderRadius: 10, fontSize: '0.8rem', color: '#64748b', display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <AlertCircle size={15} color="#94a3b8" />
+                    <span>
+                      No salary payouts disbursed yet for {monthName} {currentYear}.{' '}
+                      {effectiveDays > 0 ? `Current pending take-home: ₹${remainingNetDue.toLocaleString('en-IN')}` : 'No shifts recorded.'}
+                    </span>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {workerMonthSettlements.map((s) => (
+                      <div
+                        key={s.id}
+                        style={{
+                          background: '#f8fafc',
+                          border: '1px solid #e2e8f0',
+                          borderRadius: 10,
+                          padding: '10px 12px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          flexWrap: 'wrap',
+                          gap: 8
+                        }}
+                      >
+                        <div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                            <span style={{ fontWeight: 800, fontSize: '0.82rem', color: '#0f172a' }}>
+                              🗓️ {s.period_type === 'weekly' ? 'Weekly Settlement' : (s.period_type === 'monthly' ? 'Monthly Settlement' : 'Custom Settlement')} ({s.start_date} to {s.end_date})
+                            </span>
+                            <span style={{ background: '#dcfce7', color: '#15803d', fontSize: '0.7rem', fontWeight: 800, padding: '1px 6px', borderRadius: 6 }}>
+                              ✓ Paid ₹{s.paid_amount.toLocaleString('en-IN')}
+                            </span>
+                          </div>
+                          <div style={{ fontSize: '0.74rem', color: '#475569', marginTop: 3 }}>
+                            Shifts: <strong>{s.days_worked} days</strong> • Gross: <strong>₹{s.gross_wage?.toLocaleString('en-IN')}</strong> • Adv Ded: <strong>₹{s.advance_deducted?.toLocaleString('en-IN')}</strong>
+                          </div>
+                          <div style={{ fontSize: '0.7rem', color: '#64748b', marginTop: 2 }}>
+                            Given By: <strong>👤 {s.given_by || 'Supervisor'}</strong> • Mode: <strong>{(s.payment_method || 'cash').toUpperCase()}</strong> • Date: {s.payment_date || new Date(s.created_at).toLocaleDateString('en-IN')}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Worker Advance Khata Summary */}
+              <div style={{ marginTop: 10, background: '#f8fafc', borderRadius: 12, border: '1px solid #e2e8f0', padding: '10px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <Wallet size={16} color="#b45309" />
+                  <span style={{ fontSize: '0.78rem', color: '#334155', fontWeight: 700 }}>
+                    Advance Khata:
+                  </span>
+                  <span style={{ fontSize: '0.78rem', color: advanceKhataOutstanding > 0 ? '#b45309' : '#15803d', fontWeight: 800 }}>
+                    {advanceKhataOutstanding > 0 ? `₹${advanceKhataOutstanding.toLocaleString('en-IN')} Outstanding Due` : '✓ Clear (₹0 Due)'}
+                  </span>
+                </div>
+                <div style={{ fontSize: '0.72rem', color: '#64748b' }}>
+                  Total Issued: ₹{advanceBal.totalIssued.toLocaleString('en-IN')} • Repaid / Deducted: ₹{advanceBal.totalRecovered.toLocaleString('en-IN')}
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
+          );
+        })()}
 
         </div>
         {/* End of Scrollable Body Container */}
